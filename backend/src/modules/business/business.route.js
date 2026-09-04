@@ -1,12 +1,17 @@
 import { Router } from "express";
 import { ObjectId } from "mongodb";
-import { getDatabase } from "../../config/mongodb.js";
+import { getDatabase, withTransaction } from "../../config/mongodb.js";
 import { allowRoles } from "../../common/middlewares/role.middleware.js";
+import { nextBusinessCode } from "../shared/businessCode.js";
 
 const router = Router();
 const today = () => new Date().toISOString().slice(0, 10);
 const id = (value) => ObjectId.isValid(value) ? new ObjectId(value) : null;
 const serialize = (document) => { if (!document) return document; const { _id, ...data } = document; return { id: _id.toString(), ...data }; };
+const serializeReturn = (document) => ({
+  ...serialize(document),
+  details: document.details.map((line) => ({ ...line, MaSPCode: line.productCode })),
+});
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 
 async function productsByLines(lines) {
@@ -24,19 +29,19 @@ async function productsByLines(lines) {
   return result;
 }
 
-async function adjustStock(lines, direction, allowShortage = false) {
+async function adjustStock(lines, direction, allowShortage = false, session) {
   const stocks = getDatabase().collection("TonKho");
   const applied = [];
   for (const line of lines) {
     const delta = direction * line.quantity;
     const filter = direction < 0 && !allowShortage ? { MaSP: line.product._id, SoLuongTon: { $gte: line.quantity } } : { MaSP: line.product._id };
-    const result = await stocks.updateOne(filter, { $set: { MaSP: line.product._id, updatedAt: new Date(), NgayCapNhat: today() }, $inc: { SoLuongTon: delta } }, { upsert: direction > 0 });
+    const result = await stocks.updateOne(filter, { $set: { MaSP: line.product._id, updatedAt: new Date(), NgayCapNhat: today() }, $inc: { SoLuongTon: delta } }, { upsert: direction > 0, session });
     if (!result.modifiedCount && !(direction > 0 && result.upsertedCount)) {
-      for (const previous of applied) await stocks.updateOne({ MaSP: previous.product._id }, { $inc: { SoLuongTon: -previous.delta } });
-      const current = await stocks.findOne({ MaSP: line.product._id });
+      for (const previous of applied) await stocks.updateOne({ MaSP: previous.product._id }, { $inc: { SoLuongTon: -previous.delta } }, { session });
+      const current = await stocks.findOne({ MaSP: line.product._id }, { session });
       throw fail(`${line.product.TenSP} vượt tồn kho hiện tại (${current?.SoLuongTon || 0})`, 409);
     }
-    await getDatabase().collection("SanPham").updateOne({ _id: line.product._id }, { $inc: { stock: delta } });
+    await getDatabase().collection("SanPham").updateOne({ _id: line.product._id }, { $inc: { stock: delta } }, { session });
     applied.push({ product: line.product, delta });
   }
 }
@@ -47,8 +52,10 @@ router.post("/goods-receipts", allowRoles("QuanLy", "NhanVienKho", "NhanVienMuaH
     const supplier = await getDatabase().collection("NhaCungCap").findOne({ _id: id(req.body.supplierId || req.body.MaNCC) });
     if (!supplier) throw fail("Nhà cung cấp không hợp lệ", 404);
     const total = lines.reduce((sum, line) => sum + line.quantity * line.price, 0);
-    await adjustStock(lines, 1);
-    const document = {
+    const created = await withTransaction(async (session) => {
+      await adjustStock(lines, 1, false, session);
+      const document = {
+      MaPN: await nextBusinessCode(getDatabase().collection("PhieuNhap"), "PhieuNhap"),
       MaNCC: supplier._id,
       MaNV: req.user.id,
       NgayNhap: req.body.NgayNhap || today(),
@@ -73,9 +80,11 @@ router.post("/goods-receipts", allowRoles("QuanLy", "NhanVienKho", "NhanVienMuaH
         ThanhTien: line.quantity * line.price,
       })),
       createdAt: new Date(),
-    };
-    const result = await getDatabase().collection("PhieuNhap").insertOne(document);
-    res.status(201).json({ data: serialize({ _id: result.insertedId, ...document }), message: "Đã nhập kho và cập nhật tồn kho" });
+      };
+      const result = await getDatabase().collection("PhieuNhap").insertOne(document, { session });
+      return serialize({ _id: result.insertedId, ...document });
+    });
+    res.status(201).json({ data: created, message: "Đã nhập kho và cập nhật tồn kho" });
   } catch (error) { next(error); }
 });
 
@@ -85,9 +94,11 @@ router.post("/goods-issues", allowRoles("QuanLy", "NhanVienKho"), async (req, re
     const reason = req.body.reason || req.body.LyDoXuat || "Bán hàng";
     const allowShortage = reason === "Điều chỉnh kiểm kê thiếu";
     if (reason === "Hủy hàng hỏng" && !String(req.body.note || req.body.GhiChu || "").trim()) throw fail("Phải nhập mô tả hàng hỏng");
-    await adjustStock(lines, -1, allowShortage);
+    const created = await withTransaction(async (session) => {
+      await adjustStock(lines, -1, allowShortage, session);
     const total = lines.reduce((sum, line) => sum + line.quantity * line.price, 0);
     const document = {
+      MaPX: await nextBusinessCode(getDatabase().collection("PhieuXuat"), "PhieuXuat"),
       MaDH: id(req.body.orderId || req.body.MaDH) || null,
       MaNV: req.user.id,
       NgayXuat: req.body.NgayXuat || today(),
@@ -113,56 +124,100 @@ router.post("/goods-issues", allowRoles("QuanLy", "NhanVienKho"), async (req, re
       })),
       createdAt: new Date(),
     };
-    const result = await getDatabase().collection("PhieuXuat").insertOne(document);
-    res.status(201).json({ data: serialize({ _id: result.insertedId, ...document }), message: "Đã xuất kho và cập nhật tồn kho" });
+      const result = await getDatabase().collection("PhieuXuat").insertOne(document, { session });
+      return serialize({ _id: result.insertedId, ...document });
+    });
+    res.status(201).json({ data: created, message: "Đã xuất kho và cập nhật tồn kho" });
   } catch (error) { next(error); }
 });
 
 router.post("/sales-orders", allowRoles("QuanLy", "NhanVienBanHang"), async (req, res, next) => {
   try {
     const lines = await productsByLines(req.body.items || req.body.details);
+    const customerId = id(req.body.customerId || req.body.MaKH);
+    if (req.body.customerId || req.body.MaKH) {
+      const customer = await getDatabase().collection("KhachHang").findOne({ _id: customerId });
+      if (!customer) throw fail("Khách hàng không tồn tại", 404);
+    }
     const total = lines.reduce((sum, line) => sum + line.quantity * line.price, 0);
-    const order = { MaKH: id(req.body.customerId || req.body.MaKH) || null, MaNV: req.user.id, NgayDat: req.body.NgayDat || today(), TrangThai: "Chờ xuất kho", TongTien: total, details: lines.map((line) => ({ MaSP: line.product._id, SoLuong: line.quantity, DonGia: line.price, GiamGia: 0, ThanhTien: line.quantity * line.price })), createdAt: new Date() };
-    const orderResult = await getDatabase().collection("DonHang").insertOne(order);
-    const invoice = { MaDH: orderResult.insertedId, MaNV: req.user.id, NgayLap: today(), TongTien: total, TrangThai: "Chưa thanh toán", details: order.details, createdAt: new Date() };
-    const invoiceResult = await getDatabase().collection("HoaDon").insertOne(invoice);
-    res.status(201).json({ data: { order: serialize({ _id: orderResult.insertedId, ...order }), invoice: serialize({ _id: invoiceResult.insertedId, ...invoice }) }, message: "Đã lập đơn hàng và hóa đơn" });
+    const created = await withTransaction(async (session) => {
+      await adjustStock(lines, -1, false, session);
+      const order = { MaDH: await nextBusinessCode(getDatabase().collection("DonHang"), "DonHang"), MaKH: customerId || null, MaNV: req.user.id, NgayDat: req.body.NgayDat || today(), TrangThai: "Chờ xuất kho", TongTien: total, details: lines.map((line) => ({ MaSP: line.product._id, SoLuong: line.quantity, DonGia: line.price, GiamGia: 0, ThanhTien: line.quantity * line.price })), createdAt: new Date() };
+      const orderResult = await getDatabase().collection("DonHang").insertOne(order, { session });
+      const invoice = { MaHD: await nextBusinessCode(getDatabase().collection("HoaDon"), "HoaDon"), MaDH: orderResult.insertedId, MaKH: customerId || null, MaNV: req.user.id, NgayLap: today(), TongTien: total, SoTienDaTra: 0, SoTienConLai: total, TrangThai: "Chưa thanh toán", details: order.details, createdAt: new Date() };
+      const invoiceResult = await getDatabase().collection("HoaDon").insertOne(invoice, { session });
+      if (customerId) {
+        const debtCollection = getDatabase().collection("CongNo");
+        await debtCollection.insertOne({
+          MaCN: await nextBusinessCode(debtCollection, "CongNo"),
+          MaKH: customerId,
+          MaDH: orderResult.insertedId,
+          MaHD: invoiceResult.insertedId,
+          LoaiCongNo: "Khách hàng",
+          NgayPhatSinh: today(),
+          SoTien: total,
+          SoTienDaTra: 0,
+          SoTienConLai: total,
+          TrangThai: "Còn nợ",
+          createdAt: new Date(),
+        }, { session });
+      }
+      return { order: serialize({ _id: orderResult.insertedId, ...order }), invoice: serialize({ _id: invoiceResult.insertedId, ...invoice }) };
+    });
+    res.status(201).json({ data: created, message: "Đã lập đơn hàng và hóa đơn" });
   } catch (error) { next(error); }
 });
 
 router.post("/payments", allowRoles("QuanLy", "KeToan", "NhanVienBanHang"), async (req, res, next) => {
   try {
     const invoiceId = id(req.body.invoiceId || req.body.MaHD);
-    const invoice = await getDatabase().collection("HoaDon").findOne({ _id: invoiceId });
-    if (!invoice) throw fail("Không tìm thấy hóa đơn", 404);
     const amount = Number(req.body.amount || req.body.SoTien);
     if (!Number.isFinite(amount) || amount <= 0) throw fail("Số tiền thanh toán không hợp lệ");
-    const paid = await getDatabase().collection("ThanhToan").aggregate([{ $match: { MaHD: invoiceId } }, { $group: { _id: null, total: { $sum: "$SoTien" } } }]).toArray();
-    const totalPaid = Number(paid[0]?.total || 0) + amount;
-    const payment = { MaHD: invoiceId, PhuongThuc: req.body.method || req.body.PhuongThuc || "Tiền mặt", SoTien: amount, NgayThanhToan: today(), TrangThai: "Đã ghi nhận", createdAt: new Date() };
-    const result = await getDatabase().collection("ThanhToan").insertOne(payment);
-    await getDatabase().collection("HoaDon").updateOne({ _id: invoiceId }, { $set: { TrangThai: totalPaid >= Number(invoice.TongTien) ? "Đã thanh toán" : "Thanh toán một phần", updatedAt: new Date() } });
-    res.status(201).json({ data: serialize({ _id: result.insertedId, ...payment }), message: "Đã ghi nhận thanh toán" });
+    const payment = await withTransaction(async (session) => {
+      const invoice = await getDatabase().collection("HoaDon").findOne({ _id: invoiceId }, { session });
+      if (!invoice) throw fail("Không tìm thấy hóa đơn", 404);
+      const currentPaid = Number(invoice.SoTienDaTra || 0);
+      const remaining = Math.max(0, Number(invoice.TongTien || 0) - currentPaid);
+      if (amount > remaining) throw fail(`Số tiền thanh toán vượt số còn nợ (${remaining})`, 409);
+      const totalPaid = currentPaid + amount;
+      const paymentDocument = { MaTT: await nextBusinessCode(getDatabase().collection("ThanhToan"), "ThanhToan"), MaHD: invoiceId, PhuongThuc: req.body.method || req.body.PhuongThuc || "Tiền mặt", SoTien: amount, NgayThanhToan: today(), TrangThai: "Đã ghi nhận", createdAt: new Date() };
+      const result = await getDatabase().collection("ThanhToan").insertOne(paymentDocument, { session });
+      const remainingAfterPayment = Math.max(0, Number(invoice.TongTien) - totalPaid);
+      const status = totalPaid >= Number(invoice.TongTien) ? "Đã thanh toán" : "Thanh toán một phần";
+      await getDatabase().collection("HoaDon").updateOne({ _id: invoiceId }, { $set: { SoTienDaTra: totalPaid, SoTienConLai: remainingAfterPayment, TrangThai: status, updatedAt: new Date() } }, { session });
+      if (invoice.MaKH) {
+        await getDatabase().collection("CongNo").updateOne(
+          { MaHD: invoiceId },
+          { $set: { MaKH: invoice.MaKH, MaDH: invoice.MaDH, MaHD: invoiceId, LoaiCongNo: "Khách hàng", SoTien: invoice.TongTien, SoTienDaTra: totalPaid, SoTienConLai: remainingAfterPayment, TrangThai: status === "Đã thanh toán" ? "Đã thanh toán" : "Còn nợ", updatedAt: new Date() }, $setOnInsert: { MaCN: await nextBusinessCode(getDatabase().collection("CongNo"), "CongNo"), NgayPhatSinh: invoice.NgayLap, createdAt: new Date() } },
+          { session, upsert: true },
+        );
+      }
+      return serialize({ _id: result.insertedId, ...paymentDocument });
+    });
+    res.status(201).json({ data: payment, message: "Đã ghi nhận thanh toán" });
   } catch (error) { next(error); }
 });
 
 router.post("/stocktakes", allowRoles("QuanLy", "NhanVienKho"), async (req, res, next) => {
   try {
-    const items = [];
+    const created = await withTransaction(async (session) => {
+      const items = [];
     for (const line of req.body.items || []) {
-      const product = await getDatabase().collection("SanPham").findOne({ _id: id(line.productId || line.MaSP) });
+      const product = await getDatabase().collection("SanPham").findOne({ _id: id(line.productId || line.MaSP) }, { session });
       if (!product) throw fail("Sản phẩm kiểm kê không tồn tại", 404);
-      const stock = await getDatabase().collection("TonKho").findOne({ MaSP: product._id });
+      const stock = await getDatabase().collection("TonKho").findOne({ MaSP: product._id }, { session });
       const actual = Number(line.actual ?? line.SoLuongThucTe);
       if (!Number.isInteger(actual) || actual < 0) throw fail("Số lượng thực tế không hợp lệ");
       items.push({ MaSP: product._id, SoLuongHeThong: Number(stock?.SoLuongTon || 0), SoLuongThucTe: actual, ChenhLech: actual - Number(stock?.SoLuongTon || 0) });
-      await getDatabase().collection("TonKho").updateOne({ MaSP: product._id }, { $set: { SoLuongTon: actual, NgayCapNhat: today(), updatedAt: new Date() } }, { upsert: true });
-      await getDatabase().collection("SanPham").updateOne({ _id: product._id }, { $set: { stock: actual } });
+      await getDatabase().collection("TonKho").updateOne({ MaSP: product._id }, { $set: { SoLuongTon: actual, NgayCapNhat: today(), updatedAt: new Date() } }, { upsert: true, session });
+      await getDatabase().collection("SanPham").updateOne({ _id: product._id }, { $set: { stock: actual } }, { session });
     }
     if (!items.length) throw fail("Phiếu kiểm kê phải có sản phẩm");
-    const document = { MaNV: req.user.id, NgayKiemKe: today(), GhiChu: req.body.note || "Kiểm kê kho", details: items, createdAt: new Date() };
-    const result = await getDatabase().collection("KiemKe").insertOne(document);
-    res.status(201).json({ data: serialize({ _id: result.insertedId, ...document }), message: "Đã lưu kiểm kê và điều chỉnh tồn kho" });
+      const document = { MaKK: await nextBusinessCode(getDatabase().collection("KiemKe"), "KiemKe"), MaNV: req.user.id, NgayKiemKe: today(), GhiChu: req.body.note || "Kiểm kê kho", details: items, createdAt: new Date() };
+      const result = await getDatabase().collection("KiemKe").insertOne(document, { session });
+      return serialize({ _id: result.insertedId, ...document });
+    });
+    res.status(201).json({ data: created, message: "Đã lưu kiểm kê và điều chỉnh tồn kho" });
   } catch (error) { next(error); }
 });
 
@@ -170,16 +225,62 @@ router.post("/returns", allowRoles("QuanLy", "NhanVienBanHang"), async (req, res
   try {
     const lines = await productsByLines(req.body.items || [req.body]);
     const orderId = id(req.body.orderId || req.body.MaDH);
-    const document = { MaDH: orderId, MaKH: id(req.body.customerId || req.body.MaKH) || null, MaNV: req.user.id, NgayTra: today(), LyDo: req.body.reason || req.body.LyDo, TrangThai: "Đã xử lý", details: lines.map((line) => ({ MaSP: line.product._id, SoLuong: line.quantity, DonGia: line.price, ThanhTien: line.quantity * line.price })), createdAt: new Date() };
-    await adjustStock(lines, 1);
-    const result = await getDatabase().collection("PhieuTraHang").insertOne(document);
-    res.status(201).json({ data: serialize({ _id: result.insertedId, ...document }), message: "Đã ghi nhận trả hàng và cộng lại tồn kho" });
+    const customerId = id(req.body.customerId || req.body.MaKH);
+    if (req.body.customerId || req.body.MaKH) {
+      const customer = await getDatabase().collection("KhachHang").findOne({ _id: customerId });
+      if (!customer) throw fail("Khách hàng không tồn tại", 404);
+    }
+    const document = { MaPTH: await nextBusinessCode(getDatabase().collection("PhieuTraHang"), "PhieuTraHang"), MaDH: orderId, MaKH: customerId, MaNV: req.user.id, NgayTra: today(), LyDo: req.body.reason || req.body.LyDo, TrangThai: "Đã xử lý", SoLuong: lines.reduce((sum, line) => sum + line.quantity, 0), details: lines.map((line) => ({ MaSP: line.product._id, TenSP: line.product.TenSP, SoLuong: line.quantity, DonGia: line.price, ThanhTien: line.quantity * line.price })), createdAt: new Date() };
+    const created = await withTransaction(async (session) => {
+      await adjustStock(lines, 1, false, session);
+      const result = await getDatabase().collection("PhieuTraHang").insertOne(document, { session });
+      return serializeReturn({ _id: result.insertedId, ...document, details: document.details.map((line) => ({ ...line, productCode: line.product.MaSP })) });
+    });
+    res.status(201).json({ data: created, message: "Đã ghi nhận trả hàng và cộng lại tồn kho" });
   } catch (error) { next(error); }
 });
 
 router.get("/inventory", allowRoles("QuanLy", "NhanVienKho"), async (_req, res, next) => { try { const products = await getDatabase().collection("SanPham").find().sort({ TenSP: 1 }).toArray(); const stocks = await getDatabase().collection("TonKho").find().toArray(); const byProduct = new Map(stocks.map((stock) => [stock.MaSP.toString(), stock.SoLuongTon])); res.json({ data: products.map((product) => ({ ...serialize(product), stock: Number(byProduct.get(product._id.toString()) ?? product.stock ?? 0) })) }); } catch (error) { next(error); } });
-router.get("/reports/revenue", async (_req, res, next) => { try { const [paid, orders] = await Promise.all([getDatabase().collection("HoaDon").aggregate([{ $match: { TrangThai: "Đã thanh toán" } }, { $group: { _id: null, total: { $sum: "$TongTien" } } }]).toArray(), getDatabase().collection("DonHang").countDocuments()]); res.json({ report: "revenue", total: paid[0]?.total || 0, orders }); } catch (error) { next(error); } });
-router.get("/reports/debts", async (_req, res, next) => { try { const data = await getDatabase().collection("CongNo").find().sort({ SoTienConLai: -1 }).toArray(); res.json({ report: "debts", data: data.map(serialize), total: data.reduce((sum, item) => sum + Number(item.SoTienConLai || 0), 0) }); } catch (error) { next(error); } });
-router.get("/reports/inventory", async (_req, res, next) => { try { const data = await getDatabase().collection("TonKho").find().sort({ SoLuongTon: 1 }).toArray(); res.json({ report: "inventory", data: data.map(serialize) }); } catch (error) { next(error); } });
+router.get("/reports/revenue", allowRoles("QuanLy", "KeToan"), async (_req, res, next) => {
+  try {
+    const formatDate = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+    const [invoices, orders] = await Promise.all([
+      getDatabase().collection("HoaDon").find({ TrangThai: "Đã thanh toán" }).toArray(),
+      getDatabase().collection("DonHang").countDocuments(),
+    ]);
+    const makeDates = (lastDate) => Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(`${lastDate}T00:00:00`);
+      date.setDate(date.getDate() - (6 - index));
+      return formatDate(date);
+    });
+    const today = formatDate(new Date());
+    let dates = makeDates(today);
+    const revenueFor = (date) => invoices
+      .filter((invoice) => String(invoice.NgayLap).slice(0, 10) === date)
+      .reduce((sum, invoice) => sum + Number(invoice.TongTien || 0), 0);
+    let weekly = dates.map((date) => ({ date, total: revenueFor(date) }));
+    if (!weekly.some((item) => item.total > 0) && invoices.length) {
+      const latestPaidDate = invoices
+        .map((invoice) => String(invoice.NgayLap).slice(0, 10))
+        .sort()
+        .at(-1);
+      dates = makeDates(latestPaidDate);
+      weekly = dates.map((date) => ({ date, total: revenueFor(date) }));
+    }
+    res.json({
+      report: "revenue",
+      total: invoices.reduce((sum, invoice) => sum + Number(invoice.TongTien || 0), 0),
+      orders,
+      weekly,
+    });
+  } catch (error) { next(error); }
+});
+router.get("/reports/debts", allowRoles("QuanLy", "KeToan"), async (_req, res, next) => { try { const data = await getDatabase().collection("CongNo").find().sort({ SoTienConLai: -1 }).toArray(); res.json({ report: "debts", data: data.map(serialize), total: data.reduce((sum, item) => sum + Number(item.SoTienConLai || 0), 0) }); } catch (error) { next(error); } });
+router.get("/reports/inventory", allowRoles("QuanLy", "KeToan"), async (_req, res, next) => { try { const data = await getDatabase().collection("TonKho").find().sort({ SoLuongTon: 1 }).toArray(); res.json({ report: "inventory", data: data.map(serialize) }); } catch (error) { next(error); } });
 
 export default router;

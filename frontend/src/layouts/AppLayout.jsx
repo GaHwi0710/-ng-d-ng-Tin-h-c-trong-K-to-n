@@ -71,7 +71,17 @@ function getPageTitle(pathname) {
 }
 
 export function AppLayout() {
-  const user = JSON.parse(localStorage.getItem("baby-shop-user") || "{}");
+  const storedUser = JSON.parse(localStorage.getItem("baby-shop-user") || "{}");
+  const user = {
+    ...storedUser,
+    role: {
+      "Quản lý": "QuanLy",
+      "Kế toán": "KeToan",
+      "Nhân viên bán hàng": "NhanVienBanHang",
+      "Nhân viên kho": "NhanVienKho",
+      "Nhân viên mua hàng": "NhanVienMuaHang",
+    }[storedUser.role] || storedUser.role,
+  };
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -119,6 +129,7 @@ export function AppLayout() {
                 <NavLink
                   key={path}
                   to={path}
+                  end
                   className="nav-item"
                   onClick={() => setMobileOpen(false)}
                 >

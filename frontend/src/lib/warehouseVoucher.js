@@ -29,10 +29,10 @@ export function normalizeVoucherLines(details = [], products = []) {
     const product =
       products.find(
         (item) =>
-          item.id === line.id ||
-          item.id === line.productId ||
-          item.MaSP === line.MaSP ||
-          item.id === line.MaSP
+          String(item.id) === String(line.id) ||
+          String(item.id) === String(line.productId) ||
+          String(item.MaSP) === String(line.MaSP) ||
+          String(item.id) === String(line.MaSP)
       ) || {};
     const quantity = Number(line.quantity ?? line.SoLuong ?? 0);
     const requested = Number(line.requested ?? line.SoLuongYeuCau ?? quantity);
@@ -40,7 +40,7 @@ export function normalizeVoucherLines(details = [], products = []) {
     return {
       stt: index + 1,
       name: line.TenSP || product.TenSP || "",
-      code: line.MaSP || product.MaSP || "",
+      code: line.MaSPCode || product.MaSP || "",
       unit: line.DonViTinh || product.DonViTinh || "",
       requested,
       actual: quantity,
@@ -74,7 +74,7 @@ export function buildWarehouseVoucherModel({
     company: record.DonVi || "Cửa hàng Mẹ & Bé",
     department: record.BoPhan || "Kho hàng",
     date,
-    number: record.id || "",
+    number: record.MaPN || record.MaPX || record.id || "",
     debit: record.TkNo || (isReceipt ? "156" : "632"),
     credit: record.TkCo || (isReceipt ? "331" : "156"),
     personName:
@@ -87,7 +87,7 @@ export function buildWarehouseVoucherModel({
     location: record.DiaDiem || "Hà Nội",
     lines,
     total,
-    attachedDocs: record.SoChungTuGoc || record.MaDDH || record.MaDH || "",
+    attachedDocs: record.SoChungTuGoc || record.MaDDHCode || record.MaDHCode || record.MaDDH || record.MaDH || "",
     preparedBy: record.NguoiLap || userName,
     minRows: 8,
   };

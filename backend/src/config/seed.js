@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { syncEmployee } from "../modules/auth/accountEmployee.js";
 import { hashPassword } from "../modules/auth/password.js";
+import { ensureBusinessCodes } from "../modules/shared/businessCode.js";
 
 export async function seedDatabase(database) {
   const now = new Date();
@@ -19,8 +20,9 @@ export async function seedDatabase(database) {
         fullName: adminAccount.fullName,
         role: "QuanLy",
         status: "active",
+        passwordHash: adminAccount.passwordHash,
       },
-      $setOnInsert: adminAccount,
+      $setOnInsert: { createdAt: adminAccount.createdAt },
     },
     { upsert: true },
   );
@@ -28,6 +30,7 @@ export async function seedDatabase(database) {
 
   if (await database.collection("_metadata").findOne({ key: "initial-seed-v1" })) {
     await database.collection("VaiTro").updateOne({ MaVaiTro: 5 }, { $set: { MaVaiTro: 5, TenVaiTro: "Nhân viên mua hàng" } }, { upsert: true });
+    await ensureBusinessCodes(database);
     return;
   }
   const categories = ["Sữa", "Bỉm/tã", "Quần áo trẻ em", "Đồ dùng cho bé", "Đồ chơi", "Chăm sóc mẹ và bé"].map((TenLoai, index) => ({ _id: new ObjectId(), MaLoai: index + 1, TenLoai, MoTa: "Danh mục sản phẩm mẹ và bé" }));
@@ -61,5 +64,6 @@ export async function seedDatabase(database) {
   await database.collection("TonKho").insertMany(products.map((product) => ({ MaSP: product._id, SoLuongTon: product.stock, NgayCapNhat: now.toISOString().slice(0, 10), updatedAt: now })));
   await database.collection("VaiTro").insertMany([{ MaVaiTro: 1, TenVaiTro: "Quản lý" }, { MaVaiTro: 2, TenVaiTro: "Nhân viên bán hàng" }, { MaVaiTro: 3, TenVaiTro: "Nhân viên kho" }, { MaVaiTro: 4, TenVaiTro: "Kế toán" }, { MaVaiTro: 5, TenVaiTro: "Nhân viên mua hàng" }]);
   await database.collection("_metadata").insertOne({ key: "initial-seed-v1", createdAt: now, source: "Nhom1_baiktraso1 (1).docx + schema.sql" });
+  await ensureBusinessCodes(database);
   console.log(`Seeded ${products.length} products, ${customers.length} customers and ${suppliers.length} suppliers`);
 }

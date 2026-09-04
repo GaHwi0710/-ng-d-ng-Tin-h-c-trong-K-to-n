@@ -33,3 +33,26 @@ export async function closeMongoDB() {
   await client.close();
   database = undefined;
 }
+
+export async function withTransaction(work) {
+  const session = client.startSession();
+  try {
+    let result;
+    try {
+      await session.withTransaction(async () => {
+        result = await work(session);
+      });
+    } catch (error) {
+      const transactionUnsupported = [
+        error,
+        error.originalError,
+        error.originalError?.originalError,
+      ].some((item) => item?.code === 20 || item?.codeName === "IllegalOperation" || String(item?.message || "").includes("Transaction numbers are only allowed"));
+      if (!transactionUnsupported) throw error;
+      result = await work(undefined);
+    }
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}

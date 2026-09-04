@@ -5,12 +5,26 @@ import { DashboardPage } from "./pages/DashboardPage.jsx";
 import { ModulePage } from "./pages/ModulePage.jsx";
 import { moduleRoutes } from "./routes/moduleRoutes.js";
 
+function getUserRole() {
+  const user = JSON.parse(localStorage.getItem("baby-shop-user") || "{}");
+  return {
+    ...user,
+    role: {
+      "Quản lý": "QuanLy",
+      "Kế toán": "KeToan",
+      "Nhân viên bán hàng": "NhanVienBanHang",
+      "Nhân viên kho": "NhanVienKho",
+      "Nhân viên mua hàng": "NhanVienMuaHang",
+    }[user.role] || user.role,
+  };
+}
+
 function RequireAuth({ children }) {
   return localStorage.getItem("baby-shop-token") ? children : <Navigate to="/login" replace />;
 }
 
 function RequireRole({ roles, children }) {
-  const user = JSON.parse(localStorage.getItem("baby-shop-user") || "{}");
+  const user = getUserRole();
   return !roles || roles.includes(user.role) ? children : <Navigate to="/dashboard" replace />;
 }
 

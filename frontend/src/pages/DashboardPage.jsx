@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listRecords } from "../lib/api.js";
+import { getReport, listRecords } from "../lib/api.js";
 import {
   DocumentTextIcon,
   ShoppingCartIcon,
@@ -24,6 +24,7 @@ export function DashboardPage() {
     orders: [],
     invoices: [],
     debts: [],
+    revenue: { weekly: [] },
   });
 
   useEffect(() => {
@@ -32,8 +33,9 @@ export function DashboardPage() {
       listRecords("sales-orders"),
       listRecords("invoices"),
       listRecords("debts"),
-    ]).then(([products, orders, invoices, debts]) =>
-      setData({ products, orders, invoices, debts })
+      getReport("revenue"),
+    ]).then(([products, orders, invoices, debts, revenue]) =>
+      setData({ products, orders, invoices, debts, revenue })
     );
   }, []);
 
@@ -52,9 +54,33 @@ export function DashboardPage() {
     0
   );
 
-  // Simulated weekly revenue for the chart (reflecting 500K user scale)
-  const weeklyRevenue = [4200, 5800, 3500, 7000, 6400, 9000, 7600];
-  const dayLabels = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+  // Tính doanh thu 7 ngày gần nhất trực tiếp từ invoices (không cần API report)
+  const today = new Date();
+  const last7Days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (6 - i));
+    return d.toISOString().slice(0, 10);
+  });
+
+  // Ưu tiên dữ liệu API nếu có; nếu không, tính từ invoices đã fetch
+  const apiWeekly = data.revenue?.weekly;
+  const hasApiData = Array.isArray(apiWeekly) && apiWeekly.length > 0 && apiWeekly.some((w) => w.total > 0);
+
+  const weeklyRevenue = hasApiData
+    ? apiWeekly.map((item) => item.total / 100000)
+    : last7Days.map((date) =>
+        data.invoices
+          .filter((inv) => inv.TrangThai === "Đã thanh toán" && inv.NgayLap?.slice(0, 10) === date)
+          .reduce((sum, inv) => sum + Number(inv.TongTien || 0), 0) / 100000
+      );
+
+  const dayLabels = hasApiData
+    ? apiWeekly.map((item) =>
+        new Intl.DateTimeFormat("vi-VN", { weekday: "short" }).format(new Date(`${item.date}T00:00:00`))
+      )
+    : last7Days.map((date) =>
+        new Intl.DateTimeFormat("vi-VN", { weekday: "short" }).format(new Date(`${date}T00:00:00`))
+      );
 
   // Revenue by category
   const categories = [
@@ -117,7 +143,7 @@ export function DashboardPage() {
         <header className="section-head">
           <hgroup>
             <h3>Doanh thu 7 ngày gần nhất</h3>
-            <p className="desc">Đơn vị: trăm nghìn đồng</p>
+            <p className="desc">Đơn vị: trăm nghìn đồng (hover để xem chi tiết)</p>
           </hgroup>
         </header>
         <BarChart data={weeklyRevenue} labels={dayLabels} />

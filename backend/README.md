@@ -12,3 +12,5 @@ Frontend va API dung chung mot server local.
 Health check: `GET /api/health`
 
 Tai khoan quan ly mac dinh: `admin` / `admin123`. Vai tro duoc lay tu tai khoan sau khi dang nhap, khong nhap tren man hinh dang nhap. Tai khoan moi duoc tao trong khu vuc quan tri.
+
+Các nghiệp vụ ghi chứng từ sử dụng MongoDB transaction khi MongoDB chạy replica set hoặc mongos. Môi trường MongoDB standalone dùng chế độ tương thích để vẫn chạy được local; khi triển khai thật nên bật replica set để đảm bảo rollback nguyên tử.

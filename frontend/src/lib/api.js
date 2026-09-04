@@ -1,6 +1,15 @@
 const API_URL = import.meta.env.VITE_API_URL || "/api";
 const USE_LOCAL_FALLBACK = import.meta.env.VITE_ENABLE_LOCAL_FALLBACK === "true";
 
+// Tăng version → tự động xóa localStorage cũ để seed lại với ngày động
+const SEED_VERSION = "v3";
+
+function daysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
 export const seedData = {
   customers: [
     { id: "KH001", HoTen: "Nguyễn Thị Hồng", SDT: "0901234567", Email: "hong.nt@gmail.com", DiaChi: "12 Láng Hạ, Ba Đình, Hà Nội", DiemTichLuy: 3420 },
@@ -48,16 +57,16 @@ export const seedData = {
     { id: "PN001", MaDDH: "DDH001", MaNCC: "NCC001", NgayNhap: "2026-08-06", TrangThai: "Đã lưu", TongTien: 16000000, SoLuong: 40, details: [{ MaSP: "SP001", SoLuong: 20, DonGia: 210000 }, { MaSP: "SP002", SoLuong: 20, DonGia: 140000 }] },
   ],
   "sales-orders": [
-    { id: "DH001", customerId: "KH001", NgayDat: "2026-08-14", TrangThai: "Hoàn tất", TongTien: 520000, items: [{ productId: "SP003", quantity: 1, price: 520000 }] },
-    { id: "DH002", customerId: "KH002", NgayDat: "2026-08-15", TrangThai: "Hoàn tất", TongTien: 458000, items: [{ productId: "SP006", quantity: 2, price: 229000 }] },
-    { id: "DH003", customerId: null, NgayDat: "2026-08-16", TrangThai: "Chờ xuất kho", TongTien: 185000, items: [{ productId: "SP002", quantity: 1, price: 185000 }] },
-    { id: "DH004", customerId: "KH005", NgayDat: "2026-08-20", TrangThai: "Hoàn tất", TongTien: 1295000, items: [{ productId: "SP003", quantity: 2, price: 520000 }, { productId: "SP004", quantity: 1, price: 89000 }, { productId: "SP008", quantity: 1, price: 59000 }, { productId: "SP009", quantity: 1, price: 139000 }] },
+    { id: "DH001", customerId: "KH001", NgayDat: daysAgo(6), TrangThai: "Hoàn tất", TongTien: 520000, items: [{ productId: "SP003", quantity: 1, price: 520000 }] },
+    { id: "DH002", customerId: "KH002", NgayDat: daysAgo(5), TrangThai: "Hoàn tất", TongTien: 458000, items: [{ productId: "SP006", quantity: 2, price: 229000 }] },
+    { id: "DH003", customerId: null, NgayDat: daysAgo(3), TrangThai: "Chờ xuất kho", TongTien: 185000, items: [{ productId: "SP002", quantity: 1, price: 185000 }] },
+    { id: "DH004", customerId: "KH005", NgayDat: daysAgo(1), TrangThai: "Hoàn tất", TongTien: 1295000, items: [{ productId: "SP003", quantity: 2, price: 520000 }, { productId: "SP004", quantity: 1, price: 89000 }, { productId: "SP008", quantity: 1, price: 59000 }, { productId: "SP009", quantity: 1, price: 139000 }] },
   ],
   invoices: [
-    { id: "HD001", MaDH: "DH001", NgayLap: "2026-08-14", TongTien: 520000, TrangThai: "Đã thanh toán" },
-    { id: "HD002", MaDH: "DH002", NgayLap: "2026-08-15", TongTien: 458000, TrangThai: "Đã thanh toán" },
-    { id: "HD003", MaDH: "DH003", NgayLap: "2026-08-16", TongTien: 185000, TrangThai: "Chưa thanh toán" },
-    { id: "HD004", MaDH: "DH004", NgayLap: "2026-08-20", TongTien: 1295000, TrangThai: "Đã thanh toán" },
+    { id: "HD001", MaDH: "DH001", NgayLap: daysAgo(6), TongTien: 520000, TrangThai: "Đã thanh toán" },
+    { id: "HD002", MaDH: "DH002", NgayLap: daysAgo(5), TongTien: 458000, TrangThai: "Đã thanh toán" },
+    { id: "HD003", MaDH: "DH003", NgayLap: daysAgo(3), TongTien: 185000, TrangThai: "Chưa thanh toán" },
+    { id: "HD004", MaDH: "DH004", NgayLap: daysAgo(1), TongTien: 1295000, TrangThai: "Đã thanh toán" },
   ],
   "goods-issues": [
     { id: "PX001", MaDH: "DH001", NgayXuat: "2026-08-14", LyDoXuat: "Bán hàng", TrangThai: "Đã lưu", SoLuong: 1, TongTien: 520000, details: [{ MaSP: "SP003", SoLuong: 1, DonGia: 420000 }] },
@@ -99,6 +108,13 @@ export const seedData = {
 };
 
 function storageKey(resource) { return `baby-shop:${resource}`; }
+
+// Xóa dữ liệu localStorage cũ khi seed version thay đổi
+if (typeof localStorage !== "undefined" && localStorage.getItem("baby-shop:seed-version") !== SEED_VERSION) {
+  Object.keys(seedData).forEach((k) => localStorage.removeItem(storageKey(k)));
+  localStorage.setItem("baby-shop:seed-version", SEED_VERSION);
+}
+
 function readLocal(resource) {
   const saved = localStorage.getItem(storageKey(resource));
   if (saved) return JSON.parse(saved);
@@ -195,11 +211,34 @@ export async function logout() {
   }
 }
 
+function computeWeeklyRevenue() {
+  const invoices = readLocal("invoices");
+  const today = new Date();
+  const weekly = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (6 - i));
+    const date = d.toISOString().slice(0, 10);
+    const total = invoices
+      .filter((inv) => inv.TrangThai === "Đã thanh toán" && inv.NgayLap?.slice(0, 10) === date)
+      .reduce((sum, inv) => sum + Number(inv.TongTien || 0), 0);
+    return { date, total };
+  });
+  const totalRevenue = invoices
+    .filter((inv) => inv.TrangThai === "Đã thanh toán")
+    .reduce((sum, inv) => sum + Number(inv.TongTien || 0), 0);
+  return { total: totalRevenue, orders: invoices.length, weekly };
+}
+
 export async function getReport(name) {
   try {
-    return await request(`reports/${name}`);
-  } catch {
-    if (name === "revenue") return { total: 2458000, orders: 4 };
+    const result = await request(`reports/${name}`);
+    // Backend stub trả về data rỗng → tính từ localStorage
+    if (name === "revenue" && (!result.weekly || result.weekly.length === 0)) {
+      return computeWeeklyRevenue();
+    }
+    return result;
+  } catch (error) {
+    if (name === "revenue") return computeWeeklyRevenue();
     if (name === "debts") return { total: 4600000 };
     if (name === "inventory") return { data: readLocal("products") };
     return {};

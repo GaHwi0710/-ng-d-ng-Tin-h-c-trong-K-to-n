@@ -8,7 +8,7 @@ import {
   InboxIcon,
   PrinterIcon,
 } from "@heroicons/react/24/outline";
-import { deleteRecord, getReport, listRecords, saveRecord, seedData } from "../lib/api.js";
+import { deleteRecord, getReport, listRecords, saveRecord } from "../lib/api.js";
 import {
   buildWarehouseVoucherHtml,
   buildWarehouseVoucherModel,
@@ -42,6 +42,7 @@ const configs = {
   customers: {
     key: "HoTen",
     columns: [
+      ["MaKH", "Mã KH"],
       ["HoTen", "Họ tên"],
       ["SDT", "Số điện thoại"],
       ["Email", "Email"],
@@ -58,6 +59,7 @@ const configs = {
   suppliers: {
     key: "TenNCC",
     columns: [
+      ["MaNCC", "Mã NCC"],
       ["TenNCC", "Tên nhà cung cấp"],
       ["SDT", "Số điện thoại"],
       ["Email", "Email"],
@@ -85,7 +87,7 @@ const configs = {
     fields: [
       { name: "MaSP", label: "Mã sản phẩm", required: true },
       { name: "TenSP", label: "Tên sản phẩm", required: true },
-      { name: "LoaiHang", label: "Loại hàng" },
+      { name: "MaLoai", label: "Loại hàng", lookup: "categories" },
       { name: "DonViTinh", label: "Đơn vị tính" },
       { name: "GiaNhap", label: "Giá nhập (đ)", type: "number" },
       { name: "GiaBan", label: "Giá bán (đ)", type: "number" },
@@ -105,16 +107,16 @@ const configs = {
     ],
   },
   "purchase-orders": {
-    key: "id",
+    key: "MaDDH",
     columns: [
-      ["id", "Mã ĐĐH"],
-      ["MaNCC", "Nhà cung cấp"],
+      ["MaDDH", "Mã ĐĐH"],
+      ["MaNCCCode", "Nhà cung cấp"],
       ["NgayDat", "Ngày đặt"],
       ["TongTien", "Tổng tiền"],
       ["TrangThai", "Trạng thái"],
     ],
     fields: [
-      { name: "MaNCC", label: "Mã nhà cung cấp", required: true },
+      { name: "MaNCC", label: "Nhà cung cấp", required: true, lookup: "suppliers" },
       { name: "NgayDat", label: "Ngày đặt", type: "date" },
       { name: "TongTien", label: "Tổng tiền", type: "number" },
       { name: "TrangThai", label: "Trạng thái" },
@@ -141,7 +143,9 @@ const configs = {
   debts: {
     key: "MaCN",
     columns: [
-      ["MaNCC", "Nhà cung cấp"],
+      ["MaKHCode", "Khách hàng"],
+      ["MaNCCCode", "Nhà cung cấp"],
+      ["MaHDCode", "Hóa đơn"],
       ["NgayPhatSinh", "Ngày phát sinh"],
       ["SoTien", "Số tiền"],
       ["SoTienDaTra", "Đã trả"],
@@ -227,7 +231,7 @@ function isStatusField(field) {
 function RecordsPage({ title, description, resource }) {
   const config = configs[resource] || {
     key: "id",
-    columns: [["id", "Mã"], ["TrangThai", "Trạng thái"]],
+    columns: [["code", "Mã"], ["TrangThai", "Trạng thái"]],
     fields: [{ name: "TrangThai", label: "Trạng thái" }],
   };
 
@@ -236,9 +240,19 @@ function RecordsPage({ title, description, resource }) {
   const [editing, setEditing] = useState(null);
   const [formData, setFormData] = useState({});
   const [catFilter, setCatFilter] = useState("all");
+  const [lookups, setLookups] = useState({ suppliers: [], categories: [] });
 
   useEffect(() => {
     listRecords(resource).then(setRecords);
+  }, [resource]);
+
+  useEffect(() => {
+    if (resource === "purchase-orders") {
+      listRecords("suppliers").then((suppliers) => setLookups((current) => ({ ...current, suppliers })));
+    }
+    if (resource === "products") {
+      listRecords("product-categories").then((categories) => setLookups((current) => ({ ...current, categories })));
+    }
   }, [resource]);
 
   const visible = useMemo(() => {
@@ -262,7 +276,7 @@ function RecordsPage({ title, description, resource }) {
 
   function openModal(record = null) {
     const data = {};
-    config.fields.forEach((f) => {
+      config.fields.forEach((f) => {
       data[f.name] = record ? record[f.name] ?? "" : "";
     });
     if (record?.id) data.id = record.id;
@@ -404,7 +418,21 @@ function RecordsPage({ title, description, resource }) {
           {config.fields.map((f) => (
             <div className={`field ${f.full ? "full" : ""}`} key={f.name}>
               <label htmlFor={`field-${f.name}`}>{f.label}</label>
-              {f.options ? (
+              {f.lookup ? (
+                <select
+                  id={`field-${f.name}`}
+                  value={formData[f.name] ?? ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, [f.name]: e.target.value }))}
+                  required={f.required}
+                >
+                  <option value="">Chọn {f.label.toLowerCase()}</option>
+                  {(lookups[f.lookup] || []).map((option) => (
+                    <option value={option.id} key={option.id}>
+                      {option.MaNCC || option.MaLoai} · {option.TenNCC || option.TenLoai}
+                    </option>
+                  ))}
+                </select>
+              ) : f.options ? (
                 <select
                   id={`field-${f.name}`}
                   value={formData[f.name] ?? ""}
@@ -471,11 +499,11 @@ function StockDocument({ type, title }) {
   const [preview, setPreview] = useState(null);
 
   useEffect(() => {
-    listRecords("products").then(setProducts).catch(() => setProducts(seedData.products));
-    listRecords("suppliers").then(setSuppliers).catch(() => setSuppliers(seedData.suppliers));
+    listRecords("products").then(setProducts).catch(() => setProducts([]));
+    listRecords("suppliers").then(setSuppliers).catch(() => setSuppliers([]));
     listRecords(resource)
       .then(setVouchers)
-      .catch(() => setVouchers(seedData[resource] || []));
+      .catch(() => setVouchers([]));
   }, [resource]);
 
   const total = selected.reduce(
@@ -662,28 +690,36 @@ function StockDocument({ type, title }) {
             ) : (
               <>
                 <div className="segmented-list" role="radiogroup" aria-label="Lý do xuất kho">
-                  {["Bán hàng", "Chuyển kho nội bộ", "Hủy hàng hỏng", "Điều chỉnh kiểm kê thiếu"].map(
-                    (item) => (
-                      <button
-                        className={reason === item ? "selected" : ""}
-                        type="button"
-                        onClick={() => setReason(item)}
-                        key={item}
-                        role="radio"
-                        aria-checked={reason === item}
-                      >
-                        {item}
-                      </button>
-                    )
-                  )}
+                  {[
+                    { label: "Bán hàng", icon: "🛍️" },
+                    { label: "Chuyển kho nội bộ", icon: "🔄" },
+                    { label: "Hủy hàng hỏng", icon: "🗑️" },
+                    { label: "Điều chỉnh kiểm kê thiếu", icon: "📋" },
+                  ].map(({ label, icon }) => (
+                    <button
+                      className={reason === label ? "selected" : ""}
+                      type="button"
+                      onClick={() => setReason(label)}
+                      key={label}
+                      role="radio"
+                      aria-checked={reason === label}
+                    >
+                      <span className="seg-icon">{icon}</span>
+                      <span className="seg-label">{label}</span>
+                    </button>
+                  ))}
                 </div>
                 <label className="full-label">
                   Mô tả tình trạng / ghi chú
-                  <input
+                  {reason === "Hủy hàng hỏng" && (
+                    <span className="required-hint">* Bắt buộc khi hủy hàng</span>
+                  )}
+                  <textarea
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                     required={reason === "Hủy hàng hỏng"}
-                    placeholder="Sữa lỗi bị nháp hộp, hết hạn sử dụng..."
+                    placeholder="Ví dụ: sữa bị nháp hộp, hết hạn sử dụng, bao bì rách..."
+                    rows={3}
                   />
                 </label>
               </>
@@ -904,7 +940,7 @@ function StockDocument({ type, title }) {
                 );
                 return (
                   <tr key={voucher.id}>
-                    <td><strong>{voucher.id}</strong></td>
+                    <td><strong>{voucher.MaPN || voucher.MaPX || voucher.id}</strong></td>
                     <td>{voucher.NgayNhap || voucher.NgayXuat}</td>
                     <td>
                       {isReceipt
@@ -972,11 +1008,14 @@ function SalesPage({ title }) {
   const [customers, setCustomers] = useState([]);
   const [cart, setCart] = useState([]);
   const [customerId, setCustomerId] = useState("");
+  const [customerError, setCustomerError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     listRecords("products").then(setProducts);
-    listRecords("customers").then(setCustomers);
+    listRecords("customers")
+      .then(setCustomers)
+      .catch((error) => setCustomerError(error.message || "Không tải được danh sách khách hàng"));
   }, []);
 
   const total = cart.reduce(
@@ -993,6 +1032,15 @@ function SalesPage({ title }) {
   );
 
   function add(product) {
+    if (Number(product.stock ?? 0) <= 0) {
+      toast("Sản phẩm đã hết tồn kho");
+      return;
+    }
+    const existing = cart.find((item) => item.id === product.id);
+    if (existing && existing.quantity >= Number(product.stock || 0)) {
+      toast("Số lượng bán không được vượt tồn kho");
+      return;
+    }
     setCart((current) =>
       current.some((item) => item.id === product.id)
         ? current.map((item) =>
@@ -1008,14 +1056,23 @@ function SalesPage({ title }) {
   function changeQty(id, delta) {
     setCart((current) => {
       const updated = current.map((item) =>
-        item.id === id ? { ...item, quantity: item.quantity + delta } : item
+        item.id === id
+          ? { ...item, quantity: Math.min(item.stock === undefined ? Infinity : Number(item.stock), item.quantity + delta) }
+          : item
       );
+      if (delta > 0 && updated.some((item) => item.id === id && item.quantity >= (item.stock === undefined ? Infinity : Number(item.stock)))) {
+        const currentItem = current.find((item) => item.id === id);
+        if (currentItem && currentItem.quantity >= (currentItem.stock === undefined ? Infinity : Number(currentItem.stock))) {
+          toast("Số lượng bán không được vượt tồn kho");
+        }
+      }
       return updated.filter((item) => item.quantity > 0);
     });
   }
 
   async function submitSale() {
     if (!cart.length) return toast("Giỏ hàng đang trống");
+    if (!customerId) return toast("Vui lòng chọn khách hàng trước khi lập hóa đơn");
     try {
       await saveRecord("sales-orders", {
         customerId: customerId || null,
@@ -1084,31 +1141,37 @@ function SalesPage({ title }) {
 
         {/* Cart panel */}
         <aside className="cart-panel" aria-label="Giỏ hàng">
-          <label>
-            Khách hàng
+          <label className="field" style={{ marginBottom: 14 }}>
+            <strong>Khách hàng *</strong>
             <select
               value={customerId}
               onChange={(e) => setCustomerId(e.target.value)}
+              required
             >
-              <option value="">Khách lẻ</option>
+              <option value="">Chọn khách hàng</option>
               {customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
-                  {customer.HoTen} · {customer.SDT}
+                  {customer.MaKH || customer.id} · {customer.HoTen} · {customer.SDT}
                 </option>
               ))}
             </select>
+            {customerError && <small className="text-danger">{customerError}</small>}
           </label>
 
           <div style={{ margin: "10px 0" }}>
             {cart.length > 0 ? (
               cart.map((item) => (
                 <article className="cart-item" key={item.id}>
-                  <span className="nm">{item.TenSP}</span>
+                  <div className="nm">
+                    <strong>{item.TenSP}</strong>
+                    <small>{item.quantity} x {money.format(item.GiaBan)}</small>
+                  </div>
                   <div className="qty-ctrl">
                     <button type="button" onClick={() => changeQty(item.id, -1)} aria-label="Giảm">−</button>
                     <span>{item.quantity}</span>
                     <button type="button" onClick={() => changeQty(item.id, 1)} aria-label="Tăng">+</button>
                   </div>
+                  <strong>{money.format(item.quantity * item.GiaBan)}</strong>
                 </article>
               ))
             ) : (
@@ -1153,6 +1216,7 @@ function InvoicePage({ title }) {
   const [invoices, setInvoices] = useState([]);
   const [payModal, setPayModal] = useState(null);
   const [payMethod, setPayMethod] = useState("Tiền mặt");
+  const [payAmount, setPayAmount] = useState(0);
 
   useEffect(() => {
     listRecords("invoices").then(setInvoices);
@@ -1160,16 +1224,24 @@ function InvoicePage({ title }) {
 
   async function pay() {
     if (!payModal) return;
+    const remaining = Math.max(0, Number(payModal.SoTienConLai ?? payModal.TongTien));
+    const amount = Number(payAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > remaining) {
+      toast(`Số tiền phải lớn hơn 0 và không vượt ${money.format(remaining)}`);
+      return;
+    }
     try {
       await saveRecord("payments", {
         invoiceId: payModal.id,
-        amount: payModal.TongTien,
+        amount,
         method: payMethod,
         NgayThanhToan: new Date().toISOString().slice(0, 10),
       });
       setInvoices((current) =>
         current.map((inv) =>
-          inv.id === payModal.id ? { ...inv, TrangThai: "Đã thanh toán" } : inv
+          inv.id === payModal.id
+            ? { ...inv, SoTienDaTra: Number(inv.SoTienDaTra || 0) + amount, SoTienConLai: remaining - amount, TrangThai: amount >= remaining ? "Đã thanh toán" : "Thanh toán một phần" }
+            : inv
         )
       );
       setPayModal(null);
@@ -1196,6 +1268,8 @@ function InvoicePage({ title }) {
               <th scope="col">Đơn hàng</th>
               <th scope="col">Ngày lập</th>
               <th scope="col">Tổng tiền</th>
+              <th scope="col">Đã trả</th>
+              <th scope="col">Còn nợ</th>
               <th scope="col">Trạng thái</th>
               <th scope="col"></th>
             </tr>
@@ -1203,17 +1277,19 @@ function InvoicePage({ title }) {
           <tbody>
             {invoices.map((invoice) => (
               <tr key={invoice.id}>
-                <td><strong>{invoice.id}</strong></td>
-                <td>{invoice.MaDH}</td>
+                <td><strong>{invoice.MaHD || invoice.id}</strong></td>
+                <td>{invoice.MaDHCode || invoice.MaDH || "—"}</td>
                 <td>{invoice.NgayLap}</td>
                 <td>{money.format(invoice.TongTien || 0)}</td>
+                <td>{money.format(invoice.SoTienDaTra || 0)}</td>
+                <td>{money.format(invoice.SoTienConLai ?? invoice.TongTien ?? 0)}</td>
                 <td><StatusBadge status={invoice.TrangThai} /></td>
                 <td>
                   {invoice.TrangThai !== "Đã thanh toán" && (
                     <button
                       className="btn btn-accent btn-sm"
                       type="button"
-                      onClick={() => setPayModal(invoice)}
+                      onClick={() => { setPayModal(invoice); setPayAmount(Number(invoice.SoTienConLai ?? invoice.TongTien)); }}
                     >
                       Ghi nhận thanh toán
                     </button>
@@ -1223,7 +1299,7 @@ function InvoicePage({ title }) {
             ))}
             {!invoices.length && (
               <tr>
-                <td colSpan={6} style={{ textAlign: "center", color: "var(--text-faint)", padding: 32 }}>
+                <td colSpan={8} style={{ textAlign: "center", color: "var(--text-faint)", padding: 32 }}>
                   Chưa có hóa đơn nào
                 </td>
               </tr>
@@ -1240,12 +1316,17 @@ function InvoicePage({ title }) {
         submitLabel="Xác nhận thanh toán"
       >
         <div className="field">
-          <label htmlFor="pay-amount">Số tiền cần thu</label>
+          <label htmlFor="pay-amount">Số tiền thanh toán</label>
           <input
             id="pay-amount"
-            value={payModal ? money.format(payModal.TongTien) : ""}
-            disabled
+            type="number"
+            min="1"
+            max={payModal ? Number(payModal.SoTienConLai ?? payModal.TongTien) : undefined}
+            value={payAmount}
+            onChange={(event) => setPayAmount(event.target.value)}
+            required
           />
+          <small>Còn nợ: {money.format(payModal ? Number(payModal.SoTienConLai ?? payModal.TongTien) : 0)}</small>
         </div>
         <div className="field">
           <label htmlFor="pay-method">Phương thức thanh toán</label>
@@ -1445,10 +1526,10 @@ function ReturnPage({ title }) {
           <tbody>
             {returns.map((r) => (
               <tr key={r.id}>
-                <td><strong>{r.id}</strong></td>
-                <td>{products.find((p) => p.id === r.productId)?.TenSP || r.productId}</td>
-                <td>{r.quantity}</td>
-                <td>{r.reason}</td>
+                <td><strong>{r.MaPTH || r.id}</strong></td>
+                <td>{r.details?.map((line) => line.TenSP || products.find((p) => String(p.id) === String(line.MaSP))?.TenSP || line.MaSPCode).join(", ") || "—"}</td>
+                <td>{r.SoLuong || r.details?.reduce((sum, line) => sum + Number(line.SoLuong || line.quantity || 0), 0) || 0}</td>
+                <td>{r.LyDo || r.reason || "—"}</td>
                 <td>{r.NgayTra}</td>
                 <td><StatusBadge status={r.TrangThai} /></td>
               </tr>
@@ -1612,7 +1693,7 @@ function ReportPage({ title }) {
               {receipts.map((si) => (
                 <tr key={si.id}>
                   <td><Badge variant="green">Nhập kho</Badge></td>
-                  <td>{si.id}</td>
+                  <td>{si.MaPN || si.id}</td>
                   <td>{si.NgayNhap}</td>
                   <td>{si.details?.length || 0} mặt hàng</td>
                 </tr>
@@ -1620,7 +1701,7 @@ function ReportPage({ title }) {
               {issues.map((so) => (
                 <tr key={so.id}>
                   <td><Badge variant="amber">Xuất kho</Badge></td>
-                  <td>{so.id}</td>
+                  <td>{so.MaPX || so.id}</td>
                   <td>{so.NgayXuat}</td>
                   <td>{so.LyDoXuat}</td>
                 </tr>
