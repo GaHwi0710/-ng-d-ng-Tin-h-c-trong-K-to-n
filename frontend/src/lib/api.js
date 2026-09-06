@@ -163,10 +163,34 @@ export async function listRecords(resource) {
 }
 export async function saveRecord(resource, record) {
   try {
-    const result = record.id && record.id.length === 24 ? await request(`${resource}/${record.id}`, { method: "PUT", body: JSON.stringify(record) }) : await request(resource, { method: "POST", body: JSON.stringify(record) });
+    const recordId = record.id || record._id;
+    const isMongoId = Boolean(recordId && typeof recordId === "string" && /^[0-9a-fA-F]{24}$/.test(recordId));
+    const result = isMongoId
+      ? await request(`${resource}/${recordId}`, { method: "PUT", body: JSON.stringify(record) })
+      : await request(resource, { method: "POST", body: JSON.stringify(record) });
     return result.data;
   } catch (error) {
     if (!USE_LOCAL_FALLBACK || !error.isNetworkError) throw error;
+    if (resource === "sales-orders") {
+      const orderCode = `DH-${Date.now()}`;
+      const invoiceCode = `HD-${Date.now() + 1}`;
+      const order = { ...record, id: orderCode, MaDH: orderCode, TrangThai: record.TrangThai || "Chờ xuất kho" };
+      const invoice = {
+        id: invoiceCode,
+        MaHD: invoiceCode,
+        MaDH: order.MaDH,
+        MaKH: record.customerId,
+        NgayLap: record.NgayDat,
+        TongTien: Number(record.TongTien || 0),
+        SoTienDaTra: 0,
+        SoTienConLai: Number(record.TongTien || 0),
+        TrangThai: "Chưa thanh toán",
+        details: record.items,
+      };
+      writeLocal(resource, [...readLocal(resource), order]);
+      writeLocal("invoices", [...readLocal("invoices"), invoice]);
+      return { order, invoice };
+    }
     const data = readLocal(resource);
     const next = record.id ? data.map((item) => item.id === record.id ? record : item) : [...data, { ...record, id: `${resource}-${Date.now()}` }];
     writeLocal(resource, next);

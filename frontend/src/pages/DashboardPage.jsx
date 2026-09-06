@@ -26,6 +26,8 @@ export function DashboardPage() {
     debts: [],
     revenue: { weekly: [] },
   });
+  const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     Promise.all([
@@ -36,8 +38,9 @@ export function DashboardPage() {
       getReport("revenue"),
     ]).then(([products, orders, invoices, debts, revenue]) =>
       setData({ products, orders, invoices, debts, revenue })
-    );
-  }, []);
+    ).then(() => setLoadError(""))
+      .catch((error) => setLoadError(error.message || "Không tải được dữ liệu từ máy chủ"));
+  }, [reloadKey]);
 
   const totalRevenue = data.invoices
     .filter((inv) => inv.TrangThai === "Đã thanh toán")
@@ -104,6 +107,13 @@ export function DashboardPage() {
           </p>
         </hgroup>
       </header>
+
+      {loadError && (
+        <div className="alert danger" role="alert" style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
+          <span>Không tải được dữ liệu: {loadError}</span>
+          <button className="btn btn-sm" type="button" onClick={() => setReloadKey((current) => current + 1)}>Tải lại</button>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div className="stats-grid">

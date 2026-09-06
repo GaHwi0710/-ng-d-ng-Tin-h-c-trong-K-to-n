@@ -17,13 +17,16 @@ const fail = (message, status = 400) => Object.assign(new Error(message), { stat
 async function productsByLines(lines) {
   const products = getDatabase().collection("SanPham");
   const result = [];
+  if (!Array.isArray(lines)) throw fail("Danh sách sản phẩm không hợp lệ");
   for (const line of lines || []) {
     const productFilter = id(line.productId) || id(line.id) ? { _id: id(line.productId) || id(line.id) } : { MaSP: line.MaSP };
     const product = await products.findOne(productFilter);
     if (!product) throw fail(`Không tìm thấy sản phẩm ${line.productId || line.MaSP}`, 404);
     const quantity = Number(line.quantity || line.SoLuong);
     if (!Number.isInteger(quantity) || quantity <= 0) throw fail("Số lượng phải là số nguyên dương");
-    result.push({ product, quantity, price: Number(line.price ?? line.DonGia ?? product.GiaNhap ?? product.GiaBan ?? 0) });
+    const price = Number(line.price ?? line.DonGia ?? product.GiaBan);
+    if (!Number.isFinite(price) || price < 0) throw fail(`Đơn giá của ${product.TenSP} không hợp lệ`);
+    result.push({ product, quantity, price });
   }
   if (!result.length) throw fail("Chứng từ phải có ít nhất một sản phẩm");
   return result;
@@ -51,11 +54,17 @@ router.post("/goods-receipts", allowRoles("QuanLy", "NhanVienKho", "NhanVienMuaH
     const lines = await productsByLines(req.body.details || req.body.items);
     const supplier = await getDatabase().collection("NhaCungCap").findOne({ _id: id(req.body.supplierId || req.body.MaNCC) });
     if (!supplier) throw fail("Nhà cung cấp không hợp lệ", 404);
+    const purchaseOrderId = id(req.body.purchaseOrderId || req.body.MaDDH);
+    if (!purchaseOrderId) throw fail("Phiếu nhập phải liên kết với đơn đặt hàng NCC");
+    const purchaseOrder = await getDatabase().collection("DonDatHang").findOne({ _id: purchaseOrderId });
+    if (!purchaseOrder || String(purchaseOrder.MaNCC) !== String(supplier._id)) throw fail("Đơn đặt hàng NCC không hợp lệ", 404);
+    if (req.body.NgayNhap && !/^\d{4}-\d{2}-\d{2}$/.test(req.body.NgayNhap)) throw fail("Ngày nhập không hợp lệ");
     const total = lines.reduce((sum, line) => sum + line.quantity * line.price, 0);
     const created = await withTransaction(async (session) => {
       await adjustStock(lines, 1, false, session);
       const document = {
       MaPN: await nextBusinessCode(getDatabase().collection("PhieuNhap"), "PhieuNhap"),
+      MaDDH: purchaseOrderId,
       MaNCC: supplier._id,
       MaNV: req.user.id,
       NgayNhap: req.body.NgayNhap || today(),
@@ -82,6 +91,21 @@ router.post("/goods-receipts", allowRoles("QuanLy", "NhanVienKho", "NhanVienMuaH
       createdAt: new Date(),
       };
       const result = await getDatabase().collection("PhieuNhap").insertOne(document, { session });
+      const debtCollection = getDatabase().collection("CongNo");
+      await debtCollection.insertOne({
+        MaCN: await nextBusinessCode(debtCollection, "CongNo"),
+        MaNCC: supplier._id,
+        MaDDH: purchaseOrderId,
+        MaPN: result.insertedId,
+        LoaiCongNo: "Nhà cung cấp",
+        NgayPhatSinh: document.NgayNhap,
+        SoTien: total,
+        SoTienDaTra: 0,
+        SoTienConLai: total,
+        TrangThai: "Còn nợ",
+        createdAt: new Date(),
+      }, { session });
+      await getDatabase().collection("DonDatHang").updateOne({ _id: purchaseOrderId }, { $set: { TrangThai: "Đã nhập kho", updatedAt: new Date() } }, { session });
       return serialize({ _id: result.insertedId, ...document });
     });
     res.status(201).json({ data: created, message: "Đã nhập kho và cập nhật tồn kho" });
@@ -134,6 +158,7 @@ router.post("/goods-issues", allowRoles("QuanLy", "NhanVienKho"), async (req, re
 router.post("/sales-orders", allowRoles("QuanLy", "NhanVienBanHang"), async (req, res, next) => {
   try {
     const lines = await productsByLines(req.body.items || req.body.details);
+    if (req.body.NgayDat && !/^\d{4}-\d{2}-\d{2}$/.test(req.body.NgayDat)) throw fail("Ngày bán không hợp lệ");
     const customerId = id(req.body.customerId || req.body.MaKH);
     if (req.body.customerId || req.body.MaKH) {
       const customer = await getDatabase().collection("KhachHang").findOne({ _id: customerId });
@@ -213,7 +238,7 @@ router.post("/stocktakes", allowRoles("QuanLy", "NhanVienKho"), async (req, res,
       await getDatabase().collection("SanPham").updateOne({ _id: product._id }, { $set: { stock: actual } }, { session });
     }
     if (!items.length) throw fail("Phiếu kiểm kê phải có sản phẩm");
-      const document = { MaKK: await nextBusinessCode(getDatabase().collection("KiemKe"), "KiemKe"), MaNV: req.user.id, NgayKiemKe: today(), GhiChu: req.body.note || "Kiểm kê kho", details: items, createdAt: new Date() };
+      const document = { MaKK: await nextBusinessCode(getDatabase().collection("KiemKe"), "KiemKe"), MaNV: req.user.id, NgayKiemKe: req.body.NgayKiemKe || today(), GhiChu: req.body.note || "Kiểm kê kho", details: items, createdAt: new Date(), updatedAt: new Date() };
       const result = await getDatabase().collection("KiemKe").insertOne(document, { session });
       return serialize({ _id: result.insertedId, ...document });
     });
@@ -225,12 +250,20 @@ router.post("/returns", allowRoles("QuanLy", "NhanVienBanHang"), async (req, res
   try {
     const lines = await productsByLines(req.body.items || [req.body]);
     const orderId = id(req.body.orderId || req.body.MaDH);
-    const customerId = id(req.body.customerId || req.body.MaKH);
+    if (!orderId) throw fail("Phiếu trả hàng phải liên kết với đơn hàng");
+    const order = await getDatabase().collection("DonHang").findOne({ _id: orderId });
+    if (!order) throw fail("Đơn hàng liên kết không tồn tại", 404);
+    const customerId = id(req.body.customerId || req.body.MaKH) || order.MaKH || null;
     if (req.body.customerId || req.body.MaKH) {
       const customer = await getDatabase().collection("KhachHang").findOne({ _id: customerId });
       if (!customer) throw fail("Khách hàng không tồn tại", 404);
     }
-    const document = { MaPTH: await nextBusinessCode(getDatabase().collection("PhieuTraHang"), "PhieuTraHang"), MaDH: orderId, MaKH: customerId, MaNV: req.user.id, NgayTra: today(), LyDo: req.body.reason || req.body.LyDo, TrangThai: "Đã xử lý", SoLuong: lines.reduce((sum, line) => sum + line.quantity, 0), details: lines.map((line) => ({ MaSP: line.product._id, TenSP: line.product.TenSP, SoLuong: line.quantity, DonGia: line.price, ThanhTien: line.quantity * line.price })), createdAt: new Date() };
+    const invoice = await getDatabase().collection("HoaDon").findOne({ MaDH: orderId });
+    const orderLines = new Map((order.details || []).map((line) => [String(line.MaSP), Number(line.SoLuong || 0)]));
+    for (const line of lines) {
+      if (!orderLines.has(String(line.product._id)) || line.quantity > orderLines.get(String(line.product._id))) throw fail(`${line.product.TenSP} không thuộc đơn hàng hoặc vượt số lượng đã bán`);
+    }
+    const document = { MaPTH: await nextBusinessCode(getDatabase().collection("PhieuTraHang"), "PhieuTraHang"), MaDH: orderId, MaHD: invoice?._id || null, MaKH: customerId, MaNV: req.user.id, NgayTra: today(), LyDo: req.body.reason || req.body.LyDo, TrangThai: "Đã xử lý", SoLuong: lines.reduce((sum, line) => sum + line.quantity, 0), details: lines.map((line) => ({ MaSP: line.product._id, TenSP: line.product.TenSP, SoLuong: line.quantity, DonGia: line.price, ThanhTien: line.quantity * line.price })), createdAt: new Date(), updatedAt: new Date() };
     const created = await withTransaction(async (session) => {
       await adjustStock(lines, 1, false, session);
       const result = await getDatabase().collection("PhieuTraHang").insertOne(document, { session });
@@ -240,7 +273,7 @@ router.post("/returns", allowRoles("QuanLy", "NhanVienBanHang"), async (req, res
   } catch (error) { next(error); }
 });
 
-router.get("/inventory", allowRoles("QuanLy", "NhanVienKho"), async (_req, res, next) => { try { const products = await getDatabase().collection("SanPham").find().sort({ TenSP: 1 }).toArray(); const stocks = await getDatabase().collection("TonKho").find().toArray(); const byProduct = new Map(stocks.map((stock) => [stock.MaSP.toString(), stock.SoLuongTon])); res.json({ data: products.map((product) => ({ ...serialize(product), stock: Number(byProduct.get(product._id.toString()) ?? product.stock ?? 0) })) }); } catch (error) { next(error); } });
+router.get("/inventory", allowRoles("QuanLy", "NhanVienKho"), async (_req, res, next) => { try { const products = await getDatabase().collection("SanPham").find().sort({ TenSP: 1 }).toArray(); const stocks = await getDatabase().collection("TonKho").find().toArray(); const byProduct = new Map(stocks.map((stock) => [stock.MaSP.toString(), stock])); res.json({ data: products.map((product) => ({ ...serialize(product), stock: Number(byProduct.get(product._id.toString())?.SoLuongTon ?? product.stock ?? 0), stockUpdatedAt: byProduct.get(product._id.toString())?.updatedAt || byProduct.get(product._id.toString())?.NgayCapNhat || null })) }); } catch (error) { next(error); } });
 router.get("/reports/revenue", allowRoles("QuanLy", "KeToan"), async (_req, res, next) => {
   try {
     const formatDate = (date) => {

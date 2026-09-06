@@ -17,11 +17,15 @@ function validateRecord(tableName, body) {
   const required = {
     KhachHang: ["HoTen"],
     NhaCungCap: ["TenNCC"],
-    SanPham: ["TenSP"],
+    SanPham: ["MaSP", "TenSP", "MaLoai", "DonViTinh", "GiaNhap", "GiaBan", "TrangThai"],
     LoaiHang: ["TenLoai"],
   }[tableName] || [];
   if (required.some((field) => !String(body[field] || "").trim())) return "Vui lòng nhập đủ các trường bắt buộc";
   if (body.Email && !/^\S+@\S+\.\S+$/.test(body.Email)) return "Email không hợp lệ";
+  if (body.SDT && !/^0\d{9,10}$/.test(String(body.SDT).trim())) return "Số điện thoại phải gồm 10-11 chữ số và bắt đầu bằng 0";
+  if (tableName === "SanPham" && !["Đang bán", "Ngừng bán"].includes(body.TrangThai)) return "Trạng thái sản phẩm không hợp lệ";
+  if (tableName === "KhuyenMai" && Number(body.PhanTramGiam) > 100) return "Phần trăm giảm không được vượt quá 100";
+  if (body.NgayBatDau && body.NgayKetThuc && String(body.NgayBatDau) > String(body.NgayKetThuc)) return "Ngày bắt đầu không được sau ngày kết thúc";
   for (const field of ["GiaNhap", "GiaBan", "DiemTichLuy", "PhanTramGiam", "SoTien", "SoTienDaTra", "SoTienConLai"]) {
     if (body[field] !== undefined && (!Number.isFinite(Number(body[field])) || Number(body[field]) < 0)) return `${field} phải là số không âm`;
   }
@@ -41,14 +45,20 @@ async function serializeRecord(tableName, document) {
       { field: "MaKH", table: "KhachHang", code: "MaKH", output: "MaKHCode" },
       { field: "MaHD", table: "HoaDon", code: "MaHD", output: "MaHDCode" },
     ],
-    PhieuTraHang: [{ field: "MaDH", table: "DonHang", code: "MaDH", output: "MaDHCode" }],
+    PhieuTraHang: [
+      { field: "MaDH", table: "DonHang", code: "MaDH", output: "MaDHCode" },
+      { field: "MaKH", table: "KhachHang", code: "MaKH", output: "MaKHCode" },
+      { field: "MaHD", table: "HoaDon", code: "MaHD", output: "MaHDCode" },
+    ],
     SanPham: [{ field: "MaLoai", table: "LoaiHang", code: "MaLoai", output: "MaLoaiCode", name: "TenLoai", nameOutput: "LoaiHang" }],
   }[tableName] || [];
   for (const reference of references) {
     if (!ObjectId.isValid(record[reference.field])) continue;
+    const projection = { [reference.code]: 1 };
+    if (reference.name) projection[reference.name] = 1;
     const linked = await getDatabase().collection(reference.table).findOne(
       { _id: new ObjectId(record[reference.field]) },
-      { projection: { [reference.code]: 1 } },
+      { projection },
     );
     if (linked?.[reference.code]) record[reference.output] = linked[reference.code];
     if (linked?.[reference.name]) record[reference.nameOutput] = linked[reference.name];
@@ -92,12 +102,49 @@ export function createCrudModule(routeName, tableName) {
 
   router.post("/", async (req, res, next) => {
     try {
+      if (tableName === "CongNo") return res.status(405).json({ message: "Công nợ chỉ được phát sinh từ phiếu nhập hoặc hóa đơn" });
       const collection = getDatabase().collection(tableName);
       const body = { ...req.body };
-      if (tableName === "DonDatHang" || tableName === "SanPham") {
-        const field = tableName === "DonDatHang" ? "MaNCC" : "MaLoai";
-        if (!ObjectId.isValid(body[field])) return res.status(400).json({ message: tableName === "DonDatHang" ? "Nhà cung cấp không hợp lệ" : "Loại hàng không hợp lệ" });
-        body[field] = new ObjectId(body[field]);
+      if (tableName === "SanPham") {
+        let catDoc = null;
+        if (ObjectId.isValid(body.MaLoai)) {
+          catDoc = await getDatabase().collection("LoaiHang").findOne({ _id: new ObjectId(body.MaLoai) });
+        }
+        if (!catDoc && body.LoaiHang) {
+          catDoc = await getDatabase().collection("LoaiHang").findOne({
+            TenLoai: { $regex: new RegExp(`^${String(body.LoaiHang).trim()}$`, "i") }
+          });
+        }
+        if (!catDoc && body.MaLoai) {
+          catDoc = await getDatabase().collection("LoaiHang").findOne({
+            TenLoai: { $regex: new RegExp(`^${String(body.MaLoai).trim()}$`, "i") }
+          });
+        }
+        if (catDoc) {
+          body.MaLoai = catDoc._id;
+          body.LoaiHang = catDoc.TenLoai;
+        } else {
+          return res.status(400).json({ message: "Loại hàng không hợp lệ" });
+        }
+      } else if (tableName === "DonDatHang") {
+        if (!ObjectId.isValid(body.MaNCC)) return res.status(400).json({ message: "Nhà cung cấp không hợp lệ" });
+        body.MaNCC = new ObjectId(body.MaNCC);
+      }
+      if (tableName === "DonDatHang") {
+        const lines = body.items || body.details;
+        if (!Array.isArray(lines) || !lines.length) return res.status(400).json({ message: "Đơn đặt hàng phải có ít nhất một sản phẩm" });
+        const products = getDatabase().collection("SanPham");
+        let total = 0;
+        for (const line of lines) {
+          const productId = parseId(line.productId || line.id || line.MaSP);
+          const quantity = Number(line.quantity || line.SoLuong);
+          const price = Number(line.price ?? line.DonGia);
+          if (!productId || !await products.findOne({ _id: productId })) return res.status(400).json({ message: "Sản phẩm trong đơn đặt hàng không hợp lệ" });
+          if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0) return res.status(400).json({ message: "Số lượng và đơn giá đặt hàng không hợp lệ" });
+          total += quantity * price;
+        }
+        body.items = lines;
+        body.TongTien = total;
       }
       const validation = validateRecord(tableName, body);
       if (validation) return res.status(400).json({ message: validation });
@@ -123,16 +170,49 @@ export function createCrudModule(routeName, tableName) {
 
   router.put("/:id", async (req, res, next) => {
     try {
-      const validation = validateRecord(tableName, req.body);
-      if (validation) return res.status(400).json({ message: validation });
+      if (tableName === "CongNo") return res.status(405).json({ message: "Công nợ chỉ được cập nhật qua nghiệp vụ thanh toán" });
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ message: "ID khong hop le" });
       const update = { ...req.body, updatedAt: new Date() };
-      if (tableName === "DonDatHang" || tableName === "SanPham") {
-        const field = tableName === "DonDatHang" ? "MaNCC" : "MaLoai";
-        if (!ObjectId.isValid(update[field])) return res.status(400).json({ message: tableName === "DonDatHang" ? "Nhà cung cấp không hợp lệ" : "Loại hàng không hợp lệ" });
-        update[field] = new ObjectId(update[field]);
+      if (tableName === "SanPham") {
+        let catDoc = null;
+        if (ObjectId.isValid(update.MaLoai)) {
+          catDoc = await getDatabase().collection("LoaiHang").findOne({ _id: new ObjectId(update.MaLoai) });
+        }
+        if (!catDoc && update.LoaiHang) {
+          catDoc = await getDatabase().collection("LoaiHang").findOne({
+            TenLoai: { $regex: new RegExp(`^${String(update.LoaiHang).trim()}$`, "i") }
+          });
+        }
+        if (!catDoc && update.MaLoai) {
+          catDoc = await getDatabase().collection("LoaiHang").findOne({
+            TenLoai: { $regex: new RegExp(`^${String(update.MaLoai).trim()}$`, "i") }
+          });
+        }
+        if (catDoc) {
+          update.MaLoai = catDoc._id;
+          update.LoaiHang = catDoc.TenLoai;
+        } else {
+          return res.status(400).json({ message: "Loại hàng không hợp lệ" });
+        }
+      } else if (tableName === "DonDatHang") {
+        if (!ObjectId.isValid(update.MaNCC)) return res.status(400).json({ message: "Nhà cung cấp không hợp lệ" });
+        update.MaNCC = new ObjectId(update.MaNCC);
       }
+      if (tableName === "DonDatHang") {
+        const lines = update.items || update.details;
+        if (!Array.isArray(lines) || !lines.length) return res.status(400).json({ message: "Đơn đặt hàng phải có ít nhất một sản phẩm" });
+        update.TongTien = lines.reduce((sum, line) => sum + Number(line.quantity || line.SoLuong) * Number(line.price ?? line.DonGia), 0);
+      }
+      const validation = validateRecord(tableName, update);
+      if (validation) return res.status(400).json({ message: validation });
+      const definition = getCodeDefinition(tableName);
+      if (definition && update[definition.field]) {
+        const duplicate = await getDatabase().collection(tableName).findOne({ [definition.field]: update[definition.field], _id: { $ne: id } });
+        if (duplicate) return res.status(409).json({ message: `${update[definition.field]} đã tồn tại` });
+      }
+      delete update.id;
+      delete update._id;
       const result = await getDatabase().collection(tableName).findOneAndUpdate(
         { _id: id },
         { $set: update },
@@ -147,6 +227,8 @@ export function createCrudModule(routeName, tableName) {
 
   router.delete("/:id", async (req, res, next) => {
     try {
+      if (tableName === "SanPham") return res.status(409).json({ message: "Không được xóa sản phẩm vì sản phẩm đã liên kết với chứng từ. Hãy chuyển trạng thái sang Ngừng bán" });
+      if (tableName === "CongNo") return res.status(405).json({ message: "Công nợ chỉ được phát sinh từ nghiệp vụ và ghi nhận thanh toán" });
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ message: "ID khong hop le" });
       const result = await getDatabase().collection(tableName).deleteOne({ _id: id });
