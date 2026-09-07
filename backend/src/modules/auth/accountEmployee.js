@@ -7,11 +7,19 @@ const roleNames = {
   NhanVienKho: "Nhân viên kho",
   NhanVienMuaHang: "Nhân viên mua hàng",
 };
+const roleCodes = {
+  QuanLy: 1,
+  NhanVienBanHang: 2,
+  NhanVienKho: 3,
+  KeToan: 4,
+  NhanVienMuaHang: 5,
+};
 
 export function employeeFromAccount(account) {
   return {
     username: account.username,
     HoTen: account.fullName,
+    MaVaiTro: roleCodes[account.role] || roleCodes.NhanVienBanHang,
     VaiTro: roleNames[account.role] || roleNames.NhanVienBanHang,
     TrangThai: account.status === "disabled" ? "Đã nghỉ việc" : "Đang làm việc",
     createdAt: account.createdAt || new Date(),

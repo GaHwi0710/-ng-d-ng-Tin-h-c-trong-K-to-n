@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import { getDatabase, withTransaction } from "../../config/mongodb.js";
 import { allowRoles } from "../../common/middlewares/role.middleware.js";
 import { nextBusinessCode } from "../shared/businessCode.js";
+import { replaceDetails } from "../shared/detailCollections.js";
 
 const router = Router();
 const today = () => new Date().toISOString().slice(0, 10);
@@ -91,12 +92,14 @@ router.post("/goods-receipts", allowRoles("QuanLy", "NhanVienKho", "NhanVienMuaH
       createdAt: new Date(),
       };
       const result = await getDatabase().collection("PhieuNhap").insertOne(document, { session });
+      await replaceDetails(getDatabase(), "CT_PhieuNhap", result.insertedId, document.details, session);
       const debtCollection = getDatabase().collection("CongNo");
       await debtCollection.insertOne({
         MaCN: await nextBusinessCode(debtCollection, "CongNo"),
         MaNCC: supplier._id,
         MaDDH: purchaseOrderId,
         MaPN: result.insertedId,
+          MaNV: req.user.id,
         LoaiCongNo: "Nhà cung cấp",
         NgayPhatSinh: document.NgayNhap,
         SoTien: total,
@@ -149,6 +152,7 @@ router.post("/goods-issues", allowRoles("QuanLy", "NhanVienKho"), async (req, re
       createdAt: new Date(),
     };
       const result = await getDatabase().collection("PhieuXuat").insertOne(document, { session });
+    await replaceDetails(getDatabase(), "CT_PhieuXuat", result.insertedId, document.details, session);
       return serialize({ _id: result.insertedId, ...document });
     });
     res.status(201).json({ data: created, message: "Đã xuất kho và cập nhật tồn kho" });
@@ -169,8 +173,10 @@ router.post("/sales-orders", allowRoles("QuanLy", "NhanVienBanHang"), async (req
       await adjustStock(lines, -1, false, session);
       const order = { MaDH: await nextBusinessCode(getDatabase().collection("DonHang"), "DonHang"), MaKH: customerId || null, MaNV: req.user.id, NgayDat: req.body.NgayDat || today(), TrangThai: "Chờ xuất kho", TongTien: total, details: lines.map((line) => ({ MaSP: line.product._id, SoLuong: line.quantity, DonGia: line.price, GiamGia: 0, ThanhTien: line.quantity * line.price })), createdAt: new Date() };
       const orderResult = await getDatabase().collection("DonHang").insertOne(order, { session });
+      await replaceDetails(getDatabase(), "CT_DonHang", orderResult.insertedId, order.details, session);
       const invoice = { MaHD: await nextBusinessCode(getDatabase().collection("HoaDon"), "HoaDon"), MaDH: orderResult.insertedId, MaKH: customerId || null, MaNV: req.user.id, NgayLap: today(), TongTien: total, SoTienDaTra: 0, SoTienConLai: total, TrangThai: "Chưa thanh toán", details: order.details, createdAt: new Date() };
       const invoiceResult = await getDatabase().collection("HoaDon").insertOne(invoice, { session });
+      await replaceDetails(getDatabase(), "CT_HoaDon", invoiceResult.insertedId, invoice.details, session);
       if (customerId) {
         const debtCollection = getDatabase().collection("CongNo");
         await debtCollection.insertOne({
@@ -178,6 +184,7 @@ router.post("/sales-orders", allowRoles("QuanLy", "NhanVienBanHang"), async (req
           MaKH: customerId,
           MaDH: orderResult.insertedId,
           MaHD: invoiceResult.insertedId,
+          MaNV: req.user.id,
           LoaiCongNo: "Khách hàng",
           NgayPhatSinh: today(),
           SoTien: total,
@@ -213,7 +220,7 @@ router.post("/payments", allowRoles("QuanLy", "KeToan", "NhanVienBanHang"), asyn
       if (invoice.MaKH) {
         await getDatabase().collection("CongNo").updateOne(
           { MaHD: invoiceId },
-          { $set: { MaKH: invoice.MaKH, MaDH: invoice.MaDH, MaHD: invoiceId, LoaiCongNo: "Khách hàng", SoTien: invoice.TongTien, SoTienDaTra: totalPaid, SoTienConLai: remainingAfterPayment, TrangThai: status === "Đã thanh toán" ? "Đã thanh toán" : "Còn nợ", updatedAt: new Date() }, $setOnInsert: { MaCN: await nextBusinessCode(getDatabase().collection("CongNo"), "CongNo"), NgayPhatSinh: invoice.NgayLap, createdAt: new Date() } },
+          { $set: { MaKH: invoice.MaKH, MaDH: invoice.MaDH, MaHD: invoiceId, MaNV: invoice.MaNV, LoaiCongNo: "Khách hàng", SoTien: invoice.TongTien, SoTienDaTra: totalPaid, SoTienConLai: remainingAfterPayment, TrangThai: status === "Đã thanh toán" ? "Đã thanh toán" : "Còn nợ", updatedAt: new Date() }, $setOnInsert: { MaCN: await nextBusinessCode(getDatabase().collection("CongNo"), "CongNo"), NgayPhatSinh: invoice.NgayLap, createdAt: new Date() } },
           { session, upsert: true },
         );
       }
@@ -240,6 +247,7 @@ router.post("/stocktakes", allowRoles("QuanLy", "NhanVienKho"), async (req, res,
     if (!items.length) throw fail("Phiếu kiểm kê phải có sản phẩm");
       const document = { MaKK: await nextBusinessCode(getDatabase().collection("KiemKe"), "KiemKe"), MaNV: req.user.id, NgayKiemKe: req.body.NgayKiemKe || today(), GhiChu: req.body.note || "Kiểm kê kho", details: items, createdAt: new Date(), updatedAt: new Date() };
       const result = await getDatabase().collection("KiemKe").insertOne(document, { session });
+      await replaceDetails(getDatabase(), "CT_KiemKe", result.insertedId, document.details, session);
       return serialize({ _id: result.insertedId, ...document });
     });
     res.status(201).json({ data: created, message: "Đã lưu kiểm kê và điều chỉnh tồn kho" });
@@ -267,6 +275,7 @@ router.post("/returns", allowRoles("QuanLy", "NhanVienBanHang"), async (req, res
     const created = await withTransaction(async (session) => {
       await adjustStock(lines, 1, false, session);
       const result = await getDatabase().collection("PhieuTraHang").insertOne(document, { session });
+      await replaceDetails(getDatabase(), "CT_PhieuTraHang", result.insertedId, document.details, session);
       return serializeReturn({ _id: result.insertedId, ...document, details: document.details.map((line) => ({ ...line, productCode: line.product.MaSP })) });
     });
     res.status(201).json({ data: created, message: "Đã ghi nhận trả hàng và cộng lại tồn kho" });

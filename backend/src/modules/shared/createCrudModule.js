@@ -2,6 +2,7 @@ import { Router } from "express";
 import { ObjectId } from "mongodb";
 import { getDatabase } from "../../config/mongodb.js";
 import { getCodeDefinition, nextBusinessCode } from "./businessCode.js";
+import { replaceDetails } from "./detailCollections.js";
 
 function parseId(id) {
   return ObjectId.isValid(id) ? new ObjectId(id) : null;
@@ -145,6 +146,7 @@ export function createCrudModule(routeName, tableName) {
         }
         body.items = lines;
         body.TongTien = total;
+        body.MaNV = body.MaNV || req.user.id;
       }
       const validation = validateRecord(tableName, body);
       if (validation) return res.status(400).json({ message: validation });
@@ -162,6 +164,8 @@ export function createCrudModule(routeName, tableName) {
         return res.status(409).json({ message: `${document[definition.field]} đã tồn tại` });
       }
       const result = await collection.insertOne(document);
+      if (tableName === "DonDatHang") await replaceDetails(getDatabase(), "CT_DonDatHang", result.insertedId, document.items || document.details);
+      if (tableName === "KhuyenMai") await replaceDetails(getDatabase(), "CT_KhuyenMai", result.insertedId, document.details || document.items);
       res.status(201).json({ table: tableName, data: await serializeRecord(tableName, { _id: result.insertedId, ...document }), message: `Tao moi ${routeName}` });
     } catch (error) {
       next(error);
@@ -219,6 +223,13 @@ export function createCrudModule(routeName, tableName) {
         { returnDocument: "after" }
       );
       if (!result) return res.status(404).json({ message: `Khong tim thay ${routeName}` });
+      if (tableName === "DonDatHang") await replaceDetails(getDatabase(), "CT_DonDatHang", id, (update.items || update.details || []).map((line) => ({
+        MaSP: line.MaSP || line.productId || line.id,
+        SoLuong: Number(line.SoLuong || line.quantity),
+        DonGia: Number(line.DonGia ?? line.price),
+        ThanhTien: Number(line.ThanhTien ?? (Number(line.SoLuong || line.quantity) * Number(line.DonGia ?? line.price))),
+      })));
+      if (tableName === "KhuyenMai") await replaceDetails(getDatabase(), "CT_KhuyenMai", id, update.details || update.items);
       res.json({ table: tableName, data: await serializeRecord(tableName, result), message: `Cap nhat ${routeName}` });
     } catch (error) {
       next(error);

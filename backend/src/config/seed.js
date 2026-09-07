@@ -2,9 +2,15 @@ import { ObjectId } from "mongodb";
 import { syncEmployee } from "../modules/auth/accountEmployee.js";
 import { hashPassword } from "../modules/auth/password.js";
 import { ensureBusinessCodes } from "../modules/shared/businessCode.js";
+import { backfillDetailCollections, ensureDetailCollections } from "../modules/shared/detailCollections.js";
 
 export async function seedDatabase(database) {
   const now = new Date();
+  await ensureDetailCollections(database);
+  for (const [roleCode, roleName] of [[1, "Quản lý"], [2, "Nhân viên bán hàng"], [3, "Nhân viên kho"], [4, "Kế toán"], [5, "Nhân viên mua hàng"]]) {
+    await database.collection("NhanVien").updateMany({ VaiTro: roleName }, { $set: { MaVaiTro: roleCode } });
+  }
+  await backfillDetailCollections(database);
   const adminAccount = {
     username: process.env.ADMIN_USERNAME || "admin",
     fullName: process.env.ADMIN_FULL_NAME || "Quản trị viên",
