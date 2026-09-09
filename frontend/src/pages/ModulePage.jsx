@@ -820,13 +820,13 @@ function StockDocument({ type, title }) {
     event.preventDefault();
     if (
       !selected.length ||
-      (isReceipt && (!supplierId || !purchaseOrderId)) ||
+      (isReceipt && !supplierId) ||
       (!isReceipt && invalid) ||
       (!isReceipt && reason === "Hủy hàng hỏng" && !note.trim())
     ) {
       setMessage(
         isReceipt
-          ? "Cần chọn đơn đặt hàng NCC, nhà cung cấp và ít nhất một sản phẩm."
+          ? "Cần chọn nhà cung cấp và ít nhất một sản phẩm."
           : "Không thể lưu: kiểm tra tồn kho hoặc nhập mô tả hàng hỏng."
       );
       return;
@@ -924,9 +924,9 @@ function StockDocument({ type, title }) {
                 </select>
               </div>
               <div className="field">
-                <label htmlFor="purchase-order-select">Đơn đặt hàng NCC *</label>
-                <select id="purchase-order-select" value={purchaseOrderId} onChange={(event) => setPurchaseOrderId(event.target.value)} required>
-                  <option value="">Chọn đơn đặt hàng liên quan</option>
+                <label htmlFor="purchase-order-select">Đơn đặt hàng NCC <small style={{fontWeight:400,color:'var(--text-faint)'}}>(tuỳ chọn)</small></label>
+                <select id="purchase-order-select" value={purchaseOrderId} onChange={(event) => setPurchaseOrderId(event.target.value)}>
+                  <option value="">-- Không liên kết đơn đặt hàng --</option>
                   {purchaseOrders.filter((order) => !supplierId || String(order.MaNCC) === String(supplierId)).map((order) => (
                     <option value={order.id} key={order.id}>{order.MaDDH || order.id} · {order.NgayDat || "Chưa có ngày"} · {money.format(order.TongTien || 0)}</option>
                   ))}
@@ -1338,7 +1338,6 @@ function SalesPage({ title }) {
 
   async function submitSale() {
     if (!cart.length) return toast("Giỏ hàng đang trống");
-    if (!customerId) return toast("Vui lòng chọn khách hàng trước khi lập hóa đơn");
     if (cart.some((item) => !Number.isInteger(Number(item.quantity)) || Number(item.quantity) <= 0)) return toast("Số lượng sản phẩm không hợp lệ");
     if (cart.some((item) => !Number.isFinite(Number(item.GiaBan)) || Number(item.GiaBan) < 0)) return toast("Giá bán sản phẩm không hợp lệ");
     try {
@@ -1456,13 +1455,12 @@ function SalesPage({ title }) {
           </div>
 
           <label className="field" style={{ margin: "14px 0 10px" }}>
-            <span style={{ fontWeight: 600, fontSize: 12.5 }}>Khách hàng *</span>
+            <span style={{ fontWeight: 600, fontSize: 12.5 }}>Khách hàng <small style={{fontWeight:400,color:'var(--text-faint)'}}>(tuỳ chọn)</small></span>
             <select
               value={customerId}
               onChange={(e) => setCustomerId(e.target.value)}
-              required
             >
-              <option value="">-- Chọn khách hàng --</option>
+              <option value="">-- Khách lẻ (không bắt buộc) --</option>
               {customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
                   {customer.MaKH || customer.id} · {customer.HoTen} ({customer.SDT || "Chưa có SĐT"})

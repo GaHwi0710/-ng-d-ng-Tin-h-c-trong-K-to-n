@@ -17,9 +17,9 @@ import { StatCard } from "../../components/StatCard.jsx";
 
 function getMemberTier(points = 0) {
   const pts = Number(points) || 0;
-  if (pts >= 3000) return { name: "Kim Cương", badgeClass: "tier-diamond", icon: "💎" };
-  if (pts >= 2000) return { name: "Hạng Vàng", badgeClass: "tier-gold", icon: "👑" };
-  if (pts >= 1000) return { name: "Hạng Bạc", badgeClass: "tier-silver", icon: "🥈" };
+  if (pts >= 1000) return { name: "Kim Cương", badgeClass: "tier-diamond", icon: "💎" };
+  if (pts >= 500) return { name: "Hạng Vàng", badgeClass: "tier-gold", icon: "👑" };
+  if (pts >= 100) return { name: "Hạng Bạc", badgeClass: "tier-silver", icon: "🥈" };
   return { name: "Hạng Đồng", badgeClass: "tier-bronze", icon: "🥉" };
 }
 
@@ -50,7 +50,7 @@ export function CustomersPage({ title, description }) {
 
   const stats = useMemo(() => {
     const total = customers.length;
-    const vipCount = customers.filter((c) => (Number(c.DiemTichLuy) || 0) >= 2000).length;
+    const vipCount = customers.filter((c) => (Number(c.DiemTichLuy) || 0) >= 500).length;
     const totalPoints = customers.reduce((sum, c) => sum + (Number(c.DiemTichLuy) || 0), 0);
     const avgPoints = total ? Math.round(totalPoints / total) : 0;
     return { total, vipCount, totalPoints, avgPoints };

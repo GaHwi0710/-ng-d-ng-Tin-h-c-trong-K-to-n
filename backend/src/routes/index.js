@@ -24,9 +24,26 @@ const permissions = {
 };
 
 for (const moduleConfig of modules) {
-  if (moduleConfig.path === "/auth") router.use(moduleConfig.path, moduleConfig.router);
-  else if (moduleConfig.path.startsWith("/admin")) router.use(moduleConfig.path, requireAuth, allowRoles("QuanLy"), moduleConfig.router);
-  else router.use(moduleConfig.path, requireAuth, permissions[moduleConfig.path] ? allowRoles(...permissions[moduleConfig.path]) : (_req, _res, next) => next(), moduleConfig.router);
+  if (moduleConfig.path === "/auth") {
+    router.use(moduleConfig.path, moduleConfig.router);
+  } else if (moduleConfig.path.startsWith("/admin")) {
+    router.use(moduleConfig.path, requireAuth, allowRoles("QuanLy"), moduleConfig.router);
+  } else if (moduleConfig.path === "/reports") {
+    router.use(moduleConfig.path, requireAuth, allowRoles("QuanLy", "KeToan"), moduleConfig.router);
+  } else {
+    router.use(
+      moduleConfig.path,
+      requireAuth,
+      permissions[moduleConfig.path]
+        ? (req, res, next) => {
+            // Cho phép tất cả nhân viên đã đăng nhập đọc dữ liệu (GET) để liên kết chéo
+            if (req.method === "GET") return next();
+            return allowRoles(...permissions[moduleConfig.path])(req, res, next);
+          }
+        : (_req, _res, next) => next(),
+      moduleConfig.router
+    );
+  }
 }
 
 export default router;

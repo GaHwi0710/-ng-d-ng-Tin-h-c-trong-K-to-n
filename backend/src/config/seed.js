@@ -11,28 +11,62 @@ export async function seedDatabase(database) {
     await database.collection("NhanVien").updateMany({ VaiTro: roleName }, { $set: { MaVaiTro: roleCode } });
   }
   await backfillDetailCollections(database);
-  const adminAccount = {
-    username: process.env.ADMIN_USERNAME || "admin",
-    fullName: process.env.ADMIN_FULL_NAME || "Quản trị viên",
-    role: "QuanLy",
-    status: "active",
-    passwordHash: hashPassword(process.env.ADMIN_PASSWORD || "admin123"),
-    createdAt: now,
-  };
-  await database.collection("Users").updateOne(
-    { username: adminAccount.username },
+  const defaultAccounts = [
     {
-      $set: {
-        fullName: adminAccount.fullName,
-        role: "QuanLy",
-        status: "active",
-        passwordHash: adminAccount.passwordHash,
-      },
-      $setOnInsert: { createdAt: adminAccount.createdAt },
+      username: process.env.ADMIN_USERNAME || "admin",
+      fullName: process.env.ADMIN_FULL_NAME || "Quản trị viên",
+      role: "QuanLy",
+      status: "active",
+      password: process.env.ADMIN_PASSWORD || "admin123",
     },
-    { upsert: true },
-  );
-  await syncEmployee(database, adminAccount);
+    {
+      username: "maianh",
+      fullName: "Nguyễn Mai Anh",
+      role: "NhanVienBanHang",
+      status: "active",
+      password: "maianh123",
+    },
+    {
+      username: "vanhung",
+      fullName: "Trần Văn Hùng",
+      role: "NhanVienKho",
+      status: "active",
+      password: "vanhung123",
+    },
+    {
+      username: "ketoan",
+      fullName: "Lê Thị Kế Toán",
+      role: "KeToan",
+      status: "active",
+      password: "ketoan123",
+    },
+    {
+      username: "muahang",
+      fullName: "Phạm Văn Mua Hàng",
+      role: "NhanVienMuaHang",
+      status: "active",
+      password: "muahang123",
+    },
+  ];
+
+  for (const acc of defaultAccounts) {
+    const passwordHash = hashPassword(acc.password);
+    await database.collection("Users").updateOne(
+      { username: acc.username },
+      {
+        $set: {
+          fullName: acc.fullName,
+          role: acc.role,
+          status: acc.status,
+          passwordHash,
+        },
+        $setOnInsert: { createdAt: now },
+      },
+      { upsert: true },
+    );
+    await syncEmployee(database, { ...acc, passwordHash, createdAt: now });
+  }
+
 
   if (await database.collection("_metadata").findOne({ key: "initial-seed-v1" })) {
     await database.collection("VaiTro").updateOne({ MaVaiTro: 5 }, { $set: { MaVaiTro: 5, TenVaiTro: "Nhân viên mua hàng" } }, { upsert: true });

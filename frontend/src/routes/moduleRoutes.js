@@ -1,14 +1,15 @@
 const manager = ["QuanLy"];
 const sales = ["QuanLy", "NhanVienBanHang"];
 const warehouse = ["QuanLy", "NhanVienKho"];
+const salesWarehouse = ["QuanLy", "NhanVienBanHang", "NhanVienKho"];
 const accounting = ["QuanLy", "KeToan"];
 const purchasing = ["QuanLy", "NhanVienMuaHang"];
 
 export const moduleRoutes = [
   { path: "/customers", title: "Khách hàng", description: "Quản lý thông tin, điểm tích lũy và lịch sử mua hàng của khách.", allowedRoles: sales },
   { path: "/suppliers", title: "Nhà cung cấp", description: "Quản lý danh sách đối tác cung cấp hàng hóa.", allowedRoles: purchasing },
-  { path: "/products", title: "Sản phẩm", description: "Quản lý danh mục sản phẩm, giá bán và tồn kho.", allowedRoles: warehouse },
-  { path: "/products/categories", title: "Loại hàng", description: "Phân nhóm sản phẩm theo danh mục.", allowedRoles: warehouse },
+  { path: "/products", title: "Sản phẩm", description: "Quản lý danh mục sản phẩm, giá bán và tồn kho.", allowedRoles: salesWarehouse },
+  { path: "/products/categories", title: "Loại hàng", description: "Phân nhóm sản phẩm theo danh mục.", allowedRoles: salesWarehouse },
   { path: "/purchase-orders", title: "Đặt hàng NCC", description: "Lập và theo dõi đơn đặt hàng từ nhà cung cấp.", allowedRoles: purchasing },
   { path: "/goods-receipts", title: "Nhập kho", description: "Nhập hàng theo đơn đặt và cập nhật tồn kho.", allowedRoles: ["QuanLy", "NhanVienKho", "NhanVienMuaHang"] },
   { path: "/sales-orders", title: "Bán hàng", description: "Lập đơn hàng tại quầy và xử lý thanh toán.", allowedRoles: sales },

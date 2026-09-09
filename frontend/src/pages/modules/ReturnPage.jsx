@@ -23,10 +23,14 @@ export function ReturnPage({ title }) {
   const [returns, setReturns] = useState([]);
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+
+  // Form state
   const [orderId, setOrderId] = useState("");
+  const [customerId, setCustomerId] = useState("");
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [reason, setReason] = useState("Lỗi bao bì/hỏng");
+  const [returnDate, setReturnDate] = useState(new Date().toISOString().slice(0, 10));
 
   useEffect(() => {
     listRecords("products").then(setProducts);
@@ -36,12 +40,42 @@ export function ReturnPage({ title }) {
   }, []);
 
   const selectedOrder = orders.find((order) => order.id === orderId);
-  const orderProductIds = new Set((selectedOrder?.details || selectedOrder?.items || []).map((line) => String(line.MaSP || line.productId)));
+  // Nếu có đơn → lọc sản phẩm theo đơn; không có đơn → tất cả sản phẩm đang bán
+  const orderProductIds = new Set(
+    (selectedOrder?.details || selectedOrder?.items || []).map((line) =>
+      String(line.MaSP || line.productId)
+    )
+  );
+  const availableProducts = orderId
+    ? products.filter(
+        (p) => orderProductIds.has(String(p.id)) || orderProductIds.has(String(p.MaSP))
+      )
+    : products.filter((p) => p.TrangThai !== "Ngừng bán");
   const selectedProduct = products.find((p) => p.id === productId);
+
+  // Khi đổi đơn hàng → tự điền khách hàng và reset sản phẩm
+  function handleOrderChange(newOrderId) {
+    setOrderId(newOrderId);
+    setProductId("");
+    if (newOrderId) {
+      const ord = orders.find((o) => o.id === newOrderId);
+      const khId = ord?.MaKH || ord?.customerId || "";
+      setCustomerId(String(khId));
+    } else {
+      setCustomerId("");
+    }
+  }
 
   const stats = useMemo(() => {
     const total = returns.length;
-    const totalUnits = returns.reduce((sum, r) => sum + (Number(r.SoLuong) || r.details?.reduce((s, d) => s + Number(d.SoLuong || 0), 0) || 0), 0);
+    const totalUnits = returns.reduce(
+      (sum, r) =>
+        sum +
+        (Number(r.SoLuong) ||
+          r.details?.reduce((s, d) => s + Number(d.SoLuong || 0), 0) ||
+          0),
+      0
+    );
     return { total, totalUnits };
   }, [returns]);
 
@@ -57,29 +91,51 @@ export function ReturnPage({ title }) {
     });
   }, [returns, query]);
 
+  function resetForm() {
+    setOrderId("");
+    setCustomerId("");
+    setProductId("");
+    setQuantity(1);
+    setReason("Lỗi bao bì/hỏng");
+    setReturnDate(new Date().toISOString().slice(0, 10));
+  }
+
   async function submit() {
-    if (!orderId || !productId || !reason.trim()) {
-      toast("Vui lòng chọn đơn hàng, sản phẩm và nhập lý do");
+    if (!productId || !reason.trim()) {
+      toast("Vui lòng chọn sản phẩm và nhập lý do");
       return;
     }
     try {
-      const product = products.find((p) => p.id === productId);
-      const record = await saveRecord("returns", {
-        productId,
-        orderId,
-        customerId: selectedOrder?.MaKH || null,
-        quantity,
-        price: product?.GiaBan || product?.GiaNhap || 0,
+      const product = products.find(
+        (p) => String(p.id) === String(productId) || String(p.MaSP) === String(productId)
+      );
+      const payload = {
+        items: [
+          {
+            productId: product?.id || productId,
+            MaSP: product?.MaSP || productId,
+            id: product?.id || productId,
+            quantity: Number(quantity),
+            SoLuong: Number(quantity),
+            price: Number(product?.GiaBan || product?.GiaNhap || 0),
+            DonGia: Number(product?.GiaBan || product?.GiaNhap || 0),
+          },
+        ],
+        // Đơn hàng tuỳ chọn
+        ...(orderId
+          ? { orderId: selectedOrder?.id || orderId, MaDH: selectedOrder?.MaDH || orderId }
+          : {}),
+        // Khách hàng tuỳ chọn
+        ...(customerId ? { customerId, MaKH: customerId } : {}),
         reason,
-        NgayTra: new Date().toISOString().slice(0, 10),
+        LyDo: reason,
+        NgayTra: returnDate,
         TrangThai: "Đã xử lý",
-      });
+      };
+      const record = await saveRecord("returns", payload);
       setReturns((current) => [...current, record]);
       setModalOpen(false);
-      setOrderId("");
-      setProductId("");
-      setQuantity(1);
-      setReason("Lỗi bao bì/hỏng");
+      resetForm();
       toast("Đã ghi nhận trả hàng và cập nhật cộng lại tồn kho");
     } catch (error) {
       toast(error.message);
@@ -93,11 +149,7 @@ export function ReturnPage({ title }) {
           <h1 id="return-heading">{title}</h1>
           <p>Ghi nhận hàng đổi trả từ khách hàng, xử lý lý do và tự động hoàn trả số lượng vào kho.</p>
         </hgroup>
-        <button
-          className="btn btn-primary"
-          type="button"
-          onClick={() => setModalOpen(true)}
-        >
+        <button className="btn btn-primary" type="button" onClick={() => setModalOpen(true)}>
           <PlusIcon className="btn-icon" aria-hidden="true" />
           Tạo phiếu trả hàng
         </button>
@@ -148,17 +200,38 @@ export function ReturnPage({ title }) {
           </thead>
           <tbody>
             {visibleReturns.map((r, idx) => {
-              const custName = r.MaKHCode || customers.find((c) => String(c.id) === String(r.MaKH))?.HoTen || "Khách lẻ";
-              const prodName = r.details?.map((line) => line.TenSP || products.find((p) => String(p.id) === String(line.MaSP))?.TenSP || line.MaSPCode).join(", ") || products.find((p) => String(p.id) === String(r.productId))?.TenSP || "Sản phẩm";
-              const qty = r.SoLuong || r.quantity || r.details?.reduce((sum, line) => sum + Number(line.SoLuong || line.quantity || 0), 0) || 1;
+              const custName =
+                r.MaKHCode ||
+                customers.find((c) => String(c.id) === String(r.MaKH))?.HoTen ||
+                "Khách lẻ";
+              const prodName =
+                r.details
+                  ?.map(
+                    (line) =>
+                      line.TenSP ||
+                      products.find((p) => String(p.id) === String(line.MaSP))?.TenSP ||
+                      line.MaSPCode
+                  )
+                  .join(", ") ||
+                products.find((p) => String(p.id) === String(r.productId))?.TenSP ||
+                "Sản phẩm";
+              const qty =
+                r.SoLuong ||
+                r.quantity ||
+                r.details?.reduce((sum, line) => sum + Number(line.SoLuong || line.quantity || 0), 0) ||
+                1;
 
               return (
                 <tr key={r.id}>
                   <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
-                  <td><span className="prod-code-badge">{r.MaPTH || r.id}</span></td>
+                  <td>
+                    <span className="prod-code-badge">{r.MaPTH || r.id}</span>
+                  </td>
                   <td>
                     <div>
-                      <strong className="cust-name">{r.MaDHCode || r.MaDH || "Đơn bán lẻ"}</strong>
+                      <strong className="cust-name">
+                        {r.MaDHCode || r.MaDH || "Trả hàng trực tiếp"}
+                      </strong>
                       <small className="cell-note">{custName}</small>
                     </div>
                   </td>
@@ -166,13 +239,19 @@ export function ReturnPage({ title }) {
                     <strong style={{ color: "var(--primary-dark)" }}>{prodName}</strong>
                   </td>
                   <td style={{ textAlign: "center" }}>
-                    <span className="badge badge-amber" style={{ fontWeight: 700 }}>{qty} cái</span>
+                    <span className="badge badge-amber" style={{ fontWeight: 700 }}>
+                      {qty} cái
+                    </span>
                   </td>
                   <td>
-                    <span style={{ color: "var(--danger)", fontSize: 13 }}>{r.LyDo || r.reason || "—"}</span>
+                    <span style={{ color: "var(--danger)", fontSize: 13 }}>
+                      {r.LyDo || r.reason || "—"}
+                    </span>
                   </td>
                   <td style={{ color: "var(--text-soft)", fontSize: 13 }}>{r.NgayTra}</td>
-                  <td style={{ textAlign: "center" }}><StatusBadge status={r.TrangThai} /></td>
+                  <td style={{ textAlign: "center" }}>
+                    <StatusBadge status={r.TrangThai} />
+                  </td>
                 </tr>
               );
             })}
@@ -190,16 +269,53 @@ export function ReturnPage({ title }) {
       <Modal
         open={modalOpen}
         title="Tạo phiếu trả hàng"
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          resetForm();
+        }}
         onSubmit={submit}
       >
+        {/* Đơn hàng gốc — tuỳ chọn */}
         <div className="field">
-          <label htmlFor="rt-order">Đơn hàng gốc *</label>
-          <select id="rt-order" value={orderId} onChange={(event) => { setOrderId(event.target.value); setProductId(""); }} required>
-            <option value="">-- Chọn đơn hàng đã bán --</option>
-            {orders.map((order) => <option value={order.id} key={order.id}>{order.MaDH || order.id} · {order.NgayDat} · {customers.find((customer) => String(customer.id) === String(order.MaKH))?.HoTen || "Khách lẻ"}</option>)}
+          <label htmlFor="rt-order">
+            Đơn hàng gốc{" "}
+            <small style={{ color: "var(--text-faint)" }}>(tuỳ chọn)</small>
+          </label>
+          <select id="rt-order" value={orderId} onChange={(e) => handleOrderChange(e.target.value)}>
+            <option value="">-- Không liên kết đơn (trả trực tiếp) --</option>
+            {orders.map((order) => (
+              <option value={order.id} key={order.id}>
+                {order.MaDH || order.id} · {order.NgayDat} ·{" "}
+                {customers.find(
+                  (c) => String(c.id) === String(order.MaKH || order.customerId)
+                )?.HoTen || "Khách lẻ"}
+              </option>
+            ))}
           </select>
         </div>
+
+        {/* Khách hàng — tuỳ chọn, tự điền nếu có đơn */}
+        <div className="field">
+          <label htmlFor="rt-cust">
+            Khách hàng{" "}
+            <small style={{ color: "var(--text-faint)" }}>(tuỳ chọn)</small>
+          </label>
+          <select
+            id="rt-cust"
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+            disabled={!!orderId}
+          >
+            <option value="">-- Khách lẻ / không xác định --</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.MaKH} · {c.HoTen} ({c.SDT})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Sản phẩm */}
         <div className="field">
           <label htmlFor="rt-prod">Sản phẩm khách trả *</label>
           <select
@@ -208,14 +324,20 @@ export function ReturnPage({ title }) {
             required
             onChange={(e) => setProductId(e.target.value)}
           >
-            <option value="">-- Chọn sản phẩm trong đơn --</option>
-            {products.filter((p) => !orderId || orderProductIds.has(String(p.id)) || orderProductIds.has(String(p.MaSP))).map((p) => (
+            <option value="">-- Chọn sản phẩm --</option>
+            {availableProducts.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.MaSP} · {p.TenSP} ({money.format(p.GiaBan || 0)})
               </option>
             ))}
           </select>
+          {!orderId && (
+            <small style={{ color: "var(--text-faint)", marginTop: 4, display: "block" }}>
+              Hiển thị tất cả sản phẩm đang bán. Chọn đơn hàng để lọc theo đơn.
+            </small>
+          )}
         </div>
+
         <div className="form-grid">
           <div className="field">
             <label htmlFor="rt-qty">Số lượng trả</label>
@@ -241,6 +363,17 @@ export function ReturnPage({ title }) {
             </select>
           </div>
         </div>
+
+        <div className="field">
+          <label htmlFor="rt-date">Ngày trả hàng</label>
+          <input
+            id="rt-date"
+            type="date"
+            value={returnDate}
+            onChange={(e) => setReturnDate(e.target.value)}
+          />
+        </div>
+
         {selectedProduct && (
           <p style={{ margin: "10px 0 0", fontSize: 13, color: "var(--text-soft)" }}>
             Giá trị hoàn trả dự kiến:{" "}

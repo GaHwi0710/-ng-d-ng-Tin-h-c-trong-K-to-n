@@ -2,7 +2,7 @@ const API_URL = import.meta.env.VITE_API_URL || "/api";
 const USE_LOCAL_FALLBACK = import.meta.env.VITE_ENABLE_LOCAL_FALLBACK === "true";
 
 // Tăng version → tự động xóa localStorage cũ để seed lại với ngày động
-const SEED_VERSION = "v3";
+const SEED_VERSION = "v4";
 
 function daysAgo(n) {
   const d = new Date();
@@ -80,7 +80,15 @@ export const seedData = {
     { id: "PTH001", MaDH: "DH002", productId: "SP006", quantity: 1, price: 180000, reason: "Sản phẩm bị lỗi bao bì", NgayTra: "2026-08-17", TrangThai: "Đã xử lý" },
   ],
   debts: [
-    { id: "CN001", MaNCC: "NCC003", NgayPhatSinh: "2026-08-18", SoTien: 12600000, SoTienDaTra: 8000000, SoTienConLai: 4600000, TrangThai: "Còn nợ" },
+    { id: "CN001", MaNCC: "NCC003", LoaiCongNo: "Nhà cung cấp", type: "suppliers", NgayPhatSinh: "2026-08-18", SoTien: 12600000, SoTienDaTra: 8000000, SoTienConLai: 4600000, TrangThai: "Còn nợ" },
+    { id: "CN002", MaNCC: "NCC001", LoaiCongNo: "Nhà cung cấp", type: "suppliers", NgayPhatSinh: "2026-08-06", SoTien: 16000000, SoTienDaTra: 16000000, SoTienConLai: 0, TrangThai: "Đã thanh toán" },
+    { id: "CN003", MaKH: "KH001", LoaiCongNo: "Khách hàng", type: "customers", NgayPhatSinh: daysAgo(6), SoTien: 520000, SoTienDaTra: 520000, SoTienConLai: 0, TrangThai: "Đã thanh toán" },
+    { id: "CN004", MaKH: "KH003", LoaiCongNo: "Khách hàng", type: "customers", NgayPhatSinh: daysAgo(3), SoTien: 185000, SoTienDaTra: 0, SoTienConLai: 185000, TrangThai: "Còn nợ" },
+  ],
+  payments: [
+    { id: "TT001", MaTT: "TT001", invoiceId: "HD001", amount: 520000, method: "Tiền mặt", NgayThanhToan: daysAgo(6), TrangThai: "Đã ghi nhận" },
+    { id: "TT002", MaTT: "TT002", invoiceId: "HD002", amount: 458000, method: "Chuyển khoản", NgayThanhToan: daysAgo(5), TrangThai: "Đã ghi nhận" },
+    { id: "TT003", MaTT: "TT003", invoiceId: "HD004", amount: 1295000, method: "Tiền mặt", NgayThanhToan: daysAgo(1), TrangThai: "Đã ghi nhận" },
   ],
   promotions: [
     { id: "KM001", TenKM: "Ưu đãi Mùa tựu trường 2026", PhanTramGiam: 15, NgayBatDau: "2026-08-25", NgayKetThuc: "2026-09-10", DieuKienApDung: "Đơn hàng từ 500.000đ", TrangThai: "Đang áp dụng" },
@@ -157,10 +165,232 @@ export async function listRecords(resource) {
   try {
     return (await request(resource)).data || [];
   } catch (error) {
-    if (USE_LOCAL_FALLBACK && error.isNetworkError) return readLocal(resource);
+    if (USE_LOCAL_FALLBACK && (error.isNetworkError || error.status >= 500)) return readLocal(resource);
     throw error;
   }
 }
+
+// ── Local-fallback helpers ──────────────────────────────────────────────────
+
+/** Tính mã nghiệp vụ tiếp theo (VD: "CN001" → "CN002") */
+function _nextCode(list, prefix, field) {
+  const largest = list.reduce((max, item) => {
+    const n = Number(String(item[field] || "").replace(/\D/g, ""));
+    return Number.isFinite(n) ? Math.max(max, n) : max;
+  }, 0);
+  return `${prefix}${String(largest + 1).padStart(3, "0")}`;
+}
+
+/** Toàn bộ logic lưu local khi server không khả dụng */
+function _localSave(resource, record) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  // ── Cập nhật bản ghi đã có (id là local string, không phải ObjectId) ──
+  if (record.id && !/^[0-9a-fA-F]{24}$/.test(record.id)) {
+    const data = readLocal(resource);
+    if (resource === "debts") {
+      const soTien = Number(record.SoTien || 0);
+      const soTienDaTra = Number(record.SoTienDaTra || 0);
+      const soTienConLai = Math.max(0, soTien - soTienDaTra);
+      const updated = { ...record, SoTienConLai: soTienConLai, TrangThai: soTienConLai === 0 ? "Đã thanh toán" : "Còn nợ" };
+      writeLocal("debts", data.map((d) => (d.id === record.id ? updated : d)));
+      return updated;
+    }
+    if (resource === "invoices") {
+      const updated = { ...data.find((i) => i.id === record.id), ...record };
+      writeLocal("invoices", data.map((i) => (i.id === record.id ? updated : i)));
+      return updated;
+    }
+    const next = data.map((item) => (item.id === record.id ? { ...item, ...record } : item));
+    writeLocal(resource, next);
+    return next.find((item) => item.id === record.id) || record;
+  }
+
+  // ── Tạo mới theo từng nghiệp vụ ──
+  switch (resource) {
+
+    case "sales-orders": {
+      const orderCode = `DH-${Date.now()}`;
+      const invoiceCode = `HD-${Date.now() + 1}`;
+      const order = { ...record, id: orderCode, MaDH: orderCode, TrangThai: record.TrangThai || "Chờ xuất kho" };
+      const invoice = {
+        id: invoiceCode, MaHD: invoiceCode, MaDH: order.MaDH,
+        MaKH: record.customerId || null,
+        NgayLap: record.NgayDat || today,
+        TongTien: Number(record.TongTien || 0),
+        SoTienDaTra: 0, SoTienConLai: Number(record.TongTien || 0),
+        TrangThai: "Chưa thanh toán", details: record.items,
+      };
+      // Trừ tồn kho
+      const prods0 = readLocal("products");
+      writeLocal("products", prods0.map((p) => {
+        const line = (record.items || []).find((i) => (i.productId || i.id) === p.id);
+        return line ? { ...p, stock: Math.max(0, (Number(p.stock) || 0) - Number(line.quantity || 0)) } : p;
+      }));
+      writeLocal("sales-orders", [...readLocal("sales-orders"), order]);
+      writeLocal("invoices", [...readLocal("invoices"), invoice]);
+      return { order, invoice };
+    }
+
+    case "purchase-orders": {
+      const list0 = readLocal("purchase-orders");
+      const code0 = _nextCode(list0, "DDH", "MaDDH");
+      const entry0 = {
+        ...record, id: code0, MaDDH: code0,
+        TrangThai: record.TrangThai || "Đang chờ",
+        NgayDat: record.NgayDat || today,
+        createdAt: new Date().toISOString(),
+      };
+      writeLocal("purchase-orders", [...list0, entry0]);
+      return entry0;
+    }
+
+    case "goods-receipts": {
+      const list1 = readLocal("goods-receipts");
+      const code1 = _nextCode(list1, "PN", "MaPN");
+      const entry1 = {
+        ...record, id: code1, MaPN: code1,
+        TrangThai: "Đã lưu",
+        NgayNhap: record.NgayNhap || today,
+        createdAt: new Date().toISOString(),
+      };
+      // Cộng tồn kho
+      const prods1 = readLocal("products");
+      const items1 = record.details || record.items || [];
+      writeLocal("products", prods1.map((p) => {
+        const line = items1.find((i) => (i.productId || i.MaSP || i.id) === p.id || (i.productId || i.MaSP || i.id) === p.MaSP);
+        return line ? { ...p, stock: (Number(p.stock) || 0) + Number(line.quantity || line.SoLuong || 0) } : p;
+      }));
+      // Tạo công nợ phải trả NCC
+      const debts1 = readLocal("debts");
+      const debtCode1 = _nextCode(debts1, "CN", "MaCN");
+      const suppId1 = record.supplierId || record.MaNCC;
+      const supp1 = readLocal("suppliers").find((s) => s.id === suppId1);
+      if (suppId1) {
+        writeLocal("debts", [...debts1, {
+          id: debtCode1, MaCN: debtCode1, MaNCC: suppId1,
+          TenNCC: supp1?.TenNCC || "",
+          LoaiCongNo: "Nhà cung cấp", type: "suppliers",
+          NgayPhatSinh: entry1.NgayNhap,
+          SoTien: Number(record.TongTien || 0),
+          SoTienDaTra: 0, SoTienConLai: Number(record.TongTien || 0),
+          TrangThai: "Còn nợ", createdAt: new Date().toISOString(),
+        }]);
+      }
+      writeLocal("goods-receipts", [...list1, entry1]);
+      return entry1;
+    }
+
+    case "goods-issues": {
+      const list2 = readLocal("goods-issues");
+      const code2 = _nextCode(list2, "PX", "MaPX");
+      const entry2 = {
+        ...record, id: code2, MaPX: code2,
+        TrangThai: "Đã lưu",
+        NgayXuat: record.NgayXuat || today,
+        createdAt: new Date().toISOString(),
+      };
+      // Trừ tồn kho
+      const prods2 = readLocal("products");
+      const items2 = record.details || record.items || [];
+      writeLocal("products", prods2.map((p) => {
+        const line = items2.find((i) => (i.productId || i.MaSP || i.id) === p.id || (i.productId || i.MaSP || i.id) === p.MaSP);
+        return line ? { ...p, stock: Math.max(0, (Number(p.stock) || 0) - Number(line.quantity || line.SoLuong || 0)) } : p;
+      }));
+      writeLocal("goods-issues", [...list2, entry2]);
+      return entry2;
+    }
+
+    case "stocktakes": {
+      const list3 = readLocal("stocktakes");
+      const code3 = _nextCode(list3, "KK", "MaKK");
+      const entry3 = {
+        ...record, id: code3, MaKK: code3,
+        NgayKiemKe: record.NgayKiemKe || today,
+        createdAt: new Date().toISOString(),
+      };
+      // Cập nhật tồn theo số thực tế
+      const prods3 = readLocal("products");
+      const items3 = record.items || [];
+      if (items3.length) {
+        writeLocal("products", prods3.map((p) => {
+          const line = items3.find((i) => (i.productId || i.MaSP || i.id) === p.id);
+          return line !== undefined
+            ? { ...p, stock: Number(line.actual ?? line.SoLuongThucTe ?? p.stock ?? 0) }
+            : p;
+        }));
+      }
+      writeLocal("stocktakes", [...list3, entry3]);
+      return entry3;
+    }
+
+    case "returns": {
+      const list4 = readLocal("returns");
+      const code4 = _nextCode(list4, "PTH", "MaPTH");
+      const entry4 = {
+        ...record, id: code4, MaPTH: code4,
+        TrangThai: "Đã xử lý",
+        NgayTra: record.NgayTra || today,
+        createdAt: new Date().toISOString(),
+      };
+      // Hoàn lại tồn kho
+      const prods4 = readLocal("products");
+      const items4 = record.items || [];
+      writeLocal("products", prods4.map((p) => {
+        const line = items4.find((i) => (i.productId || i.MaSP || i.id) === p.id);
+        return line ? { ...p, stock: (Number(p.stock) || 0) + Number(line.quantity || line.SoLuong || 0) } : p;
+      }));
+      writeLocal("returns", [...list4, entry4]);
+      return entry4;
+    }
+
+    case "debts": {
+      const list5 = readLocal("debts");
+      const code5 = _nextCode(list5, "CN", "MaCN");
+      const st5 = Number(record.SoTien || 0);
+      const std5 = Number(record.SoTienDaTra || 0);
+      const stcl5 = Math.max(0, st5 - std5);
+      const entry5 = {
+        ...record, id: code5, MaCN: code5,
+        SoTienConLai: stcl5,
+        TrangThai: stcl5 === 0 ? "Đã thanh toán" : "Còn nợ",
+        createdAt: new Date().toISOString(),
+      };
+      writeLocal("debts", [...list5, entry5]);
+      return entry5;
+    }
+
+    case "payments": {
+      const invoiceId6 = record.invoiceId || record.MaHD;
+      const amount6 = Number(record.amount || record.SoTien || 0);
+      const invoices6 = readLocal("invoices");
+      writeLocal("invoices", invoices6.map((inv) => {
+        if (inv.id !== invoiceId6) return inv;
+        const newPaid = (Number(inv.SoTienDaTra) || 0) + amount6;
+        const newRem = Math.max(0, Number(inv.TongTien || 0) - newPaid);
+        return { ...inv, SoTienDaTra: newPaid, SoTienConLai: newRem, TrangThai: newRem === 0 ? "Đã thanh toán" : "Thanh toán một phần" };
+      }));
+      const pmtList = readLocal("payments") || [];
+      const code6 = _nextCode(pmtList, "TT", "MaTT");
+      const entry6 = {
+        ...record, id: code6, MaTT: code6,
+        TrangThai: "Đã ghi nhận",
+        NgayThanhToan: today,
+        createdAt: new Date().toISOString(),
+      };
+      writeLocal("payments", [...pmtList, entry6]);
+      return entry6;
+    }
+
+    default: {
+      const data6 = readLocal(resource);
+      const newItem = { ...record, id: `${resource}-${Date.now()}` };
+      writeLocal(resource, [...data6, newItem]);
+      return newItem;
+    }
+  }
+}
+
 export async function saveRecord(resource, record) {
   try {
     const recordId = record.id || record._id;
@@ -170,41 +400,20 @@ export async function saveRecord(resource, record) {
       : await request(resource, { method: "POST", body: JSON.stringify(record) });
     return result.data;
   } catch (error) {
-    if (!USE_LOCAL_FALLBACK || !error.isNetworkError) throw error;
-    if (resource === "sales-orders") {
-      const orderCode = `DH-${Date.now()}`;
-      const invoiceCode = `HD-${Date.now() + 1}`;
-      const order = { ...record, id: orderCode, MaDH: orderCode, TrangThai: record.TrangThai || "Chờ xuất kho" };
-      const invoice = {
-        id: invoiceCode,
-        MaHD: invoiceCode,
-        MaDH: order.MaDH,
-        MaKH: record.customerId,
-        NgayLap: record.NgayDat,
-        TongTien: Number(record.TongTien || 0),
-        SoTienDaTra: 0,
-        SoTienConLai: Number(record.TongTien || 0),
-        TrangThai: "Chưa thanh toán",
-        details: record.items,
-      };
-      writeLocal(resource, [...readLocal(resource), order]);
-      writeLocal("invoices", [...readLocal("invoices"), invoice]);
-      return { order, invoice };
-    }
-    const data = readLocal(resource);
-    const next = record.id ? data.map((item) => item.id === record.id ? record : item) : [...data, { ...record, id: `${resource}-${Date.now()}` }];
-    writeLocal(resource, next);
-    return next.find((item) => item.id === (record.id || next.at(-1).id));
+    // Dùng fallback khi: mất mạng HOẶC server lỗi 5xx (VD: MongoDB disconnected)
+    if (!USE_LOCAL_FALLBACK || (!error.isNetworkError && (error.status || 0) < 500)) throw error;
+    return _localSave(resource, record);
   }
 }
 export async function deleteRecord(resource, id) {
   try {
     await request(`${resource}/${id}`, { method: "DELETE" });
   } catch (error) {
-    if (!USE_LOCAL_FALLBACK || !error.isNetworkError) throw error;
+    if (!USE_LOCAL_FALLBACK || (!error.isNetworkError && (error.status || 0) < 500)) throw error;
     writeLocal(resource, readLocal(resource).filter((item) => item.id !== id));
   }
 }
+
 export async function login(username, password) {
   try {
     const result = await request("auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
@@ -212,8 +421,8 @@ export async function login(username, password) {
     localStorage.setItem("baby-shop-user", JSON.stringify(result.user));
     return result.user;
   } catch (error) {
-    if (!USE_LOCAL_FALLBACK || !error.isNetworkError) throw error;
-    // Tra cứu tài khoản và vai trò từ local seed data
+    if (!USE_LOCAL_FALLBACK) throw error;
+    // Tra cứu tài khoản và vai trò từ local seed data khi API không khả dụng hoặc trả lỗi
     const accounts = readLocal("admin/accounts");
     const account = accounts.find((a) => a.username === username && (a.password === password || !a.password));
     if (!account || account.status === "disabled") {

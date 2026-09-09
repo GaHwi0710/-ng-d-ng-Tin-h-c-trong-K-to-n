@@ -103,7 +103,50 @@ export function createCrudModule(routeName, tableName) {
 
   router.post("/", async (req, res, next) => {
     try {
-      if (tableName === "CongNo") return res.status(405).json({ message: "Công nợ chỉ được phát sinh từ phiếu nhập hoặc hóa đơn" });
+      if (tableName === "CongNo") {
+        // Cho phép tạo công nợ thủ công (ngoài hóa đơn/phiếu nhập)
+        const body = { ...req.body };
+        const rawNCC = body.MaNCC || (body.type === "suppliers" ? body.partnerId : null);
+        const rawKH = body.MaKH || (body.type === "customers" ? body.partnerId : null);
+        const hasMaNCC = rawNCC && ObjectId.isValid(rawNCC);
+        const hasMaKH = rawKH && ObjectId.isValid(rawKH);
+        if (!hasMaNCC && !hasMaKH) {
+          return res.status(400).json({ message: "Phải chọn Nhà cung cấp hoặc Khách hàng cho khoản công nợ" });
+        }
+        body.MaNCC = hasMaNCC ? rawNCC : null;
+        body.MaKH = hasMaKH ? rawKH : null;
+
+        const soTien = Number(body.SoTien);
+        if (!Number.isFinite(soTien) || soTien <= 0) {
+          return res.status(400).json({ message: "Số tiền công nợ phải lớn hơn 0" });
+        }
+        const soTienDaTra = Math.max(0, Number(body.SoTienDaTra) || 0);
+        const soTienConLai = Math.max(0, soTien - soTienDaTra);
+        const trangThai = soTienConLai === 0 ? "Đã thanh toán" : "Còn nợ";
+        const debtCollection = getDatabase().collection("CongNo");
+        const maCN = await nextBusinessCode(debtCollection, "CongNo");
+        const document = {
+          MaCN: maCN,
+          MaNCC: hasMaNCC ? new ObjectId(body.MaNCC) : null,
+          MaKH: hasMaKH ? new ObjectId(body.MaKH) : null,
+          LoaiCongNo: hasMaNCC ? "Nhà cung cấp" : "Khách hàng",
+          type: hasMaNCC ? "suppliers" : "customers",
+          NgayPhatSinh: body.NgayPhatSinh || new Date().toISOString().slice(0, 10),
+          SoTien: soTien,
+          SoTienDaTra: soTienDaTra,
+          SoTienConLai: soTienConLai,
+          TrangThai: trangThai,
+          GhiChu: body.GhiChu || "",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        const result = await debtCollection.insertOne(document);
+        return res.status(201).json({
+          table: "CongNo",
+          data: await serializeRecord("CongNo", { _id: result.insertedId, ...document }),
+          message: "Tao moi cong no",
+        });
+      }
       const collection = getDatabase().collection(tableName);
       const body = { ...req.body };
       if (tableName === "SanPham") {
@@ -174,7 +217,40 @@ export function createCrudModule(routeName, tableName) {
 
   router.put("/:id", async (req, res, next) => {
     try {
-      if (tableName === "CongNo") return res.status(405).json({ message: "Công nợ chỉ được cập nhật qua nghiệp vụ thanh toán" });
+      if (tableName === "CongNo") {
+        // Cho phép cập nhật công nợ thủ công (tính lại SoTienConLai và TrangThai)
+        const id = parseId(req.params.id);
+        if (!id) return res.status(400).json({ message: "ID khong hop le" });
+        const body = { ...req.body };
+        const soTien = Number(body.SoTien);
+        if (!Number.isFinite(soTien) || soTien <= 0) {
+          return res.status(400).json({ message: "Số tiền công nợ phải lớn hơn 0" });
+        }
+        const soTienDaTra = Math.max(0, Number(body.SoTienDaTra) || 0);
+        const soTienConLai = Math.max(0, soTien - soTienDaTra);
+        const trangThai = soTienConLai === 0 ? "Đã thanh toán" : "Còn nợ";
+        delete body.id;
+        delete body._id;
+        const update = {
+          ...body,
+          SoTien: soTien,
+          SoTienDaTra: soTienDaTra,
+          SoTienConLai: soTienConLai,
+          TrangThai: trangThai,
+          updatedAt: new Date(),
+        };
+        const result = await getDatabase().collection("CongNo").findOneAndUpdate(
+          { _id: id },
+          { $set: update },
+          { returnDocument: "after" }
+        );
+        if (!result) return res.status(404).json({ message: "Khong tim thay cong no" });
+        return res.json({
+          table: "CongNo",
+          data: await serializeRecord("CongNo", result),
+          message: "Cap nhat cong no",
+        });
+      }
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ message: "ID khong hop le" });
       const update = { ...req.body, updatedAt: new Date() };
@@ -239,7 +315,6 @@ export function createCrudModule(routeName, tableName) {
   router.delete("/:id", async (req, res, next) => {
     try {
       if (tableName === "SanPham") return res.status(409).json({ message: "Không được xóa sản phẩm vì sản phẩm đã liên kết với chứng từ. Hãy chuyển trạng thái sang Ngừng bán" });
-      if (tableName === "CongNo") return res.status(405).json({ message: "Công nợ chỉ được phát sinh từ nghiệp vụ và ghi nhận thanh toán" });
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ message: "ID khong hop le" });
       const result = await getDatabase().collection(tableName).deleteOne({ _id: id });
