@@ -2,6 +2,7 @@ import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { getDatabase } from "../../config/mongodb.js";
 import { passwordMatches } from "./password.js";
+import { isLockedStatus } from "./accountEmployee.js";
 
 const router = Router();
 const secret = process.env.JWT_SECRET || "baby-shop-development-secret";
@@ -21,33 +22,73 @@ const defaultAccounts = {
 };
 
 router.post("/login", (req, res) => {
-  const { username, password } = req.body;
+  const rawUsername = String(req.body.username || "").trim();
+  const password = String(req.body.password || "");
 
   (async () => {
     let account = null;
+    let employee = null;
+
     try {
-      account = await getDatabase().collection("Users").findOne({ username });
+      const db = getDatabase();
+      account = await db.collection("Users").findOne({ username: rawUsername });
+      employee = await db.collection("NhanVien").findOne({
+        $or: [{ username: rawUsername }, { MaNV: rawUsername }],
+      });
     } catch {
       // Database not connected
     }
 
-    if (!account && defaultAccounts[username]) {
-      const def = defaultAccounts[username];
-      if (password === def.password) {
-        account = { id: def.id, username: def.username, fullName: def.fullName, role: def.role, status: "active" };
+    // 1. Kiểm tra trạng thái Khóa / Ngưng hoạt động
+    const isLocked = isLockedStatus(account?.status) || isLockedStatus(employee?.TrangThai);
+    if (isLocked) {
+      return res.status(403).json({
+        message: "Tài khoản của bạn đã bị khóa hoặc ngưng hoạt động. Vui lòng liên hệ Quản trị viên!",
+      });
+    }
+
+    // 2. Xác thực tài khoản và mật khẩu
+    let validAccount = null;
+
+    if (account) {
+      if (passwordMatches(password, account.passwordHash)) {
+        validAccount = {
+          id: account._id?.toString() || account.id || rawUsername,
+          username: account.username,
+          fullName: account.fullName || employee?.HoTen || rawUsername,
+          role: account.role || "NhanVienBanHang",
+        };
       }
-    } else if (account) {
-      if (account.status === "disabled" || !passwordMatches(password, account.passwordHash)) {
-        account = null;
+    } else if (defaultAccounts[rawUsername]) {
+      const def = defaultAccounts[rawUsername];
+      if (password === def.password) {
+        validAccount = {
+          id: def.id,
+          username: def.username,
+          fullName: def.fullName,
+          role: def.role,
+        };
       }
     }
 
-    if (!account) {
-      return res.status(401).json({ message: "Tên đăng nhập hoặc mật khẩu không đúng, hoặc tài khoản đã bị khóa" });
+    if (!validAccount) {
+      return res.status(401).json({
+        message: "Tên đăng nhập hoặc mật khẩu không chính xác",
+      });
     }
+
     res.json({
-      token: jwt.sign({ id: account.id || account._id?.toString() || username, username, role: account.role }, secret, { expiresIn: "8h" }),
-      user: { id: account.id || account._id?.toString() || username, username, fullName: account.fullName || username, role: account.role },
+      token: jwt.sign(
+        {
+          id: validAccount.id,
+          username: validAccount.username,
+          fullName: validAccount.fullName,
+          role: validAccount.role,
+        },
+        secret,
+        { expiresIn: "8h" }
+      ),
+      user: validAccount,
     });
   })().catch((error) => res.status(500).json({ message: error.message }));
 });
@@ -56,13 +97,27 @@ router.post("/logout", (_req, res) => {
   res.json({ message: "Dang xuat thanh cong" });
 });
 
-router.get("/me", (req, res) => {
+router.get("/me", async (req, res) => {
   try {
     const token = req.headers.authorization?.replace("Bearer ", "");
-    res.json(jwt.verify(token, secret));
+    const decoded = jwt.verify(token, secret);
+
+    try {
+      const db = getDatabase();
+      const user = await db.collection("Users").findOne({ username: decoded.username });
+      const emp = await db.collection("NhanVien").findOne({ username: decoded.username });
+      if (isLockedStatus(user?.status) || isLockedStatus(emp?.TrangThai)) {
+        return res.status(403).json({ message: "Tài khoản của bạn đã bị khóa" });
+      }
+    } catch {
+      // Ignored if db transient error
+    }
+
+    res.json(decoded);
   } catch {
     res.status(401).json({ message: "Phiên đăng nhập không hợp lệ" });
   }
 });
 
 export default router;
+

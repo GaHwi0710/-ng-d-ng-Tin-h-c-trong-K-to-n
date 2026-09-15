@@ -199,13 +199,17 @@ const configs = {
     columns: [
       ["MaNV", "Mã NV"],
       ["HoTen", "Họ tên"],
+      ["CCCD", "Số CCCD"],
       ["SDT", "Số điện thoại"],
+      ["DiaChi", "Địa chỉ"],
       ["VaiTro", "Vai trò"],
       ["TrangThai", "Trạng thái"],
     ],
     fields: [
       { name: "HoTen", label: "Họ và tên", required: true },
+      { name: "CCCD", label: "Số CCCD (12 số)", pattern: "[0-9]{12}" },
       { name: "SDT", label: "Số điện thoại", type: "tel", pattern: "0[0-9]{9,10}" },
+      { name: "DiaChi", label: "Địa chỉ thường trú" },
       { name: "VaiTro", label: "Vai trò" },
       { name: "TrangThai", label: "Trạng thái" },
     ],
@@ -488,6 +492,22 @@ function RecordsPage({ title, description, resource }) {
   );
 }
 
+function currentUserInfo() {
+  try {
+    const user = JSON.parse(localStorage.getItem("baby-shop-user") || "{}");
+    const roleName = roleLabels[user.role] || user.role || "Nhân viên";
+    return {
+      name: user.fullName || user.username || "Nhân viên",
+      role: user.role || "",
+      roleName,
+      username: user.username || "",
+      display: `${user.fullName || user.username || "Nhân viên"} · ${roleName}`,
+    };
+  } catch {
+    return { name: "Nhân viên", roleName: "Nhân viên", display: "Nhân viên" };
+  }
+}
+
 function PurchaseOrderPage({ title }) {
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -496,6 +516,12 @@ function PurchaseOrderPage({ title }) {
   const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
   const [status, setStatus] = useState("Đang chờ");
   const [selected, setSelected] = useState([]);
+
+  // Filter state for saved orders
+  const [filterSupplier, setFilterSupplier] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   // Combobox state
   const [cbQuery, setCbQuery] = useState("");
@@ -512,12 +538,29 @@ function PurchaseOrderPage({ title }) {
 
   // Combobox filtered list
   const cbFiltered = products.filter(
-    (p) => p.TrangThai !== "Ngừng bán" &&
+    (p) =>
+      p.TrangThai !== "Ngừng bán" &&
       !selected.some((s) => s.id === p.id) &&
       (cbQuery === "" ||
         p.MaSP?.toLowerCase().includes(cbQuery.toLowerCase()) ||
         p.TenSP?.toLowerCase().includes(cbQuery.toLowerCase()))
   );
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => {
+      if (
+        filterSupplier !== "all" &&
+        String(order.MaNCC) !== String(filterSupplier) &&
+        String(order.MaNCCCode) !== String(filterSupplier)
+      ) {
+        return false;
+      }
+      if (filterStatus !== "all" && order.TrangThai !== filterStatus) return false;
+      if (fromDate && order.NgayDat && order.NgayDat < fromDate) return false;
+      if (toDate && order.NgayDat && order.NgayDat > toDate) return false;
+      return true;
+    });
+  }, [orders, filterSupplier, filterStatus, fromDate, toDate]);
 
   function addProductById(product) {
     if (!product || selected.some((item) => item.id === product.id)) return;
@@ -527,35 +570,94 @@ function PurchaseOrderPage({ title }) {
     setCbHighlight(0);
   }
 
-  function addProduct(event) {
-    const product = products.find((item) => item.id === event.target.value);
-    if (!product || selected.some((item) => item.id === product.id)) return;
-    setSelected((current) => [...current, { ...product, quantity: 1, price: Number(product.GiaNhap || 0) }]);
-    event.target.value = "";
-  }
-
   async function submit(event) {
     event.preventDefault();
     if (!supplierId || !selected.length) return toast("Cần chọn nhà cung cấp và ít nhất một sản phẩm");
-    if (selected.some((line) => !Number.isInteger(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.price) || line.price < 0)) return toast("Số lượng và đơn giá đặt hàng không hợp lệ");
+    if (
+      selected.some(
+        (line) =>
+          !Number.isInteger(line.quantity) ||
+          line.quantity <= 0 ||
+          !Number.isFinite(line.price) ||
+          line.price < 0
+      )
+    ) {
+      return toast("Số lượng và đơn giá đặt hàng không hợp lệ");
+    }
     try {
-      const saved = await saveRecord("purchase-orders", { MaNCC: supplierId, NgayDat: orderDate, TrangThai: status, TongTien: total, items: selected.map((line) => ({ productId: line.id, quantity: line.quantity, price: line.price })) });
+      const saved = await saveRecord("purchase-orders", {
+        MaNCC: supplierId,
+        NgayDat: orderDate,
+        TrangThai: status,
+        TongTien: total,
+        NguoiLap: currentUserInfo().name,
+        items: selected.map((line) => ({
+          productId: line.id,
+          quantity: line.quantity,
+          price: line.price,
+        })),
+      });
       setOrders((current) => [saved, ...current]);
       setSelected([]);
-      toast("Đã lưu đơn đặt hàng NCC");
-    } catch (error) { toast(error.message || "Không lưu được đơn đặt hàng"); }
+      toast("Đã lưu đơn đặt hàng NCC thành công");
+    } catch (error) {
+      toast(error.message || "Không lưu được đơn đặt hàng");
+    }
   }
 
   return (
     <section aria-labelledby="purchase-order-heading">
-      <header className="page-header"><hgroup><h1 id="purchase-order-heading">{title}</h1><p>Lập đơn đặt hàng có sản phẩm, số lượng và liên kết trực tiếp với phiếu nhập.</p></hgroup></header>
+      <header className="page-header">
+        <hgroup>
+          <h1 id="purchase-order-heading">{title}</h1>
+          <p>Lập đơn đặt hàng có sản phẩm, số lượng và liên kết trực tiếp với phiếu nhập.</p>
+        </hgroup>
+      </header>
       <form onSubmit={submit} className="document-grid">
         <div className="stack">
-          <section className="panel"><h2>THÔNG TIN ĐƠN ĐẶT HÀNG</h2><div className="form-grid">
-            <label className="field"><span>Nhà cung cấp *</span><select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} required><option value="">Chọn nhà cung cấp</option>{suppliers.map((supplier) => <option value={supplier.id} key={supplier.id}>{supplier.MaNCC} · {supplier.TenNCC}</option>)}</select></label>
-            <label className="field"><span>Ngày đặt *</span><input type="date" value={orderDate} onChange={(event) => setOrderDate(event.target.value)} required /></label>
-            <label className="field"><span>Trạng thái</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option>Đang chờ</option><option>Đã xác nhận</option><option>Đã nhập kho</option><option>Đã hủy</option></select></label>
-          </div></section>
+          <section className="panel">
+            <h2>THÔNG TIN ĐƠN ĐẶT HÀNG</h2>
+            <div className="form-grid">
+              <label className="field">
+                <span>Nhà cung cấp *</span>
+                <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} required>
+                  <option value="">Chọn nhà cung cấp</option>
+                  {suppliers.map((supplier) => (
+                    <option value={supplier.id} key={supplier.id}>
+                      {supplier.MaNCC} · {supplier.TenNCC}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Ngày đặt *</span>
+                <input type="date" value={orderDate} onChange={(event) => setOrderDate(event.target.value)} required />
+              </label>
+              <label className="field">
+                <span>Trạng thái</span>
+                <select value={status} onChange={(event) => setStatus(event.target.value)}>
+                  <option>Đang chờ</option>
+                  <option>Đã xác nhận</option>
+                  <option>Đã nhập kho</option>
+                  <option>Đã hủy</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Người lập phiếu</span>
+                <input
+                  type="text"
+                  readOnly
+                  value={currentUserInfo().display}
+                  style={{
+                    background: "var(--surface-sunken, #f1f5f9)",
+                    color: "var(--text-soft)",
+                    fontWeight: 600,
+                    cursor: "not-allowed",
+                  }}
+                />
+              </label>
+            </div>
+          </section>
           <section className="panel po-product-panel">
             <div className="po-panel-head">
               <h2>
@@ -689,9 +791,107 @@ function PurchaseOrderPage({ title }) {
             )}
           </section>
         </div>
-        <aside className="summary-card"><h2>TỔNG ĐƠN ĐẶT HÀNG</h2><dl><div><dt>Số mặt hàng</dt><dd>{selected.length}</dd></div><div><dt>Tổng số lượng</dt><dd>{selected.reduce((sum, line) => sum + line.quantity, 0)}</dd></div></dl><div className="summary-total"><span>Tổng tiền</span><strong>{money.format(total)}</strong></div><button className="btn btn-primary btn-block" type="submit">Lưu đơn đặt hàng</button></aside>
+        <aside className="summary-card">
+          <h2>TỔNG ĐƠN ĐẶT HÀNG</h2>
+          <dl>
+            <div><dt>Số mặt hàng</dt><dd>{selected.length}</dd></div>
+            <div><dt>Tổng số lượng</dt><dd>{selected.reduce((sum, line) => sum + line.quantity, 0)}</dd></div>
+          </dl>
+          <div className="summary-total"><span>Tổng tiền</span><strong>{money.format(total)}</strong></div>
+          <button className="btn btn-primary btn-block" type="submit">Lưu đơn đặt hàng</button>
+        </aside>
       </form>
-      <section className="panel"><h2>ĐƠN ĐẶT HÀNG ĐÃ LƯU</h2><div className="table-shell"><table><thead><tr><th>Mã đơn</th><th>Nhà cung cấp</th><th>Ngày đặt</th><th>Tổng tiền</th><th>Trạng thái</th></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><strong>{order.MaDDH || order.id}</strong></td><td>{order.MaNCCCode || order.MaNCC}</td><td>{order.NgayDat}</td><td>{money.format(order.TongTien || 0)}</td><td><StatusBadge status={order.TrangThai} /></td></tr>)}</tbody></table></div></section>
+
+      <section className="panel" style={{ marginTop: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+          <h2 style={{ margin: 0 }}>ĐƠN ĐẶT HÀNG ĐÃ LƯU ({filteredOrders.length})</h2>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <select
+              value={filterSupplier}
+              onChange={(e) => setFilterSupplier(e.target.value)}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+            >
+              <option value="all">Tất cả nhà cung cấp</option>
+              {suppliers.map((s) => (
+                <option value={s.id} key={s.id}>{s.TenNCC}</option>
+              ))}
+            </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+            >
+              <option value="all">Tất cả trạng thái</option>
+              <option value="Đang chờ">Đang chờ</option>
+              <option value="Đã xác nhận">Đã xác nhận</option>
+              <option value="Đã nhập kho">Đã nhập kho</option>
+              <option value="Đã hủy">Đã hủy</option>
+            </select>
+            <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12.5 }}>
+              <span style={{ color: "var(--text-soft)" }}>Từ:</span>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+              />
+              <span style={{ color: "var(--text-soft)" }}>Đến:</span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+              />
+            </div>
+            {(filterSupplier !== "all" || filterStatus !== "all" || fromDate || toDate) && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => { setFilterSupplier("all"); setFilterStatus("all"); setFromDate(""); setToDate(""); }}
+              >
+                Xóa lọc
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>Mã đơn</th>
+                <th>Nhà cung cấp</th>
+                <th>Ngày đặt</th>
+                <th>Người lập phiếu</th>
+                <th>Tổng tiền</th>
+                <th>Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredOrders.map((order) => {
+                const s = suppliers.find((sup) => sup.id === order.MaNCC || sup.MaNCC === order.MaNCC);
+                return (
+                  <tr key={order.id}>
+                    <td><strong>{order.MaDDH || order.id}</strong></td>
+                    <td>{s?.TenNCC || order.MaNCCCode || order.MaNCC}</td>
+                    <td>{order.NgayDat}</td>
+                    <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{order.NguoiLap || order.MaNVCode || "—"}</span></td>
+                    <td>{money.format(order.TongTien || 0)}</td>
+                    <td><StatusBadge status={order.TrangThai} /></td>
+                  </tr>
+                );
+              })}
+              {!filteredOrders.length && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: "center", color: "var(--text-faint)", padding: 24 }}>
+                    Không tìm thấy đơn đặt hàng nào phù hợp với bộ lọc
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </section>
   );
 }
@@ -731,6 +931,12 @@ function StockDocument({ type, title }) {
   const [message, setMessage] = useState("");
   const [preview, setPreview] = useState(null);
 
+  // Filters for saved documents
+  const [filterSupplier, setFilterSupplier] = useState("all");
+  const [filterReason, setFilterReason] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+
   useEffect(() => {
     listRecords("products").then(setProducts).catch(() => setProducts([]));
     listRecords("suppliers").then(setSuppliers).catch(() => setSuppliers([]));
@@ -739,6 +945,26 @@ function StockDocument({ type, title }) {
       .then(setVouchers)
       .catch(() => setVouchers([]));
   }, [resource]);
+
+  const filteredVouchers = useMemo(() => {
+    return vouchers.filter((v) => {
+      if (
+        isReceipt &&
+        filterSupplier !== "all" &&
+        String(v.MaNCC) !== String(filterSupplier) &&
+        String(v.supplierId) !== String(filterSupplier)
+      ) {
+        return false;
+      }
+      if (!isReceipt && filterReason !== "all" && v.LyDoXuat !== filterReason) {
+        return false;
+      }
+      const d = v.NgayNhap || v.NgayXuat;
+      if (fromDate && d && d < fromDate) return false;
+      if (toDate && d && d > toDate) return false;
+      return true;
+    });
+  }, [vouchers, isReceipt, filterSupplier, filterReason, fromDate, toDate]);
 
   const total = selected.reduce(
     (sum, item) => sum + item.quantity * Number(item.price),
@@ -841,28 +1067,8 @@ function StockDocument({ type, title }) {
     }
     const next = { ...record, ...(saved || {}), id: saved?.id || record.id };
 
-    // Update local stock
-    const stored = JSON.parse(localStorage.getItem("baby-shop:products") || "[]");
-    if (stored.length) {
-      localStorage.setItem(
-        "baby-shop:products",
-        JSON.stringify(
-          stored.map((product) => {
-            const line = selected.find((item) => item.id === product.id);
-            return line
-              ? {
-                  ...product,
-                  stock: Math.max(
-                    0,
-                    Number(product.stock || 0) +
-                      (isReceipt ? line.quantity : -line.quantity)
-                  ),
-                }
-              : product;
-          })
-        )
-      );
-    }
+    // Đồng bộ lại danh sách sản phẩm từ MongoDB sau khi nhập/xuất kho
+    listRecords("products").then(setProducts).catch(() => {});
     setMessage(
       `Đã lưu ${isReceipt ? "phiếu nhập" : "phiếu xuất"} và cập nhật tồn kho.`
     );
@@ -1017,6 +1223,20 @@ function StockDocument({ type, title }) {
                   placeholder="Hóa đơn, biên bản giao nhận..."
                 />
               </label>
+              <label className="field full">
+                <span>Người lập phiếu (tự động theo tài khoản đăng nhập)</span>
+                <input
+                  type="text"
+                  readOnly
+                  value={currentUserInfo().display}
+                  style={{
+                    background: "var(--surface-sunken, #f1f5f9)",
+                    color: "var(--text-soft)",
+                    fontWeight: 600,
+                    cursor: "not-allowed",
+                  }}
+                />
+              </label>
             </div>
           </section>
 
@@ -1167,7 +1387,61 @@ function StockDocument({ type, title }) {
       </form>
 
       <section className="panel">
-        <h2>PHIẾU ĐÃ LƯU — IN MẪU 0{isReceipt ? "1" : "2"}-VT</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+          <h2 style={{ margin: 0 }}>PHIẾU ĐÃ LƯU — IN MẪU 0{isReceipt ? "1" : "2"}-VT ({filteredVouchers.length})</h2>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {isReceipt ? (
+              <select
+                value={filterSupplier}
+                onChange={(e) => setFilterSupplier(e.target.value)}
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+              >
+                <option value="all">Tất cả nhà cung cấp</option>
+                {suppliers.map((s) => (
+                  <option value={s.id} key={s.id}>{s.TenNCC}</option>
+                ))}
+              </select>
+            ) : (
+              <select
+                value={filterReason}
+                onChange={(e) => setFilterReason(e.target.value)}
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+              >
+                <option value="all">Tất cả lý do xuất</option>
+                <option value="Bán hàng">Bán hàng</option>
+                <option value="Chuyển kho nội bộ">Chuyển kho nội bộ</option>
+                <option value="Hủy hàng hỏng">Hủy hàng hỏng</option>
+                <option value="Điều chỉnh kiểm kê thiếu">Điều chỉnh kiểm kê thiếu</option>
+              </select>
+            )}
+            <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12.5 }}>
+              <span style={{ color: "var(--text-soft)" }}>Từ:</span>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+              />
+              <span style={{ color: "var(--text-soft)" }}>Đến:</span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+              />
+            </div>
+            {(filterSupplier !== "all" || filterReason !== "all" || fromDate || toDate) && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => { setFilterSupplier("all"); setFilterReason("all"); setFromDate(""); setToDate(""); }}
+              >
+                Xóa lọc
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="table-shell">
           <table>
             <thead>
@@ -1175,12 +1449,13 @@ function StockDocument({ type, title }) {
                 <th scope="col">Số phiếu</th>
                 <th scope="col">Ngày</th>
                 <th scope="col">{isReceipt ? "Nhà cung cấp / người giao" : "Lý do xuất"}</th>
+                <th scope="col">Người lập phiếu</th>
                 <th scope="col">Tổng tiền</th>
                 <th scope="col"></th>
               </tr>
             </thead>
             <tbody>
-              {vouchers.map((voucher) => {
+              {filteredVouchers.map((voucher) => {
                 const supplier = suppliers.find(
                   (item) => item.id === voucher.MaNCC || item.id === voucher.supplierId
                 );
@@ -1193,6 +1468,7 @@ function StockDocument({ type, title }) {
                         ? voucher.NguoiLienQuan || supplier?.TenNCC || "—"
                         : voucher.LyDoXuat || "—"}
                     </td>
+                    <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{voucher.NguoiLap || "—"}</span></td>
                     <td>{money.format(voucher.TongTien || 0)}</td>
                     <td>
                       <button
@@ -1206,10 +1482,10 @@ function StockDocument({ type, title }) {
                   </tr>
                 );
               })}
-              {!vouchers.length && (
+              {!filteredVouchers.length && (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center", color: "var(--text-faint)", padding: 24 }}>
-                    Chưa có phiếu {isReceipt ? "nhập" : "xuất"} kho
+                  <td colSpan={6} style={{ textAlign: "center", color: "var(--text-faint)", padding: 24 }}>
+                    Không tìm thấy phiếu {isReceipt ? "nhập" : "xuất"} kho nào phù hợp với bộ lọc
                   </td>
                 </tr>
               )}
@@ -1249,10 +1525,28 @@ function StockDocument({ type, title }) {
 /* ================================================================
    SALES PAGE (POS)
    ================================================================ */
+const CATEGORY_ICONS = {
+  "Sữa": "🍼",
+  "Bỉm/tã": "👶",
+  "Quần áo": "👕",
+  "Đồ dùng": "🥣",
+  "Đồ chơi": "🧸",
+  "Chăm sóc": "🧴",
+};
+
+function getCategoryIcon(catName) {
+  if (!catName) return "📦";
+  for (const [k, v] of Object.entries(CATEGORY_ICONS)) {
+    if (catName.toLowerCase().includes(k.toLowerCase())) return v;
+  }
+  return "📦";
+}
+
 function SalesPage({ title }) {
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [promotions, setPromotions] = useState([]);
   const [cart, setCart] = useState([]);
   const [customerId, setCustomerId] = useState("");
   const [customerError, setCustomerError] = useState("");
@@ -1260,18 +1554,56 @@ function SalesPage({ title }) {
   const [selectedCat, setSelectedCat] = useState("all");
   const [createdInvoice, setCreatedInvoice] = useState(null);
 
+  // Voucher / Promotion state
+  const [promoInput, setPromoInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState(null);
+  const [discountAmount, setDiscountAmount] = useState(0);
+
   useEffect(() => {
     listRecords("products").then(setProducts);
+    listRecords("promotions").then(setPromotions).catch(() => []);
     listRecords("customers")
       .then(setCustomers)
       .catch((error) => setCustomerError(error.message || "Không tải được danh sách khách hàng"));
   }, []);
 
-  const total = cart.reduce(
+  const selectedCustomer = useMemo(() => {
+    return customers.find((c) => c.id === customerId);
+  }, [customers, customerId]);
+
+  const customerPts = Number(selectedCustomer?.DiemTichLuy || 0);
+  const customerTier = !selectedCustomer
+    ? null
+    : customerPts >= 1000
+    ? "Kim Cương"
+    : customerPts >= 500
+    ? "Vàng"
+    : customerPts >= 100
+    ? "Bạc"
+    : "Đồng";
+
+  const subtotal = cart.reduce(
     (sum, item) => sum + item.quantity * item.GiaBan,
     0
   );
   const totalItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Auto recalculate discount when cart or applied promo changes
+  useEffect(() => {
+    if (appliedPromo) {
+      let disc = 0;
+      if (appliedPromo.GiaTriGiam && Number(appliedPromo.GiaTriGiam) > 0) {
+        disc = Math.min(subtotal, Number(appliedPromo.GiaTriGiam));
+      } else if (appliedPromo.PhanTramGiam && Number(appliedPromo.PhanTramGiam) > 0) {
+        disc = Math.min(subtotal, Math.round((subtotal * Number(appliedPromo.PhanTramGiam)) / 100));
+      }
+      setDiscountAmount(disc);
+    } else {
+      setDiscountAmount(0);
+    }
+  }, [subtotal, appliedPromo]);
+
+  const finalTotal = Math.max(0, subtotal - discountAmount);
 
   const categories = useMemo(() => {
     return ["all", ...new Set(products.map((p) => p.LoaiHang).filter(Boolean))];
@@ -1289,6 +1621,49 @@ function SalesPage({ title }) {
       }),
     [products, searchQuery, selectedCat]
   );
+
+  function applyPromo(code) {
+    const cleanCode = (code || promoInput).trim().toUpperCase();
+    if (!cleanCode) return toast("Vui lòng nhập mã khuyến mãi hoặc voucher");
+
+    const found = promotions.find(
+      (p) => (p.MaKM && p.MaKM.toUpperCase() === cleanCode) || p.id === cleanCode
+    );
+    if (!found) {
+      return toast(`Mã giảm giá "${cleanCode}" không hợp lệ hoặc đã hết hạn`);
+    }
+    if (found.TrangThai === "Đã kết thúc") {
+      return toast(`Chương trình "${found.TenKM}" đã kết thúc`);
+    }
+
+    if (found.PhamVi === "Theo đối tượng" && found.DoiTuong && found.DoiTuong !== "Tất cả") {
+      if (!selectedCustomer) {
+        return toast(`Mã "${cleanCode}" chỉ dành cho thành viên ${found.DoiTuong}. Vui lòng chọn khách hàng!`);
+      }
+      if (!found.DoiTuong.toLowerCase().includes(customerTier.toLowerCase())) {
+        return toast(`Mã "${cleanCode}" áp dụng cho ${found.DoiTuong}. Khách hàng hiện tại đang là Hạng ${customerTier}.`);
+      }
+    }
+
+    let disc = 0;
+    if (found.GiaTriGiam && Number(found.GiaTriGiam) > 0) {
+      disc = Math.min(subtotal, Number(found.GiaTriGiam));
+    } else if (found.PhanTramGiam && Number(found.PhanTramGiam) > 0) {
+      disc = Math.min(subtotal, Math.round((subtotal * Number(found.PhanTramGiam)) / 100));
+    }
+
+    setAppliedPromo(found);
+    setDiscountAmount(disc);
+    setPromoInput(cleanCode);
+    toast(`Đã áp dụng mã "${cleanCode}": Giảm ${money.format(disc)}`);
+  }
+
+  function removePromo() {
+    setAppliedPromo(null);
+    setDiscountAmount(0);
+    setPromoInput("");
+    toast("Đã gỡ bỏ mã khuyến mãi");
+  }
 
   function add(product) {
     if (Number(product.stock ?? 0) <= 0) {
@@ -1333,6 +1708,9 @@ function SalesPage({ title }) {
     if (!cart.length) return;
     if (window.confirm("Bạn có chắc muốn xóa tất cả sản phẩm trong giỏ?")) {
       setCart([]);
+      setAppliedPromo(null);
+      setDiscountAmount(0);
+      setPromoInput("");
     }
   }
 
@@ -1348,11 +1726,17 @@ function SalesPage({ title }) {
           quantity: item.quantity,
           price: item.GiaBan,
         })),
-        TongTien: total,
+        TongTien: finalTotal,
+        discount: discountAmount,
+        promoCode: appliedPromo?.MaKM || (discountAmount > 0 ? promoInput : null),
+        NguoiLap: currentUserInfo().name,
         NgayDat: new Date().toISOString().slice(0, 10),
         TrangThai: "Chờ xuất kho",
       });
       setCart([]);
+      setAppliedPromo(null);
+      setDiscountAmount(0);
+      setPromoInput("");
       setCreatedInvoice(result.invoice || result);
       toast("Đã lập đơn hàng và xuất hóa đơn thành công!");
     } catch (error) {
@@ -1362,17 +1746,33 @@ function SalesPage({ title }) {
 
   return (
     <section aria-labelledby="pos-heading" className="pos-workspace">
-      <header className="page-header">
+      <header className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
         <hgroup>
           <h1 id="pos-heading">{title}</h1>
-          <p>Màn hình bán lẻ POS: Chọn món nhanh, quản lý giỏ hàng và in hóa đơn tức thời.</p>
+          <p>Màn hình bán lẻ POS: Chọn món nhanh, áp dụng voucher thành viên và in hóa đơn tức thời.</p>
         </hgroup>
+        <div
+          style={{
+            background: "var(--surface-sunken, #f1f5f9)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            padding: "8px 14px",
+            fontSize: 13,
+            color: "var(--text-soft)",
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+          }}
+        >
+          <span>👤 Thu ngân:</span>
+          <strong style={{ color: "var(--primary-dark)" }}>{currentUserInfo().display}</strong>
+        </div>
       </header>
 
       {createdInvoice && (
         <div className="alert success" role="status" style={{ marginBottom: 18, display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
           <span>
-            Đã lập hóa đơn <strong>{createdInvoice.MaHD || createdInvoice.id}</strong> với tổng tiền {money.format(createdInvoice.TongTien || total)}.
+            Đã lập hóa đơn <strong>{createdInvoice.MaHD || createdInvoice.id}</strong> với tổng thanh toán {money.format(createdInvoice.TongTien || finalTotal)}.
           </span>
           <button className="btn btn-sm" type="button" onClick={() => navigate("/invoices")}>Xem hóa đơn ngay</button>
         </div>
@@ -1427,7 +1827,23 @@ function SalesPage({ title }) {
                       {st <= 0 ? "Hết hàng" : `Tồn ${st}`}
                     </span>
                   </div>
-                  <strong className="tile-name">{product.TenSP}</strong>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", margin: "6px 0" }}>
+                    {product.HinhAnh ? (
+                      <img
+                        src={product.HinhAnh}
+                        alt={product.TenSP}
+                        onError={(e) => { e.target.style.display = "none"; }}
+                        style={{ width: 38, height: 38, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", flexShrink: 0 }}
+                      />
+                    ) : (
+                      <div style={{ width: 38, height: 38, borderRadius: 6, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
+                        {getCategoryIcon(product.LoaiHang || "")}
+                      </div>
+                    )}
+                    <strong className="tile-name" style={{ margin: 0, textAlign: "left", flex: 1, fontSize: 13, lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                      {product.TenSP}
+                    </strong>
+                  </div>
                   <span className="tile-price">{money.format(product.GiaBan)}</span>
                 </button>
               );
@@ -1454,28 +1870,165 @@ function SalesPage({ title }) {
             )}
           </div>
 
-          <label className="field" style={{ margin: "14px 0 10px" }}>
-            <span style={{ fontWeight: 600, fontSize: 12.5 }}>Khách hàng <small style={{fontWeight:400,color:'var(--text-faint)'}}>(tuỳ chọn)</small></span>
-            <select
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-            >
-              <option value="">-- Khách lẻ (không bắt buộc) --</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.MaKH || customer.id} · {customer.HoTen} ({customer.SDT || "Chưa có SĐT"})
-                </option>
-              ))}
-            </select>
-            {customerError && <small className="text-danger">{customerError}</small>}
-          </label>
+          {/* Customer Selection & Membership Badge */}
+          <div style={{ margin: "14px 0 10px" }}>
+            <label className="field" style={{ margin: 0 }}>
+              <span style={{ fontWeight: 600, fontSize: 12.5 }}>Khách hàng <small style={{fontWeight:400,color:'var(--text-faint)'}}>(tích điểm &amp; nhận voucher)</small></span>
+              <select
+                value={customerId}
+                onChange={(e) => {
+                  setCustomerId(e.target.value);
+                  setAppliedPromo(null);
+                  setDiscountAmount(0);
+                  setPromoInput("");
+                }}
+              >
+                <option value="">-- Khách vãng lai (không tích điểm) --</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.MaKH || customer.id} · {customer.HoTen} ({customer.DiemTichLuy || 0} điểm)
+                  </option>
+                ))}
+              </select>
+              {customerError && <small className="text-danger">{customerError}</small>}
+            </label>
 
+            {selectedCustomer && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  background:
+                    customerTier === "Kim Cương"
+                      ? "#f0f9ff"
+                      : customerTier === "Vàng"
+                      ? "#fefce8"
+                      : customerTier === "Bạc"
+                      ? "#f8fafc"
+                      : "#f9fafb",
+                  border:
+                    customerTier === "Kim Cương"
+                      ? "1px solid #7dd3fc"
+                      : customerTier === "Vàng"
+                      ? "1px solid #fde047"
+                      : customerTier === "Bạc"
+                      ? "1px solid #cbd5e1"
+                      : "1px solid #e5e7eb",
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontWeight: 700, color: "#1e293b" }}>
+                    ⭐ {selectedCustomer.HoTen} · {customerPts} điểm
+                  </span>
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      background:
+                        customerTier === "Kim Cương"
+                          ? "#0284c7"
+                          : customerTier === "Vàng"
+                          ? "#d97706"
+                          : customerTier === "Bạc"
+                          ? "#475569"
+                          : "#94a3b8",
+                      color: "#fff",
+                      fontSize: 11,
+                    }}
+                  >
+                    Hạng {customerTier}
+                  </span>
+                </div>
+
+                {/* Quick Voucher recommendation based on tier */}
+                <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "var(--text-soft)" }}>Voucher hợp lệ:</span>
+                  {customerPts >= 100 && (
+                    <button
+                      type="button"
+                      onClick={() => applyPromo("BAC50K")}
+                      style={{
+                        padding: "2px 8px",
+                        fontSize: 11,
+                        borderRadius: 6,
+                        border: "1px solid #94a3b8",
+                        background: appliedPromo?.MaKM === "BAC50K" ? "#475569" : "#fff",
+                        color: appliedPromo?.MaKM === "BAC50K" ? "#fff" : "#334155",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Bạc 50K
+                    </button>
+                  )}
+                  {customerPts >= 500 && (
+                    <button
+                      type="button"
+                      onClick={() => applyPromo("VANG100K")}
+                      style={{
+                        padding: "2px 8px",
+                        fontSize: 11,
+                        borderRadius: 6,
+                        border: "1px solid #d97706",
+                        background: appliedPromo?.MaKM === "VANG100K" ? "#d97706" : "#fff",
+                        color: appliedPromo?.MaKM === "VANG100K" ? "#fff" : "#b45309",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Vàng 100K
+                    </button>
+                  )}
+                  {customerPts >= 1000 && (
+                    <button
+                      type="button"
+                      onClick={() => applyPromo("KC200K")}
+                      style={{
+                        padding: "2px 8px",
+                        fontSize: 11,
+                        borderRadius: 6,
+                        border: "1px solid #0284c7",
+                        background: appliedPromo?.MaKM === "KC200K" ? "#0284c7" : "#fff",
+                        color: appliedPromo?.MaKM === "KC200K" ? "#fff" : "#0369a1",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Kim Cương 200K
+                    </button>
+                  )}
+                  {customerPts < 100 && (
+                    <span style={{ fontSize: 11, color: "var(--text-faint)", fontStyle: "italic" }}>
+                      Chưa đủ 100 điểm đổi voucher
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Cart items list */}
           <div className="cart-list-scroll">
             {cart.length > 0 ? (
               cart.map((item) => (
-                <article className="cart-item" key={item.id}>
-                  <div className="nm">
-                    <strong style={{ display: "block", fontSize: 13 }}>{item.TenSP}</strong>
+                <article className="cart-item" key={item.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {item.HinhAnh ? (
+                    <img
+                      src={item.HinhAnh}
+                      alt={item.TenSP}
+                      onError={(e) => { e.target.style.display = "none"; }}
+                      style={{ width: 34, height: 34, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", flexShrink: 0 }}
+                    />
+                  ) : (
+                    <div style={{ width: 34, height: 34, borderRadius: 6, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>
+                      {getCategoryIcon(item.LoaiHang || "")}
+                    </div>
+                  )}
+                  <div className="nm" style={{ flex: 1, minWidth: 0 }}>
+                    <strong style={{ display: "block", fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.TenSP}</strong>
                     <small style={{ color: "var(--text-soft)" }}>{money.format(item.GiaBan)} / {item.DonViTinh || "cái"}</small>
                   </div>
                   <div className="qty-ctrl">
@@ -1497,6 +2050,54 @@ function SalesPage({ title }) {
             )}
           </div>
 
+          {/* Promo code input */}
+          <div style={{ margin: "10px 0", padding: "10px", background: "var(--surface-sunken, #f8fafc)", borderRadius: 8, border: "1px solid var(--border)" }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-soft)", display: "block", marginBottom: 6 }}>
+              🏷️ Mã khuyến mãi / Voucher giảm giá:
+            </span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                type="text"
+                placeholder="Nhập mã (VD: KMALL10, BAC50K)"
+                value={promoInput}
+                onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                style={{
+                  flex: 1,
+                  padding: "6px 10px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                }}
+              />
+              {appliedPromo ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={removePromo}
+                  style={{ background: "#fee2e2", color: "#b91c1c", border: "none" }}
+                >
+                  Gỡ bỏ
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => applyPromo(promoInput)}
+                  disabled={!cart.length}
+                >
+                  Áp dụng
+                </button>
+              )}
+            </div>
+            {appliedPromo && (
+              <div style={{ marginTop: 6, fontSize: 11.5, color: "#059669", fontWeight: 600 }}>
+                ✓ Đang áp dụng: {appliedPromo.TenKM} ({appliedPromo.MaKM})
+              </div>
+            )}
+          </div>
+
           {cart.length > 0 && (
             <div className="cart-summary-box">
               <div className="cart-total-row">
@@ -1505,11 +2106,17 @@ function SalesPage({ title }) {
               </div>
               <div className="cart-total-row">
                 <span>Tạm tính</span>
-                <span>{money.format(total)}</span>
+                <span>{money.format(subtotal)}</span>
               </div>
+              {discountAmount > 0 && (
+                <div className="cart-total-row" style={{ color: "#059669" }}>
+                  <span>Chiết khấu / Ưu đãi</span>
+                  <strong>-{money.format(discountAmount)}</strong>
+                </div>
+              )}
               <div className="cart-total-row grand">
                 <span>TỔNG THANH TOÁN</span>
-                <strong style={{ color: "var(--primary)", fontSize: 18 }}>{money.format(total)}</strong>
+                <strong style={{ color: "var(--primary)", fontSize: 18 }}>{money.format(finalTotal)}</strong>
               </div>
             </div>
           )}
@@ -1542,6 +2149,11 @@ function InvoicePage({ title }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("Tất cả");
 
+  // Multi-criteria filters
+  const [filterCustomer, setFilterCustomer] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+
   useEffect(() => {
     listRecords("invoices").then(setInvoices);
     listRecords("customers").then(setCustomers).catch(() => {});
@@ -1550,7 +2162,19 @@ function InvoicePage({ title }) {
   const visibleInvoices = invoices.filter((invoice) => {
     const search = query.trim().toLowerCase();
     const matchesQuery = !search || JSON.stringify(invoice).toLowerCase().includes(search);
-    return matchesQuery && (statusFilter === "Tất cả" || invoice.TrangThai === statusFilter);
+    if (!matchesQuery) return false;
+    if (statusFilter !== "Tất cả" && invoice.TrangThai !== statusFilter) return false;
+    if (
+      filterCustomer !== "all" &&
+      String(invoice.MaKH) !== String(filterCustomer) &&
+      String(invoice.MaKHCode) !== String(filterCustomer)
+    ) {
+      return false;
+    }
+    const d = invoice.NgayLap || invoice.createdAt;
+    if (fromDate && d && d.slice(0, 10) < fromDate) return false;
+    if (toDate && d && d.slice(0, 10) > toDate) return false;
+    return true;
   });
 
   const totalValue = invoices.reduce((sum, invoice) => sum + Number(invoice.TongTien || 0), 0);
@@ -1567,7 +2191,7 @@ function InvoicePage({ title }) {
     const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[character]));
     const printWindow = window.open("", "_blank", "width=900,height=720");
     if (!printWindow) return;
-    printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(invoice.MaHD || invoice.id)}</title><style>body{font-family:Arial,sans-serif;color:#1f2a37;margin:40px auto;max-width:780px}header{display:flex;justify-content:space-between;border-bottom:2px solid #3d7068;padding-bottom:18px}h1{font-size:24px;margin:0 0 6px}h2{font-size:16px;text-transform:uppercase;letter-spacing:1px;color:#3d7068;margin:0}p{margin:5px 0;color:#6b7680}table{width:100%;border-collapse:collapse;margin-top:28px}th,td{padding:11px 8px;border-bottom:1px solid #e3e6e5;text-align:left}th:last-child,td:last-child{text-align:right}.summary{margin:24px 0 0 auto;width:300px}.summary div{display:flex;justify-content:space-between;padding:6px 0}.grand{border-top:2px solid #3d7068;margin-top:7px;padding-top:12px!important;font-size:18px;font-weight:bold;color:#2a4f49}.foot{margin-top:42px;text-align:center;font-size:12px;color:#9aa3ab}@media print{body{margin:20px}}</style></head><body><header><div><h2>Mẹ &amp; Bé</h2><p>Hệ thống bán lẻ mẹ và bé</p></div><div style="text-align:right"><h1>HÓA ĐƠN BÁN HÀNG</h1><p>${escapeHtml(invoice.MaHD || invoice.id)} · ${escapeHtml(invoice.NgayLap)}</p></div></header><section style="margin-top:22px"><strong>Khách hàng:</strong> ${escapeHtml(customer?.HoTen || invoice.MaKHCode || "Khách lẻ")}<br><span style="color:#6b7680">${escapeHtml(customer?.SDT || "")} ${customer?.DiaChi ? ` · ${escapeHtml(customer.DiaChi)}` : ""}</span></section><table><thead><tr><th>Sản phẩm</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>${lines.map((line) => `<tr><td>${escapeHtml(line.TenSP || line.MaSPCode || line.MaSP)}</td><td>${Number(line.SoLuong || line.quantity || 0)}</td><td>${money.format(Number(line.DonGia || line.price || 0))}</td><td>${money.format(Number(line.ThanhTien || (line.SoLuong || line.quantity || 0) * (line.DonGia || line.price || 0)))}</td></tr>`).join("")}</tbody></table><div class="summary"><div><span>Tổng tiền</span><strong>${money.format(invoice.TongTien || 0)}</strong></div><div><span>Đã thanh toán</span><strong>${money.format(invoice.SoTienDaTra || 0)}</strong></div><div class="grand"><span>Còn phải thu</span><strong>${money.format(invoice.SoTienConLai ?? invoice.TongTien ?? 0)}</strong></div></div><p class="foot">Cảm ơn quý khách đã mua hàng tại Mẹ &amp; Bé.</p></body></html>`);
+    printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(invoice.MaHD || invoice.id)}</title><style>body{font-family:Arial,sans-serif;color:#1f2a37;margin:40px auto;max-width:780px}header{display:flex;justify-content:space-between;border-bottom:2px solid #3d7068;padding-bottom:18px}h1{font-size:24px;margin:0 0 6px}h2{font-size:16px;text-transform:uppercase;letter-spacing:1px;color:#3d7068;margin:0}p{margin:5px 0;color:#6b7680}table{width:100%;border-collapse:collapse;margin-top:28px}th,td{padding:11px 8px;border-bottom:1px solid #e3e6e5;text-align:left}th:last-child,td:last-child{text-align:right}.summary{margin:24px 0 0 auto;width:300px}.summary div{display:flex;justify-content:space-between;padding:6px 0}.grand{border-top:2px solid #3d7068;margin-top:7px;padding-top:12px!important;font-size:18px;font-weight:bold;color:#2a4f49}.foot{margin-top:42px;text-align:center;font-size:12px;color:#9aa3ab}@media print{body{margin:20px}}</style></head><body><header><div><h2>Mẹ &amp; Bé</h2><p>Hệ thống bán lẻ mẹ và bé</p></div><div style="text-align:right"><h1>HÓA ĐƠN BÁN HÀNG</h1><p>${escapeHtml(invoice.MaHD || invoice.id)} · ${escapeHtml(invoice.NgayLap)}</p><p style="font-size:13px;color:#555">Người lập: <strong>${escapeHtml(invoice.NguoiLap || "Nhân viên")}</strong></p></div></header><section style="margin-top:22px"><strong>Khách hàng:</strong> ${escapeHtml(customer?.HoTen || invoice.MaKHCode || "Khách lẻ")}<br><span style="color:#6b7680">${escapeHtml(customer?.SDT || "")} ${customer?.DiaChi ? ` · ${escapeHtml(customer.DiaChi)}` : ""}</span></section><table><thead><tr><th>Sản phẩm</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>${lines.map((line) => `<tr><td>${escapeHtml(line.TenSP || line.MaSPCode || line.MaSP)}</td><td>${Number(line.SoLuong || line.quantity || 0)}</td><td>${money.format(Number(line.DonGia || line.price || 0))}</td><td>${money.format(Number(line.ThanhTien || (line.SoLuong || line.quantity || 0) * (line.DonGia || line.price || 0)))}</td></tr>`).join("")}</tbody></table><div class="summary"><div><span>Tổng tiền</span><strong>${money.format(invoice.TongTien || 0)}</strong></div><div><span>Đã thanh toán</span><strong>${money.format(invoice.SoTienDaTra || 0)}</strong></div><div class="grand"><span>Còn phải thu</span><strong>${money.format(invoice.SoTienConLai ?? invoice.TongTien ?? 0)}</strong></div></div><p class="foot">Cảm ơn quý khách đã mua hàng tại Mẹ &amp; Bé.</p></body></html>`);
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
@@ -1621,11 +2245,52 @@ function InvoicePage({ title }) {
         <article><span>Còn phải thu</span><strong className="warning">{money.format(outstandingValue)}</strong><small>Cần theo dõi công nợ</small></article>
       </div>
 
-      <div className="invoice-toolbar">
-        <label className="invoice-search">
+      <div className="invoice-toolbar" style={{ flexWrap: "wrap", gap: 10 }}>
+        <label className="invoice-search" style={{ flex: 1, minWidth: 240, maxWidth: 380 }}>
           <MagnifyingGlassIcon aria-hidden="true" />
           <input type="search" placeholder="Tìm mã hóa đơn, đơn hàng, khách hàng..." value={query} onChange={(event) => setQuery(event.target.value)} />
         </label>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <select
+            value={filterCustomer}
+            onChange={(e) => setFilterCustomer(e.target.value)}
+            style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+          >
+            <option value="all">Tất cả khách hàng</option>
+            {customers.map((c) => (
+              <option value={c.id} key={c.id}>{c.HoTen}</option>
+            ))}
+          </select>
+
+          <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12.5 }}>
+            <span style={{ color: "var(--text-soft)" }}>Từ:</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+            />
+            <span style={{ color: "var(--text-soft)" }}>Đến:</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+            />
+          </div>
+
+          {(filterCustomer !== "all" || fromDate || toDate) && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => { setFilterCustomer("all"); setFromDate(""); setToDate(""); }}
+            >
+              Xóa lọc
+            </button>
+          )}
+        </div>
+
         <div className="filter-chips" aria-label="Lọc trạng thái hóa đơn">
           {["Tất cả", "Chưa thanh toán", "Thanh toán một phần", "Đã thanh toán"].map((status) => (
             <button key={status} type="button" className={`filter-chip ${statusFilter === status ? "active" : ""}`} onClick={() => setStatusFilter(status)}>{status}</button>
@@ -1640,6 +2305,7 @@ function InvoicePage({ title }) {
               <th scope="col">Mã hóa đơn</th>
               <th scope="col">Khách hàng</th>
               <th scope="col">Ngày lập</th>
+              <th scope="col">Người lập phiếu</th>
               <th scope="col">Giá trị</th>
               <th scope="col">Còn phải thu</th>
               <th scope="col">Trạng thái</th>
@@ -1652,6 +2318,7 @@ function InvoicePage({ title }) {
                 <td><button className="invoice-code" type="button" onClick={() => setSelectedInvoice(invoice)}>{invoice.MaHD || invoice.id}</button><small>{invoice.MaDHCode || invoice.MaDH || "Không có đơn hàng"}</small></td>
                 <td>{customerFor(invoice)?.HoTen || invoice.MaKHCode || "Khách lẻ"}</td>
                 <td>{invoice.NgayLap}</td>
+                <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{invoice.NguoiLap || invoice.MaNVCode || "—"}</span></td>
                 <td>{money.format(invoice.TongTien || 0)}</td>
                 <td><strong>{money.format(invoice.SoTienConLai ?? invoice.TongTien ?? 0)}</strong></td>
                 <td><StatusBadge status={invoice.TrangThai} /></td>
@@ -1665,7 +2332,7 @@ function InvoicePage({ title }) {
             ))}
             {!visibleInvoices.length && (
               <tr>
-                <td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)", padding: 40 }}>
+                <td colSpan={8} style={{ textAlign: "center", color: "var(--text-faint)", padding: 40 }}>
                   <InboxIcon style={{ width: 28, margin: "0 auto 8px" }} aria-hidden="true" /><br />
                   {invoices.length ? "Không có hóa đơn phù hợp" : "Chưa có hóa đơn nào"}
                 </td>

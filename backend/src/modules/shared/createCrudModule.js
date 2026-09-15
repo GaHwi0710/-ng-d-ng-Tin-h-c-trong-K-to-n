@@ -3,9 +3,42 @@ import { ObjectId } from "mongodb";
 import { getDatabase } from "../../config/mongodb.js";
 import { getCodeDefinition, nextBusinessCode } from "./businessCode.js";
 import { replaceDetails } from "./detailCollections.js";
+import { isLockedStatus, roleCodes } from "../auth/accountEmployee.js";
+
 
 function parseId(id) {
   return ObjectId.isValid(id) ? new ObjectId(id) : null;
+}
+
+async function findDocument(collection, tableName, idParam) {
+  const parsed = parseId(idParam);
+  if (parsed) {
+    const doc = await collection.findOne({ _id: parsed });
+    if (doc) return doc;
+  }
+  const codeDef = getCodeDefinition(tableName);
+  if (codeDef?.field) {
+    const doc = await collection.findOne({ [codeDef.field]: idParam });
+    if (doc) return doc;
+  }
+  return await collection.findOne({
+    $or: [
+      { MaSP: idParam },
+      { MaKH: idParam },
+      { MaNCC: idParam },
+      { MaDDH: idParam },
+      { MaDH: idParam },
+      { MaHD: idParam },
+      { MaPN: idParam },
+      { MaPX: idParam },
+      { MaKK: idParam },
+      { MaPTH: idParam },
+      { MaCN: idParam },
+      { MaKM: idParam },
+      { MaNV: idParam },
+      { username: idParam },
+    ],
+  });
 }
 
 function serialize(document) {
@@ -18,13 +51,14 @@ function validateRecord(tableName, body) {
   const required = {
     KhachHang: ["HoTen"],
     NhaCungCap: ["TenNCC"],
-    SanPham: ["MaSP", "TenSP", "MaLoai", "DonViTinh", "GiaNhap", "GiaBan", "TrangThai"],
+    SanPham: ["MaSP", "TenSP", "MaLoai", "DonViTinh", "GiaNhap", "GiaBan", "TrangThai", "HanSuDung"],
     LoaiHang: ["TenLoai"],
   }[tableName] || [];
   if (required.some((field) => !String(body[field] || "").trim())) return "Vui lòng nhập đủ các trường bắt buộc";
   if (body.Email && !/^\S+@\S+\.\S+$/.test(body.Email)) return "Email không hợp lệ";
   if (body.SDT && !/^0\d{9,10}$/.test(String(body.SDT).trim())) return "Số điện thoại phải gồm 10-11 chữ số và bắt đầu bằng 0";
   if (tableName === "SanPham" && !["Đang bán", "Ngừng bán"].includes(body.TrangThai)) return "Trạng thái sản phẩm không hợp lệ";
+  if (tableName === "SanPham" && (!body.HanSuDung || isNaN(Date.parse(body.HanSuDung)))) return "Hạn sử dụng không hợp lệ hoặc chưa nhập";
   if (tableName === "KhuyenMai" && Number(body.PhanTramGiam) > 100) return "Phần trăm giảm không được vượt quá 100";
   if (body.NgayBatDau && body.NgayKetThuc && String(body.NgayBatDau) > String(body.NgayKetThuc)) return "Ngày bắt đầu không được sau ngày kết thúc";
   for (const field of ["GiaNhap", "GiaBan", "DiemTichLuy", "PhanTramGiam", "SoTien", "SoTienDaTra", "SoTienConLai"]) {
@@ -36,6 +70,28 @@ function validateRecord(tableName, body) {
 async function serializeRecord(tableName, document) {
   const record = serialize(document);
   if (!record) return record;
+
+  if (tableName === "SanPham") {
+    const stockDoc = await getDatabase().collection("TonKho").findOne({ MaSP: new ObjectId(record.id) });
+    if (stockDoc && stockDoc.SoLuongTon !== undefined) {
+      record.stock = stockDoc.SoLuongTon;
+    }
+  } else if (tableName === "TonKho") {
+    if (record.MaSP) {
+      const sp = await getDatabase().collection("SanPham").findOne(
+        ObjectId.isValid(record.MaSP) ? { _id: new ObjectId(record.MaSP) } : { MaSP: String(record.MaSP) }
+      );
+      if (sp) {
+        record.TenSP = sp.TenSP;
+        record.MaSP = sp.MaSP;
+        record.DonViTinh = sp.DonViTinh;
+        record.LoaiHang = sp.LoaiHang;
+        record.GiaBan = sp.GiaBan;
+        record.TrangThai = sp.TrangThai;
+        record.stock = record.SoLuongTon;
+      }
+    }
+  }
   const references = {
     HoaDon: [{ field: "MaDH", table: "DonHang", code: "MaDH", output: "MaDHCode" }],
     PhieuXuat: [{ field: "MaDH", table: "DonHang", code: "MaDH", output: "MaDHCode" }],
@@ -91,9 +147,7 @@ export function createCrudModule(routeName, tableName) {
 
   router.get("/:id", async (req, res, next) => {
     try {
-      const id = parseId(req.params.id);
-      if (!id) return res.status(400).json({ message: "ID khong hop le" });
-      const data = await getDatabase().collection(tableName).findOne({ _id: id });
+      const data = await findDocument(getDatabase().collection(tableName), tableName, req.params.id);
       if (!data) return res.status(404).json({ message: `Khong tim thay ${routeName}` });
       res.json({ table: tableName, data: await serializeRecord(tableName, data), message: `Chi tiet ${routeName}` });
     } catch (error) {
@@ -150,6 +204,9 @@ export function createCrudModule(routeName, tableName) {
       const collection = getDatabase().collection(tableName);
       const body = { ...req.body };
       if (tableName === "SanPham") {
+        if (!body.HanSuDung || !String(body.HanSuDung).trim() || isNaN(Date.parse(body.HanSuDung))) {
+          return res.status(400).json({ message: "Vui lòng chọn hạn sử dụng hợp lệ cho sản phẩm trước khi lưu" });
+        }
         let catDoc = null;
         if (ObjectId.isValid(body.MaLoai)) {
           catDoc = await getDatabase().collection("LoaiHang").findOne({ _id: new ObjectId(body.MaLoai) });
@@ -189,24 +246,49 @@ export function createCrudModule(routeName, tableName) {
         }
         body.items = lines;
         body.TongTien = total;
-        body.MaNV = body.MaNV || req.user.id;
+      }
+      if (req.user && tableName !== "NhanVien") {
+        body.MaNV = req.user.id;
+        body.NguoiLap = req.user.fullName || req.user.username || body.NguoiLap;
+      }
+      if (tableName === "NhanVien") {
+        if (body.VaiTro) body.MaVaiTro = roleCodes[body.VaiTro] || body.MaVaiTro || 2;
+        if (!body.TrangThai) body.TrangThai = "Đang làm việc";
+      }
+      if (["KhachHang", "NhaCungCap"].includes(tableName) && !body.TrangThai) {
+        body.TrangThai = "Đang hoạt động";
+      }
+      const definition = getCodeDefinition(tableName);
+      if (definition && !body[definition.field]) {
+        body[definition.field] = await nextBusinessCode(collection, tableName);
+      } else if (definition && body[definition.field]) {
+        const existing = await collection.findOne({ [definition.field]: body[definition.field] });
+        if (existing) {
+          return res.status(409).json({ message: `${body[definition.field]} đã tồn tại` });
+        }
       }
       const validation = validateRecord(tableName, body);
       if (validation) return res.status(400).json({ message: validation });
-      const definition = getCodeDefinition(tableName);
-      const code = definition && !body[definition.field]
-        ? await nextBusinessCode(collection, tableName)
-        : undefined;
       const document = {
         ...body,
-        ...(code ? { [definition.field]: code } : {}),
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      if (definition && await collection.findOne({ [definition.field]: document[definition.field] })) {
-        return res.status(409).json({ message: `${document[definition.field]} đã tồn tại` });
-      }
       const result = await collection.insertOne(document);
+      if (tableName === "SanPham") {
+        await getDatabase().collection("TonKho").updateOne(
+          { MaSP: result.insertedId },
+          {
+            $set: {
+              MaSP: result.insertedId,
+              SoLuongTon: Number(document.stock || 0),
+              NgayCapNhat: new Date().toISOString().slice(0, 10),
+              updatedAt: new Date(),
+            },
+          },
+          { upsert: true }
+        );
+      }
       if (tableName === "DonDatHang") await replaceDetails(getDatabase(), "CT_DonDatHang", result.insertedId, document.items || document.details);
       if (tableName === "KhuyenMai") await replaceDetails(getDatabase(), "CT_KhuyenMai", result.insertedId, document.details || document.items);
       res.status(201).json({ table: tableName, data: await serializeRecord(tableName, { _id: result.insertedId, ...document }), message: `Tao moi ${routeName}` });
@@ -217,10 +299,12 @@ export function createCrudModule(routeName, tableName) {
 
   router.put("/:id", async (req, res, next) => {
     try {
+      const existingDoc = await findDocument(getDatabase().collection(tableName), tableName, req.params.id);
+      if (!existingDoc) return res.status(404).json({ message: `Khong tim thay ${routeName}` });
+      const id = existingDoc._id;
+
       if (tableName === "CongNo") {
         // Cho phép cập nhật công nợ thủ công (tính lại SoTienConLai và TrangThai)
-        const id = parseId(req.params.id);
-        if (!id) return res.status(400).json({ message: "ID khong hop le" });
         const body = { ...req.body };
         const soTien = Number(body.SoTien);
         if (!Number.isFinite(soTien) || soTien <= 0) {
@@ -251,8 +335,6 @@ export function createCrudModule(routeName, tableName) {
           message: "Cap nhat cong no",
         });
       }
-      const id = parseId(req.params.id);
-      if (!id) return res.status(400).json({ message: "ID khong hop le" });
       const update = { ...req.body, updatedAt: new Date() };
       if (tableName === "SanPham") {
         let catDoc = null;
@@ -299,6 +381,19 @@ export function createCrudModule(routeName, tableName) {
         { returnDocument: "after" }
       );
       if (!result) return res.status(404).json({ message: `Khong tim thay ${routeName}` });
+      if (tableName === "SanPham" && update.stock !== undefined) {
+        await getDatabase().collection("TonKho").updateOne(
+          { MaSP: id },
+          {
+            $set: {
+              SoLuongTon: Number(update.stock),
+              NgayCapNhat: new Date().toISOString().slice(0, 10),
+              updatedAt: new Date(),
+            },
+          },
+          { upsert: true }
+        );
+      }
       if (tableName === "DonDatHang") await replaceDetails(getDatabase(), "CT_DonDatHang", id, (update.items || update.details || []).map((line) => ({
         MaSP: line.MaSP || line.productId || line.id,
         SoLuong: Number(line.SoLuong || line.quantity),
@@ -306,20 +401,121 @@ export function createCrudModule(routeName, tableName) {
         ThanhTien: Number(line.ThanhTien ?? (Number(line.SoLuong || line.quantity) * Number(line.DonGia ?? line.price))),
       })));
       if (tableName === "KhuyenMai") await replaceDetails(getDatabase(), "CT_KhuyenMai", id, update.details || update.items);
+      if (tableName === "NhanVien" && (existingDoc.username || update.username)) {
+        const uName = existingDoc.username || update.username;
+        const isLocked = isLockedStatus(update.TrangThai);
+        await getDatabase().collection("Users").updateOne(
+          { username: uName },
+          { $set: { status: isLocked ? "Đã khóa" : "Hoạt động", updatedAt: new Date() } }
+        );
+      }
       res.json({ table: tableName, data: await serializeRecord(tableName, result), message: `Cap nhat ${routeName}` });
     } catch (error) {
       next(error);
     }
   });
 
+  // Delete handler with smart soft-delete
   router.delete("/:id", async (req, res, next) => {
     try {
-      if (tableName === "SanPham") return res.status(409).json({ message: "Không được xóa sản phẩm vì sản phẩm đã liên kết với chứng từ. Hãy chuyển trạng thái sang Ngừng bán" });
-      const id = parseId(req.params.id);
-      if (!id) return res.status(400).json({ message: "ID khong hop le" });
-      const result = await getDatabase().collection(tableName).deleteOne({ _id: id });
-      if (!result.deletedCount) return res.status(404).json({ message: `Khong tim thay ${routeName}` });
-      res.json({ table: tableName, id: req.params.id, message: `Xoa ${routeName}` });
+      const db = getDatabase();
+      const existingDoc = await findDocument(db.collection(tableName), tableName, req.params.id);
+      if (!existingDoc) return res.status(404).json({ message: `Không tìm thấy ${routeName}` });
+      const id = existingDoc._id;
+
+      // Soft-delete for KhachHang
+      if (tableName === "KhachHang") {
+        const idMatches = [id, String(id)];
+        if (existingDoc.MaKH) idMatches.push(existingDoc.MaKH);
+
+        const hasOrders = await db.collection("DonHang").findOne({
+          $or: [{ MaKH: { $in: idMatches } }, { customerId: { $in: idMatches } }]
+        });
+        const hasInvoices = await db.collection("HoaDon").findOne({ MaKH: { $in: idMatches } });
+        const hasReturns = await db.collection("PhieuTraHang").findOne({ MaKH: { $in: idMatches } });
+        const hasDebts = await db.collection("CongNo").findOne({ MaKH: { $in: idMatches } });
+
+        if (hasOrders || hasInvoices || hasReturns || hasDebts) {
+          await db.collection("KhachHang").updateOne(
+            { _id: id },
+            { $set: { TrangThai: "Ngưng hoạt động", status: "inactive", updatedAt: new Date() } }
+          );
+          return res.json({
+            table: tableName,
+            id: req.params.id,
+            softDeleted: true,
+            status: "Ngưng hoạt động",
+            message: "Khách hàng đã phát sinh trong chứng từ nên đã được chuyển sang trạng thái 'Ngưng hoạt động'.",
+          });
+        }
+      }
+
+      // Soft-delete for NhaCungCap
+      if (tableName === "NhaCungCap") {
+        const idMatches = [id, String(id)];
+        if (existingDoc.MaNCC) idMatches.push(existingDoc.MaNCC);
+
+        const hasPurchaseOrders = await db.collection("DonDatHang").findOne({ MaNCC: { $in: idMatches } });
+        const hasReceipts = await db.collection("PhieuNhap").findOne({
+          $or: [{ MaNCC: { $in: idMatches } }, { supplierId: { $in: idMatches } }]
+        });
+        const hasDebts = await db.collection("CongNo").findOne({ MaNCC: { $in: idMatches } });
+
+        if (hasPurchaseOrders || hasReceipts || hasDebts) {
+          await db.collection("NhaCungCap").updateOne(
+            { _id: id },
+            { $set: { TrangThai: "Ngưng hoạt động", status: "inactive", updatedAt: new Date() } }
+          );
+          return res.json({
+            table: tableName,
+            id: req.params.id,
+            softDeleted: true,
+            status: "Ngưng hoạt động",
+            message: "Nhà cung cấp đã phát sinh trong chứng từ nên đã được chuyển sang trạng thái 'Ngưng hoạt động'.",
+          });
+        }
+      }
+
+      // Soft-delete for SanPham
+      if (tableName === "SanPham") {
+        const spMatches = [id, String(id)];
+        if (existingDoc.MaSP) spMatches.push(existingDoc.MaSP);
+
+        const hasOrderDetails = await db.collection("DonHang").findOne({ "details.MaSP": { $in: spMatches } });
+        const hasInvoiceDetails = await db.collection("HoaDon").findOne({ "details.MaSP": { $in: spMatches } });
+        const hasPoDetails = await db.collection("DonDatHang").findOne({
+          $or: [{ "items.productId": { $in: spMatches } }, { "details.MaSP": { $in: spMatches } }]
+        });
+        const hasReceiptDetails = await db.collection("PhieuNhap").findOne({
+          $or: [{ "details.MaSP": { $in: spMatches } }, { "details.id": { $in: spMatches } }]
+        });
+        const hasIssueDetails = await db.collection("PhieuXuat").findOne({
+          $or: [{ "details.MaSP": { $in: spMatches } }, { "details.id": { $in: spMatches } }]
+        });
+        const hasReturnDetails = await db.collection("PhieuTraHang").findOne({
+          $or: [{ "details.MaSP": { $in: spMatches } }, { MaSP: { $in: spMatches } }]
+        });
+
+        if (hasOrderDetails || hasInvoiceDetails || hasPoDetails || hasReceiptDetails || hasIssueDetails || hasReturnDetails) {
+          await db.collection("SanPham").updateOne(
+            { _id: id },
+            { $set: { TrangThai: "Ngừng bán", updatedAt: new Date() } }
+          );
+          return res.json({
+            table: tableName,
+            id: req.params.id,
+            softDeleted: true,
+            status: "Ngừng bán",
+            message: "Sản phẩm đã phát sinh trong chứng từ nên đã được chuyển sang trạng thái 'Ngừng bán'.",
+          });
+        }
+        // If not in documents, delete TonKho as well
+        await db.collection("TonKho").deleteOne({ MaSP: id });
+      }
+
+      const result = await db.collection(tableName).deleteOne({ _id: id });
+      if (!result.deletedCount) return res.status(404).json({ message: `Không tìm thấy ${routeName}` });
+      res.json({ table: tableName, id: req.params.id, softDeleted: false, message: `Đã xóa ${routeName} thành công.` });
     } catch (error) {
       next(error);
     }

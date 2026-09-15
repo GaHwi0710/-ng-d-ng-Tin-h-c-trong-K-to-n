@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   CheckCircleIcon,
   CubeIcon,
@@ -9,6 +9,24 @@ import {
 import { listRecords, saveRecord } from "../../lib/api.js";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
+
+function currentUserInfo() {
+  try {
+    const raw = localStorage.getItem("token");
+    if (!raw) return { name: "Quản trị viên", role: "admin", display: "Quản trị viên (Admin)" };
+    const parts = raw.split(".");
+    if (parts.length >= 2) {
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+      const roleMap = { admin: "Admin", accountant: "Kế toán", sales: "Thu ngân / Bán hàng", warehouse: "Thủ kho" };
+      return {
+        name: payload.HoTen || payload.Username || "Người dùng",
+        role: payload.Role || "user",
+        display: `${payload.HoTen || payload.Username || "Người dùng"} (${roleMap[payload.Role] || payload.Role || "Nhân viên"})`,
+      };
+    }
+  } catch {}
+  return { name: "Quản trị viên", role: "admin", display: "Quản trị viên (Admin)" };
+}
 
 export function StocktakePage({ title }) {
   const [products, setProducts] = useState([]);
@@ -43,9 +61,11 @@ export function StocktakePage({ title }) {
 
   async function submit() {
     try {
+      const user = currentUserInfo();
       const saved = await saveRecord("stocktakes", {
         note: "Kiểm kê định kỳ",
         NgayKiemKe: new Date().toISOString().slice(0, 10),
+        NguoiLap: user.name,
         items: products.map((product) => ({
           productId: product.id,
           sys: Number(product.stock || 0),
@@ -63,7 +83,7 @@ export function StocktakePage({ title }) {
     const printWindow = window.open("", "_blank", "width=900,height=720");
     if (!printWindow) return;
     const lines = (record.details || []).map((line, index) => `<tr><td>${index + 1}</td><td>${line.MaSPCode || line.MaSP || ""}</td><td>${line.TenSP || ""}</td><td>${line.SoLuongHeThong || 0}</td><td>${line.SoLuongThucTe || 0}</td><td>${line.ChenhLech > 0 ? "+" : ""}${line.ChenhLech || 0}</td></tr>`).join("");
-    printWindow.document.write(`<html><head><title>${record.MaKK || record.id}</title><style>body{font-family:Arial;margin:36px;color:#1f2a37}h1{text-align:center}p{text-align:center;color:#6b7680}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #999;padding:8px}th{background:#e7f0ee}td:first-child{text-align:center}</style></head><body><h1>PHIẾU KIỂM KÊ KHO</h1><p>${record.MaKK || record.id} · ${record.NgayKiemKe || ""} · ${new Date(record.createdAt || Date.now()).toLocaleString("vi-VN")}</p><table><thead><tr><th>STT</th><th>Mã hàng</th><th>Sản phẩm</th><th>Tồn hệ thống</th><th>Thực tế</th><th>Chênh lệch</th></tr></thead><tbody>${lines}</tbody></table><p style="margin-top:42px">Người lập phiếu ____________________ &nbsp;&nbsp;&nbsp; Người kiểm kê ____________________</p></body></html>`);
+    printWindow.document.write(`<html><head><title>${record.MaKK || record.id}</title><style>body{font-family:Arial;margin:36px;color:#1f2a37}h1{text-align:center}p{text-align:center;color:#6b7680}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #999;padding:8px}th{background:#e7f0ee}td:first-child{text-align:center}</style></head><body><h1>PHIẾU KIỂM KÊ KHO</h1><p>${record.MaKK || record.id} · ${record.NgayKiemKe || ""} · ${new Date(record.createdAt || Date.now()).toLocaleString("vi-VN")}</p><table><thead><tr><th>STT</th><th>Mã hàng</th><th>Sản phẩm</th><th>Tồn hệ thống</th><th>Thực tế</th><th>Chênh lệch</th></tr></thead><tbody>${lines}</tbody></table><p style="margin-top:42px">Người lập phiếu: <strong>${record.NguoiLap || "Quản trị viên"}</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Người kiểm kê: ____________________</p></body></html>`);
     printWindow.document.close();
     printWindow.print();
   }
@@ -75,14 +95,19 @@ export function StocktakePage({ title }) {
           <h1 id="stocktake-heading">{title}</h1>
           <p>Đối chiếu tồn kho trên hệ thống với số lượng thực tế tại quầy và kho chứa.</p>
         </hgroup>
-        <button
-          className="btn btn-primary"
-          type="button"
-          onClick={submit}
-        >
-          <CheckCircleIcon className="btn-icon" aria-hidden="true" />
-          Lưu &amp; Cập nhật tồn kho
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 13, background: "#f1f5f9", padding: "6px 12px", borderRadius: 6, color: "#475569", fontWeight: 500 }}>
+            👤 Người kiểm: <strong>{currentUserInfo().display}</strong>
+          </span>
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={submit}
+          >
+            <CheckCircleIcon className="btn-icon" aria-hidden="true" />
+            Lưu &amp; Cập nhật tồn kho
+          </button>
+        </div>
       </header>
 
       {/* Discrepancy stats */}
@@ -213,6 +238,7 @@ export function StocktakePage({ title }) {
               <tr>
                 <th>Mã phiếu</th>
                 <th>Thời điểm kiểm kê</th>
+                <th>Người lập</th>
                 <th>Số mặt hàng</th>
                 <th>Số mục lệch</th>
                 <th style={{ width: 130, textAlign: "center" }}>Thao tác</th>
@@ -223,6 +249,7 @@ export function StocktakePage({ title }) {
                 <tr key={record.id}>
                   <td><strong>{record.MaKK || record.id}</strong></td>
                   <td>{record.createdAt ? new Date(record.createdAt).toLocaleString("vi-VN") : record.NgayKiemKe}</td>
+                  <td><span style={{ fontWeight: 600, color: "var(--text-soft)" }}>{record.NguoiLap || "Quản trị viên"}</span></td>
                   <td>{record.details?.length || record.items?.length || 0} mặt hàng</td>
                   <td>
                     <span style={{ color: "var(--warn)", fontWeight: 600 }}>
@@ -238,7 +265,7 @@ export function StocktakePage({ title }) {
               ))}
               {!stocktakes.length && (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center", color: "var(--text-faint)", padding: 24 }}>
+                  <td colSpan={6} style={{ textAlign: "center", color: "var(--text-faint)", padding: 24 }}>
                     Chưa có phiếu kiểm kê nào được lưu
                   </td>
                 </tr>

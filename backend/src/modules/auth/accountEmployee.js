@@ -15,23 +15,48 @@ const roleCodes = {
   NhanVienMuaHang: 5,
 };
 
-export function employeeFromAccount(account) {
+export function isLockedStatus(status) {
+  if (!status) return false;
+  const s = String(status).trim().toLowerCase();
+  return (
+    s === "đã khóa" ||
+    s === "đã khoá" ||
+    s === "khóa" ||
+    s === "khoá" ||
+    s === "disabled" ||
+    s === "inactive" ||
+    s === "locked" ||
+    s === "nghỉ việc" ||
+    s === "đã nghỉ việc" ||
+    s === "ngưng hoạt động"
+  );
+}
+
+export function employeeFromAccount(account, existing = null) {
+  const isLocked = isLockedStatus(account.status) || isLockedStatus(account.TrangThai);
   return {
     username: account.username,
-    HoTen: account.fullName,
-    MaVaiTro: roleCodes[account.role] || roleCodes.NhanVienBanHang,
-    VaiTro: roleNames[account.role] || roleNames.NhanVienBanHang,
-    TrangThai: account.status === "disabled" ? "Đã nghỉ việc" : "Đang làm việc",
-    createdAt: account.createdAt || new Date(),
+    HoTen: account.fullName || account.HoTen || existing?.HoTen || "",
+    SDT: account.SDT || account.phone || existing?.SDT || "",
+    DiaChi: account.DiaChi || account.address || existing?.DiaChi || "",
+    CCCD: account.CCCD || account.citizenId || existing?.CCCD || "",
+    MaVaiTro: roleCodes[account.role] || (existing?.MaVaiTro ?? roleCodes.NhanVienBanHang),
+    VaiTro: roleNames[account.role] || account.VaiTro || existing?.VaiTro || roleNames.NhanVienBanHang,
+    TrangThai: isLocked ? "Đã khóa" : "Đang làm việc",
+    createdAt: account.createdAt || existing?.createdAt || new Date(),
     updatedAt: new Date(),
   };
 }
 
 export async function syncEmployee(database, account, previousUsername = account.username) {
   const existing = await database.collection("NhanVien").findOne({ username: previousUsername });
-  const update = { $set: employeeFromAccount(account) };
-  if (existing?.MaNV) update.$set.MaNV = existing.MaNV;
-  else update.$setOnInsert = { MaNV: await nextBusinessCode(database.collection("NhanVien"), "NhanVien") };
+  const empData = employeeFromAccount(account, existing);
+  const update = { $set: empData };
+  if (existing?.MaNV) {
+    update.$set.MaNV = existing.MaNV;
+  } else {
+    update.$setOnInsert = { MaNV: await nextBusinessCode(database.collection("NhanVien"), "NhanVien") };
+  }
   await database.collection("NhanVien").updateOne(
     { username: previousUsername },
     update,
@@ -39,4 +64,5 @@ export async function syncEmployee(database, account, previousUsername = account
   );
 }
 
-export { roleNames };
+export { roleNames, roleCodes };
+

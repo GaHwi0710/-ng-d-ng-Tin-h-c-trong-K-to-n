@@ -23,5 +23,5 @@ export const moduleRoutes = [
   { path: "/reports", title: "Báo cáo", description: "Thống kê doanh thu, nhập xuất kho và công nợ.", allowedRoles: accounting },
   { path: "/admin/employees", title: "Nhân viên", description: "Quản lý thông tin nhân viên cửa hàng.", allowedRoles: manager },
   { path: "/admin/roles", title: "Phân quyền", description: "Quản lý vai trò và quyền hạn truy cập.", allowedRoles: manager },
-  { path: "/admin/accounts", title: "Tài khoản", description: "Quản lý tài khoản đăng nhập hệ thống.", allowedRoles: manager },
+  { path: "/admin/accounts", title: "QL người dùng", description: "Quản lý tài khoản đăng nhập và nhân sự hệ thống.", allowedRoles: manager },
 ];

@@ -172,21 +172,105 @@ router.post("/sales-orders", allowRoles("QuanLy", "NhanVienBanHang"), async (req
   try {
     const lines = await productsByLines(req.body.items || req.body.details);
     if (req.body.NgayDat && !/^\d{4}-\d{2}-\d{2}$/.test(req.body.NgayDat)) throw fail("Ngày bán không hợp lệ");
+    let customer = null;
     const customerId = id(req.body.customerId || req.body.MaKH);
-    if (req.body.customerId || req.body.MaKH) {
-      const customer = await getDatabase().collection("KhachHang").findOne({ _id: customerId });
+    if (customerId) {
+      customer = await getDatabase().collection("KhachHang").findOne({ _id: customerId });
       if (!customer) throw fail("Khách hàng không tồn tại", 404);
     }
-    const total = lines.reduce((sum, line) => sum + line.quantity * line.price, 0);
+    const subtotal = lines.reduce((sum, line) => sum + line.quantity * line.price, 0);
+
+    // Calculate voucher / discount
+    let discount = Number(req.body.discount || req.body.GiamGia || 0);
+    let promoCode = String(req.body.promoCode || req.body.MaKM || req.body.voucherCode || "").trim();
+
+    if (promoCode) {
+      // Find promo code in KhuyenMai
+      const promo = await getDatabase().collection("KhuyenMai").findOne({
+        MaKM: { $regex: new RegExp(`^${promoCode}$`, "i") },
+        TrangThai: { $ne: "Đã kết thúc" }
+      });
+      if (promo) {
+        // Check scope
+        const pts = Number(customer?.DiemTichLuy || 0);
+        const tier = pts >= 1000 ? "Kim Cương" : pts >= 500 ? "Hạng Vàng" : pts >= 100 ? "Hạng Bạc" : "Hạng Đồng";
+        if (promo.PhamVi === "Theo đối tượng" && promo.DoiTuong && promo.DoiTuong !== "Tất cả") {
+          if (!customer) {
+            throw fail(`Mã ưu đãi "${promoCode}" chỉ dành cho khách hàng ${promo.DoiTuong}`);
+          }
+          if (!promo.DoiTuong.toLowerCase().includes(tier.toLowerCase())) {
+            throw fail(`Mã ưu đãi "${promoCode}" áp dụng cho ${promo.DoiTuong}. Khách hàng hiện tại đang là ${tier}.`);
+          }
+        }
+        if (promo.GiaTriGiam && Number(promo.GiaTriGiam) > 0) {
+          discount = Math.min(subtotal, Number(promo.GiaTriGiam));
+        } else if (promo.PhanTramGiam && Number(promo.PhanTramGiam) > 0) {
+          discount = Math.min(subtotal, Math.round((subtotal * Number(promo.PhanTramGiam)) / 100));
+        }
+      }
+    }
+    discount = Math.max(0, Math.min(subtotal, discount));
+    const total = subtotal - discount;
+
     const created = await withTransaction(async (session) => {
       await adjustStock(lines, -1, false, session);
-      const order = { MaDH: await nextBusinessCode(getDatabase().collection("DonHang"), "DonHang"), MaKH: customerId || null, MaNV: req.user.id, NgayDat: req.body.NgayDat || today(), TrangThai: "Chờ xuất kho", TongTien: total, details: lines.map((line) => ({ MaSP: line.product._id, SoLuong: line.quantity, DonGia: line.price, GiamGia: 0, ThanhTien: line.quantity * line.price })), createdAt: new Date() };
+      const nguoiLap = req.user?.fullName || req.user?.username || "Nhân viên";
+      const order = {
+        MaDH: await nextBusinessCode(getDatabase().collection("DonHang"), "DonHang"),
+        MaKH: customerId || null,
+        MaNV: req.user.id,
+        NguoiLap: nguoiLap,
+        NgayDat: req.body.NgayDat || today(),
+        TrangThai: "Chờ xuất kho",
+        TienHang: subtotal,
+        GiamGia: discount,
+        MaKM: promoCode || null,
+        TongTien: total,
+        details: lines.map((line) => ({
+          MaSP: line.product._id,
+          TenSP: line.product.TenSP,
+          MaSPCode: line.product.MaSP,
+          SoLuong: line.quantity,
+          DonGia: line.price,
+          GiamGia: 0,
+          ThanhTien: line.quantity * line.price
+        })),
+        createdAt: new Date()
+      };
       const orderResult = await getDatabase().collection("DonHang").insertOne(order, { session });
       await replaceDetails(getDatabase(), "CT_DonHang", orderResult.insertedId, order.details, session);
-      const invoice = { MaHD: await nextBusinessCode(getDatabase().collection("HoaDon"), "HoaDon"), MaDH: orderResult.insertedId, MaKH: customerId || null, MaNV: req.user.id, NgayLap: today(), TongTien: total, SoTienDaTra: 0, SoTienConLai: total, TrangThai: "Chưa thanh toán", details: order.details, createdAt: new Date() };
+
+      const invoice = {
+        MaHD: await nextBusinessCode(getDatabase().collection("HoaDon"), "HoaDon"),
+        MaDH: orderResult.insertedId,
+        MaKH: customerId || null,
+        MaNV: req.user.id,
+        NguoiLap: nguoiLap,
+        NgayLap: today(),
+        TienHang: subtotal,
+        GiamGia: discount,
+        MaKM: promoCode || null,
+        TongTien: total,
+        SoTienDaTra: 0,
+        SoTienConLai: total,
+        TrangThai: "Chưa thanh toán",
+        details: order.details,
+        createdAt: new Date()
+      };
       const invoiceResult = await getDatabase().collection("HoaDon").insertOne(invoice, { session });
       await replaceDetails(getDatabase(), "CT_HoaDon", invoiceResult.insertedId, invoice.details, session);
+
       if (customerId) {
+        // Award points: 1 point per 10,000 VND
+        const earnedPoints = Math.floor(total / 10000);
+        if (earnedPoints > 0) {
+          await getDatabase().collection("KhachHang").updateOne(
+            { _id: customerId },
+            { $inc: { DiemTichLuy: earnedPoints } },
+            { session }
+          );
+        }
+
         const debtCollection = getDatabase().collection("CongNo");
         await debtCollection.insertOne({
           MaCN: await nextBusinessCode(debtCollection, "CongNo"),
@@ -194,6 +278,7 @@ router.post("/sales-orders", allowRoles("QuanLy", "NhanVienBanHang"), async (req
           MaDH: orderResult.insertedId,
           MaHD: invoiceResult.insertedId,
           MaNV: req.user.id,
+          NguoiLap: nguoiLap,
           LoaiCongNo: "Khách hàng",
           NgayPhatSinh: today(),
           SoTien: total,
@@ -254,7 +339,7 @@ router.post("/stocktakes", allowRoles("QuanLy", "NhanVienKho"), async (req, res,
       await getDatabase().collection("SanPham").updateOne({ _id: product._id }, { $set: { stock: actual } }, { session });
     }
     if (!items.length) throw fail("Phiếu kiểm kê phải có sản phẩm");
-      const document = { MaKK: await nextBusinessCode(getDatabase().collection("KiemKe"), "KiemKe"), MaNV: req.user.id, NgayKiemKe: req.body.NgayKiemKe || today(), GhiChu: req.body.note || "Kiểm kê kho", details: items, createdAt: new Date(), updatedAt: new Date() };
+      const document = { MaKK: await nextBusinessCode(getDatabase().collection("KiemKe"), "KiemKe"), MaNV: req.user.id, NguoiLap: req.user?.fullName || req.user?.username || "Nhân viên", NgayKiemKe: req.body.NgayKiemKe || today(), GhiChu: req.body.note || "Kiểm kê kho", details: items, createdAt: new Date(), updatedAt: new Date() };
       const result = await getDatabase().collection("KiemKe").insertOne(document, { session });
       await replaceDetails(getDatabase(), "CT_KiemKe", result.insertedId, document.details, session);
       return serialize({ _id: result.insertedId, ...document });
@@ -319,6 +404,7 @@ router.post("/returns", allowRoles("QuanLy", "NhanVienBanHang"), async (req, res
       MaHD: invoice?._id || null,
       MaKH: customerId || null,
       MaNV: req.user.id,
+      NguoiLap: req.user?.fullName || req.user?.username || "Nhân viên",
       NgayTra: req.body.NgayTra || today(),
       LyDo: req.body.reason || req.body.LyDo || "",
       TrangThai: "Đã xử lý",

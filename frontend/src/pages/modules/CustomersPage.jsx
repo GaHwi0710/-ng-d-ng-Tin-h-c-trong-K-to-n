@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   PlusIcon,
   PencilSquareIcon,
@@ -9,18 +9,19 @@ import {
   MapPinIcon,
   SparklesIcon,
   UserGroupIcon,
+  TicketIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, saveRecord, deleteRecord } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 
-function getMemberTier(points = 0) {
+export function getMemberTier(points = 0) {
   const pts = Number(points) || 0;
-  if (pts >= 1000) return { name: "Kim Cương", badgeClass: "tier-diamond", icon: "💎" };
-  if (pts >= 500) return { name: "Hạng Vàng", badgeClass: "tier-gold", icon: "👑" };
-  if (pts >= 100) return { name: "Hạng Bạc", badgeClass: "tier-silver", icon: "🥈" };
-  return { name: "Hạng Đồng", badgeClass: "tier-bronze", icon: "🥉" };
+  if (pts >= 1000) return { name: "Kim Cương", badgeClass: "tier-diamond", icon: "💎", voucher: "Voucher 200.000đ", voucherVal: 200000 };
+  if (pts >= 500) return { name: "Hạng Vàng", badgeClass: "tier-gold", icon: "👑", voucher: "Voucher 100.000đ", voucherVal: 100000 };
+  if (pts >= 100) return { name: "Hạng Bạc", badgeClass: "tier-silver", icon: "🥈", voucher: "Voucher 50.000đ", voucherVal: 50000 };
+  return { name: "Hạng Đồng", badgeClass: "tier-bronze", icon: "🥉", voucher: "Tích điểm mua hàng", voucherVal: 0 };
 }
 
 function getInitials(name = "") {
@@ -34,6 +35,7 @@ export function CustomersPage({ title, description }) {
   const [customers, setCustomers] = useState([]);
   const [query, setQuery] = useState("");
   const [tierFilter, setTierFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [formData, setFormData] = useState({
@@ -42,6 +44,7 @@ export function CustomersPage({ title, description }) {
     Email: "",
     DiaChi: "",
     DiemTichLuy: 0,
+    TrangThai: "Đang hoạt động",
   });
 
   useEffect(() => {
@@ -50,10 +53,11 @@ export function CustomersPage({ title, description }) {
 
   const stats = useMemo(() => {
     const total = customers.length;
+    const activeCount = customers.filter((c) => c.TrangThai !== "Ngưng hoạt động").length;
     const vipCount = customers.filter((c) => (Number(c.DiemTichLuy) || 0) >= 500).length;
     const totalPoints = customers.reduce((sum, c) => sum + (Number(c.DiemTichLuy) || 0), 0);
     const avgPoints = total ? Math.round(totalPoints / total) : 0;
-    return { total, vipCount, totalPoints, avgPoints };
+    return { total, activeCount, vipCount, totalPoints, avgPoints };
   }, [customers]);
 
   const visible = useMemo(() => {
@@ -67,15 +71,21 @@ export function CustomersPage({ title, description }) {
         (item.Email || "").toLowerCase().includes(q);
 
       if (!matchQuery) return false;
+
+      // Status filter
+      if (statusFilter === "active" && item.TrangThai === "Ngưng hoạt động") return false;
+      if (statusFilter === "inactive" && item.TrangThai !== "Ngưng hoạt động") return false;
+
+      // Tier filter
       if (tierFilter === "all") return true;
       const tier = getMemberTier(item.DiemTichLuy);
       return tier.name.toLowerCase().includes(tierFilter.toLowerCase());
     });
-  }, [customers, query, tierFilter]);
+  }, [customers, query, tierFilter, statusFilter]);
 
   function openCreate() {
     setEditing(null);
-    setFormData({ HoTen: "", SDT: "", Email: "", DiaChi: "", DiemTichLuy: 0 });
+    setFormData({ HoTen: "", SDT: "", Email: "", DiaChi: "", DiemTichLuy: 0, TrangThai: "Đang hoạt động" });
     setModalOpen(true);
   }
 
@@ -88,6 +98,7 @@ export function CustomersPage({ title, description }) {
       Email: customer.Email || "",
       DiaChi: customer.DiaChi || "",
       DiemTichLuy: customer.DiemTichLuy || 0,
+      TrangThai: customer.TrangThai || "Đang hoạt động",
     });
     setModalOpen(true);
   }
@@ -105,6 +116,7 @@ export function CustomersPage({ title, description }) {
       const payload = {
         ...formData,
         DiemTichLuy: Number(formData.DiemTichLuy) || 0,
+        TrangThai: formData.TrangThai || "Đang hoạt động",
       };
       const saved = await saveRecord("customers", payload);
       setCustomers((prev) =>
@@ -120,9 +132,16 @@ export function CustomersPage({ title, description }) {
   async function handleDelete(id, name) {
     if (!window.confirm(`Bạn có chắc muốn xóa khách hàng "${name}"?`)) return;
     try {
-      await deleteRecord("customers", id);
-      setCustomers((prev) => prev.filter((c) => c.id !== id));
-      toast("Đã xóa khách hàng");
+      const res = await deleteRecord("customers", id);
+      if (res?.softDeleted || res?.status === "Ngưng hoạt động") {
+        setCustomers((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, TrangThai: "Ngưng hoạt động" } : c))
+        );
+        toast(res?.message || "Đã chuyển trạng thái khách hàng sang 'Ngưng hoạt động' do đã có chứng từ phát sinh");
+      } else {
+        setCustomers((prev) => prev.filter((c) => c.id !== id));
+        toast("Đã xóa khách hàng hoàn toàn thành công");
+      }
     } catch (err) {
       toast(err.message || "Không thể xóa");
     }
@@ -141,11 +160,26 @@ export function CustomersPage({ title, description }) {
         </button>
       </header>
 
+      {/* Member Voucher Tier Policy Banner */}
+      <div className="alert" style={{ background: "linear-gradient(135deg, rgba(61,112,104,0.08) 0%, rgba(200,121,65,0.08) 100%)", border: "1px solid var(--border)", marginBottom: 16, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16, justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <TicketIcon style={{ width: 24, height: 24, color: "var(--primary)" }} />
+          <div>
+            <strong style={{ color: "var(--primary-dark)" }}>Chính sách Voucher thành viên (dựa trên Điểm tích lũy):</strong>
+            <div style={{ fontSize: "13px", color: "var(--text-soft)", marginTop: 2 }}>
+              🥈 <strong>Hạng Bạc</strong> (≥100 điểm): nhận <strong>Voucher 50.000đ</strong> &nbsp;·&nbsp;
+              👑 <strong>Hạng Vàng</strong> (≥500 điểm): nhận <strong>Voucher 100.000đ</strong> &nbsp;·&nbsp;
+              💎 <strong>Kim Cương</strong> (≥1.000 điểm): nhận <strong>Voucher 200.000đ</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="stats-grid">
         <StatCard
           label="Tổng khách hàng"
           value={String(stats.total)}
-          delta={`${stats.vipCount} khách VIP`}
+          delta={`${stats.activeCount} đang hoạt động`}
           icon={UserGroupIcon}
         />
         <StatCard
@@ -162,8 +196,8 @@ export function CustomersPage({ title, description }) {
         />
       </div>
 
-      <div className="cust-toolbar">
-        <div className="invoice-search" style={{ flex: 1, maxWidth: 440 }}>
+      <div className="cust-toolbar" style={{ flexWrap: "wrap", gap: 12 }}>
+        <div className="invoice-search" style={{ flex: 1, minWidth: 260, maxWidth: 380 }}>
           <MagnifyingGlassIcon aria-hidden="true" />
           <input
             type="search"
@@ -172,13 +206,31 @@ export function CustomersPage({ title, description }) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+
+        <div className="filter-chips">
+          {[
+            { id: "all", label: "Tất cả trạng thái" },
+            { id: "active", label: "🟢 Đang hoạt động" },
+            { id: "inactive", label: "⚪ Ngưng hoạt động" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`filter-chip ${statusFilter === tab.id ? "active" : ""}`}
+              onClick={() => setStatusFilter(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         <div className="filter-chips">
           {[
             { id: "all", label: "Tất cả hạng" },
             { id: "kim cương", label: "💎 Kim Cương" },
-            { id: "vàng", label: "👑 Hạng Vàng" },
-            { id: "bạc", label: "🥈 Hạng Bạc" },
-            { id: "đồng", label: "🥉 Hạng Đồng" },
+            { id: "vàng", label: "👑 Vàng" },
+            { id: "bạc", label: "🥈 Bạc" },
+            { id: "đồng", label: "🥉 Đồng" },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -196,24 +248,26 @@ export function CustomersPage({ title, description }) {
         <table>
           <thead>
             <tr>
-              <th style={{ width: 50 }}>STT</th>
+              <th style={{ width: 45 }}>STT</th>
               <th>Khách hàng</th>
               <th>Liên hệ</th>
               <th>Địa chỉ</th>
-              <th>Hạng thành viên</th>
+              <th>Hạng &amp; Quyền lợi Voucher</th>
               <th style={{ textAlign: "right" }}>Điểm tích lũy</th>
+              <th style={{ width: 140, textAlign: "center" }}>Trạng thái</th>
               <th style={{ width: 90, textAlign: "center" }}>Thao tác</th>
             </tr>
           </thead>
           <tbody>
             {visible.map((cust, idx) => {
               const tier = getMemberTier(cust.DiemTichLuy);
+              const isInactive = cust.TrangThai === "Ngưng hoạt động";
               return (
-                <tr key={cust.id} className="cust-row">
+                <tr key={cust.id} className="cust-row" style={{ opacity: isInactive ? 0.65 : 1 }}>
                   <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
                   <td>
                     <div className="cust-profile-cell">
-                      <div className="cust-avatar">{getInitials(cust.HoTen)}</div>
+                      <div className="cust-avatar" style={{ filter: isInactive ? "grayscale(100%)" : "none" }}>{getInitials(cust.HoTen)}</div>
                       <div>
                         <strong className="cust-name">{cust.HoTen}</strong>
                         <small className="cust-code">{cust.MaKH || cust.id}</small>
@@ -250,16 +304,28 @@ export function CustomersPage({ title, description }) {
                     </div>
                   </td>
                   <td>
-                    <span className={`cust-tier-badge ${tier.badgeClass}`}>
-                      <span>{tier.icon}</span>
-                      <strong>{tier.name}</strong>
-                    </span>
+                    <div>
+                      <span className={`cust-tier-badge ${tier.badgeClass}`}>
+                        <span>{tier.icon}</span>
+                        <strong>{tier.name}</strong>
+                      </span>
+                      {tier.voucherVal > 0 && (
+                        <div style={{ fontSize: "11px", color: "var(--primary)", marginTop: 3, fontWeight: 600 }}>
+                          🎟️ {tier.voucher}
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td style={{ textAlign: "right" }}>
                     <div className="cust-points-cell">
                       <strong>{(Number(cust.DiemTichLuy) || 0).toLocaleString("vi-VN")}</strong>
                       <small>điểm</small>
                     </div>
+                  </td>
+                  <td style={{ textAlign: "center" }}>
+                    <span className={`status-pill ${isInactive ? "danger" : "success"}`}>
+                      {cust.TrangThai || "Đang hoạt động"}
+                    </span>
                   </td>
                   <td style={{ textAlign: "center" }}>
                     <div className="row-actions" style={{ justifyContent: "center" }}>
@@ -274,7 +340,7 @@ export function CustomersPage({ title, description }) {
                       <button
                         type="button"
                         className="icon-sm-btn del"
-                        title="Xóa"
+                        title={isInactive ? "Xóa vĩnh viễn" : "Xóa hoặc ngưng hoạt động"}
                         onClick={() => handleDelete(cust.id, cust.HoTen)}
                       >
                         <TrashIcon className="ic" />
@@ -286,7 +352,7 @@ export function CustomersPage({ title, description }) {
             })}
             {!visible.length && (
               <tr>
-                <td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
+                <td colSpan={8} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
                   Không tìm thấy khách hàng nào phù hợp
                 </td>
               </tr>
@@ -347,15 +413,28 @@ export function CustomersPage({ title, description }) {
           />
         </div>
 
-        <div className="field">
-          <label htmlFor="cust-points">Điểm tích lũy khởi tạo</label>
-          <input
-            id="cust-points"
-            type="number"
-            min="0"
-            value={formData.DiemTichLuy}
-            onChange={(e) => setFormData({ ...formData, DiemTichLuy: e.target.value })}
-          />
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor="cust-points">Điểm tích lũy khởi tạo</label>
+            <input
+              id="cust-points"
+              type="number"
+              min="0"
+              value={formData.DiemTichLuy}
+              onChange={(e) => setFormData({ ...formData, DiemTichLuy: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="cust-status">Trạng thái</label>
+            <select
+              id="cust-status"
+              value={formData.TrangThai}
+              onChange={(e) => setFormData({ ...formData, TrangThai: e.target.value })}
+            >
+              <option value="Đang hoạt động">Đang hoạt động</option>
+              <option value="Ngưng hoạt động">Ngưng hoạt động</option>
+            </select>
+          </div>
         </div>
       </Modal>
     </section>

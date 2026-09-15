@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   PlusIcon,
   CubeIcon,
@@ -16,12 +16,33 @@ const money = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 0,
 });
 
+function currentUserInfo() {
+  try {
+    const raw = localStorage.getItem("token");
+    if (!raw) return { name: "Quản trị viên", role: "admin", display: "Quản trị viên (Admin)" };
+    const parts = raw.split(".");
+    if (parts.length >= 2) {
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+      const roleMap = { admin: "Admin", accountant: "Kế toán", sales: "Thu ngân / Bán hàng", warehouse: "Thủ kho" };
+      return {
+        name: payload.HoTen || payload.Username || "Người dùng",
+        role: payload.Role || "user",
+        display: `${payload.HoTen || payload.Username || "Người dùng"} (${roleMap[payload.Role] || payload.Role || "Nhân viên"})`,
+      };
+    }
+  } catch {}
+  return { name: "Quản trị viên", role: "admin", display: "Quản trị viên (Admin)" };
+}
+
 export function ReturnPage({ title }) {
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [returns, setReturns] = useState([]);
   const [query, setQuery] = useState("");
+  const [filterCustomer, setFilterCustomer] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
 
   // Form state
@@ -82,14 +103,24 @@ export function ReturnPage({ title }) {
   const visibleReturns = useMemo(() => {
     const q = query.toLowerCase();
     return returns.filter((r) => {
-      if (!q) return true;
-      return (
-        (r.MaPTH || r.id || "").toLowerCase().includes(q) ||
-        (r.LyDo || r.reason || "").toLowerCase().includes(q) ||
-        (r.MaDH || "").toLowerCase().includes(q)
-      );
+      if (q) {
+        const match =
+          (r.MaPTH || r.id || "").toLowerCase().includes(q) ||
+          (r.LyDo || r.reason || "").toLowerCase().includes(q) ||
+          (r.MaDH || "").toLowerCase().includes(q) ||
+          (r.NguoiLap || "").toLowerCase().includes(q);
+        if (!match) return false;
+      }
+      if (filterCustomer) {
+        const custId = String(r.MaKH || r.customerId || "");
+        if (custId !== filterCustomer) return false;
+      }
+      const rDate = (r.NgayTra || "").slice(0, 10);
+      if (fromDate && rDate && rDate < fromDate) return false;
+      if (toDate && rDate && rDate > toDate) return false;
+      return true;
     });
-  }, [returns, query]);
+  }, [returns, query, filterCustomer, fromDate, toDate]);
 
   function resetForm() {
     setOrderId("");
@@ -106,6 +137,7 @@ export function ReturnPage({ title }) {
       return;
     }
     try {
+      const user = currentUserInfo();
       const product = products.find(
         (p) => String(p.id) === String(productId) || String(p.MaSP) === String(productId)
       );
@@ -131,6 +163,7 @@ export function ReturnPage({ title }) {
         LyDo: reason,
         NgayTra: returnDate,
         TrangThai: "Đã xử lý",
+        NguoiLap: user.name,
       };
       const record = await saveRecord("returns", payload);
       setReturns((current) => [...current, record]);
@@ -172,16 +205,62 @@ export function ReturnPage({ title }) {
       </div>
 
       {/* Toolbar */}
-      <div className="cust-toolbar" style={{ marginTop: 14 }}>
-        <div className="invoice-search" style={{ flex: 1, maxWidth: 440 }}>
+      <div className="cust-toolbar" style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div className="invoice-search" style={{ flex: "1 1 260px", maxWidth: 360 }}>
           <MagnifyingGlassIcon aria-hidden="true" />
           <input
             type="search"
-            placeholder="Tìm theo mã phiếu trả, mã đơn hoặc lý do..."
+            placeholder="Tìm theo mã phiếu, mã đơn, người lập..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+
+        <select
+          value={filterCustomer}
+          onChange={(e) => setFilterCustomer(e.target.value)}
+          style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 13, background: "#fff" }}
+        >
+          <option value="">Tất cả khách hàng</option>
+          {customers.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.MaKH} · {c.HoTen}
+            </option>
+          ))}
+        </select>
+
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-soft)" }}>
+          <span>Từ:</span>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+          />
+          <span>Đến:</span>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+          />
+        </div>
+
+        {(filterCustomer || fromDate || toDate || query) && (
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={() => {
+              setFilterCustomer("");
+              setFromDate("");
+              setToDate("");
+              setQuery("");
+            }}
+            style={{ fontSize: 12, padding: "6px 12px" }}
+          >
+            Xóa lọc
+          </button>
+        )}
       </div>
 
       <div className="table-shell" style={{ marginTop: 14 }}>
@@ -195,6 +274,7 @@ export function ReturnPage({ title }) {
               <th style={{ width: 100, textAlign: "center" }}>Số lượng</th>
               <th>Lý do đổi trả</th>
               <th style={{ width: 110 }}>Ngày trả</th>
+              <th style={{ width: 130 }}>Người lập</th>
               <th style={{ width: 120, textAlign: "center" }}>Trạng thái</th>
             </tr>
           </thead>
@@ -249,6 +329,11 @@ export function ReturnPage({ title }) {
                     </span>
                   </td>
                   <td style={{ color: "var(--text-soft)", fontSize: 13 }}>{r.NgayTra}</td>
+                  <td>
+                    <span style={{ fontWeight: 600, color: "var(--text-dark)", fontSize: 13 }}>
+                      {r.NguoiLap || "Hệ thống"}
+                    </span>
+                  </td>
                   <td style={{ textAlign: "center" }}>
                     <StatusBadge status={r.TrangThai} />
                   </td>
@@ -257,7 +342,7 @@ export function ReturnPage({ title }) {
             })}
             {!visibleReturns.length && (
               <tr>
-                <td colSpan={8} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
+                <td colSpan={9} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
                   Chưa có phiếu trả hàng nào phù hợp
                 </td>
               </tr>
@@ -275,6 +360,20 @@ export function ReturnPage({ title }) {
         }}
         onSubmit={submit}
       >
+        {/* Người lập phiếu — tự động theo tài khoản đang đăng nhập */}
+        <div className="field">
+          <label>Người lập phiếu</label>
+          <input
+            type="text"
+            readOnly
+            value={currentUserInfo().display}
+            style={{ background: "#f1f5f9", cursor: "not-allowed", color: "#475569", fontWeight: 500 }}
+          />
+          <small style={{ color: "var(--text-faint)", marginTop: 4, display: "block" }}>
+            Hệ thống tự động ghi nhận theo tài khoản đang đăng nhập
+          </small>
+        </div>
+
         {/* Đơn hàng gốc — tuỳ chọn */}
         <div className="field">
           <label htmlFor="rt-order">

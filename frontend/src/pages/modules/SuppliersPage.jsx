@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   PlusIcon,
@@ -21,6 +21,7 @@ export function SuppliersPage({ title, description }) {
   const [suppliers, setSuppliers] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [formData, setFormData] = useState({
@@ -28,6 +29,7 @@ export function SuppliersPage({ title, description }) {
     SDT: "",
     Email: "",
     DiaChi: "",
+    TrangThai: "Đang hoạt động",
   });
 
   useEffect(() => {
@@ -37,6 +39,7 @@ export function SuppliersPage({ title, description }) {
 
   const stats = useMemo(() => {
     const total = suppliers.length;
+    const activeCount = suppliers.filter((s) => s.TrangThai !== "Ngưng hoạt động").length;
     const poCount = purchaseOrders.length;
     const areas = new Set(
       suppliers.map((s) => {
@@ -48,12 +51,16 @@ export function SuppliersPage({ title, description }) {
         return "Khác";
       })
     ).size;
-    return { total, poCount, areas };
+    return { total, activeCount, poCount, areas };
   }, [suppliers, purchaseOrders]);
 
   const visible = useMemo(() => {
     const q = query.toLowerCase();
     return suppliers.filter((item) => {
+      // Status filter
+      if (statusFilter === "active" && item.TrangThai === "Ngưng hoạt động") return false;
+      if (statusFilter === "inactive" && item.TrangThai !== "Ngưng hoạt động") return false;
+
       if (!q) return true;
       return (
         (item.TenNCC || "").toLowerCase().includes(q) ||
@@ -63,11 +70,11 @@ export function SuppliersPage({ title, description }) {
         (item.DiaChi || "").toLowerCase().includes(q)
       );
     });
-  }, [suppliers, query]);
+  }, [suppliers, query, statusFilter]);
 
   function openCreate() {
     setEditing(null);
-    setFormData({ TenNCC: "", SDT: "", Email: "", DiaChi: "" });
+    setFormData({ TenNCC: "", SDT: "", Email: "", DiaChi: "", TrangThai: "Đang hoạt động" });
     setModalOpen(true);
   }
 
@@ -79,6 +86,7 @@ export function SuppliersPage({ title, description }) {
       SDT: supplier.SDT || "",
       Email: supplier.Email || "",
       DiaChi: supplier.DiaChi || "",
+      TrangThai: supplier.TrangThai || "Đang hoạt động",
     });
     setModalOpen(true);
   }
@@ -107,9 +115,16 @@ export function SuppliersPage({ title, description }) {
   async function handleDelete(id, name) {
     if (!window.confirm(`Bạn có chắc muốn xóa nhà cung cấp "${name}"?`)) return;
     try {
-      await deleteRecord("suppliers", id);
-      setSuppliers((prev) => prev.filter((s) => s.id !== id));
-      toast("Đã xóa nhà cung cấp");
+      const res = await deleteRecord("suppliers", id);
+      if (res?.softDeleted || res?.status === "Ngưng hoạt động") {
+        setSuppliers((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, TrangThai: "Ngưng hoạt động" } : s))
+        );
+        toast(res?.message || "Đã chuyển nhà cung cấp sang 'Ngưng hoạt động' do đã có chứng từ phát sinh");
+      } else {
+        setSuppliers((prev) => prev.filter((s) => s.id !== id));
+        toast("Đã xóa nhà cung cấp hoàn toàn thành công");
+      }
     } catch (err) {
       toast(err.message || "Không thể xóa");
     }
@@ -150,9 +165,9 @@ export function SuppliersPage({ title, description }) {
         />
       </div>
 
-      {/* Search toolbar */}
-      <div className="cust-toolbar">
-        <div className="invoice-search" style={{ flex: 1, maxWidth: 440 }}>
+      {/* Search and filter toolbar */}
+      <div className="cust-toolbar" style={{ flexWrap: "wrap", gap: 12 }}>
+        <div className="invoice-search" style={{ flex: 1, minWidth: 260, maxWidth: 440 }}>
           <MagnifyingGlassIcon aria-hidden="true" />
           <input
             type="search"
@@ -161,6 +176,23 @@ export function SuppliersPage({ title, description }) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+
+        <div className="filter-chips">
+          {[
+            { id: "all", label: "Tất cả trạng thái" },
+            { id: "active", label: "🟢 Đang hoạt động" },
+            { id: "inactive", label: "⚪ Ngưng hoạt động" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`filter-chip ${statusFilter === tab.id ? "active" : ""}`}
+              onClick={() => setStatusFilter(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Suppliers Table */}
@@ -168,95 +200,104 @@ export function SuppliersPage({ title, description }) {
         <table>
           <thead>
             <tr>
-              <th style={{ width: 50 }}>STT</th>
-              <th style={{ width: 120 }}>Mã NCC</th>
+              <th style={{ width: 45 }}>STT</th>
+              <th style={{ width: 110 }}>Mã NCC</th>
               <th>Tên nhà cung cấp</th>
               <th>Thông tin liên hệ</th>
               <th>Địa chỉ / Khu vực</th>
-              <th style={{ width: 150, textAlign: "center" }}>Tác vụ nhanh</th>
+              <th style={{ width: 130, textAlign: "center" }}>Trạng thái</th>
+              <th style={{ width: 120, textAlign: "center" }}>Tác vụ nhanh</th>
               <th style={{ width: 90, textAlign: "center" }}>Thao tác</th>
             </tr>
           </thead>
           <tbody>
-            {visible.map((supp, idx) => (
-              <tr key={supp.id} className="supp-row">
-                <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
-                <td>
-                  <span className="po-product-code" style={{ color: "var(--primary)" }}>
-                    {supp.MaNCC || supp.id}
-                  </span>
-                </td>
-                <td>
-                  <div className="supp-name-cell">
-                    <strong className="cust-name">{supp.TenNCC}</strong>
-                    <span className="supp-tag">Đối tác phân phối</span>
-                  </div>
-                </td>
-                <td>
-                  <div className="cust-contact-cell">
-                    {supp.SDT && (
-                      <span className="cust-contact-item">
-                        <PhoneIcon className="cust-mini-ic" />
-                        <a href={`tel:${supp.SDT}`}>{supp.SDT}</a>
-                      </span>
-                    )}
-                    {supp.Email && (
-                      <span className="cust-contact-item">
-                        <EnvelopeIcon className="cust-mini-ic" />
-                        <small>{supp.Email}</small>
-                      </span>
-                    )}
-                    {!supp.SDT && !supp.Email && <span className="cell-note">Chưa có liên hệ</span>}
-                  </div>
-                </td>
-                <td>
-                  <div className="cust-address-cell">
-                    {supp.DiaChi ? (
-                      <>
-                        <MapPinIcon className="cust-mini-ic" />
-                        <span>{supp.DiaChi}</span>
-                      </>
-                    ) : (
-                      <span className="cell-note">—</span>
-                    )}
-                  </div>
-                </td>
-                <td style={{ textAlign: "center" }}>
-                  <button
-                    type="button"
-                    className="btn btn-outline btn-sm"
-                    title="Lập đơn đặt hàng mới cho NCC này"
-                    onClick={() => navigate("/purchase-orders")}
-                  >
-                    <ShoppingCartIcon className="btn-icon" />
-                    Đặt hàng
-                  </button>
-                </td>
-                <td style={{ textAlign: "center" }}>
-                  <div className="row-actions" style={{ justifyContent: "center" }}>
+            {visible.map((supp, idx) => {
+              const isInactive = supp.TrangThai === "Ngưng hoạt động";
+              return (
+                <tr key={supp.id} className="supp-row" style={{ opacity: isInactive ? 0.65 : 1 }}>
+                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
+                  <td>
+                    <span className="po-product-code" style={{ color: "var(--primary)" }}>
+                      {supp.MaNCC || supp.id}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="supp-name-cell">
+                      <strong className="cust-name">{supp.TenNCC}</strong>
+                      <span className="supp-tag">Đối tác phân phối</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="cust-contact-cell">
+                      {supp.SDT && (
+                        <span className="cust-contact-item">
+                          <PhoneIcon className="cust-mini-ic" />
+                          <a href={`tel:${supp.SDT}`}>{supp.SDT}</a>
+                        </span>
+                      )}
+                      {supp.Email && (
+                        <span className="cust-contact-item">
+                          <EnvelopeIcon className="cust-mini-ic" />
+                          <small>{supp.Email}</small>
+                        </span>
+                      )}
+                      {!supp.SDT && !supp.Email && <span className="cell-note">Chưa có liên hệ</span>}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="cust-address-cell">
+                      {supp.DiaChi ? (
+                        <>
+                          <MapPinIcon className="cust-mini-ic" />
+                          <span>{supp.DiaChi}</span>
+                        </>
+                      ) : (
+                        <span className="cell-note">—</span>
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ textAlign: "center" }}>
+                    <span className={`status-pill ${isInactive ? "danger" : "success"}`}>
+                      {supp.TrangThai || "Đang hoạt động"}
+                    </span>
+                  </td>
+                  <td style={{ textAlign: "center" }}>
                     <button
                       type="button"
-                      className="icon-sm-btn"
-                      title="Chỉnh sửa"
-                      onClick={() => openEdit(supp)}
+                      className="btn btn-outline btn-sm"
+                      title="Lập đơn đặt hàng mới cho NCC này"
+                      onClick={() => navigate("/purchase-orders")}
                     >
-                      <PencilSquareIcon className="ic" />
+                      <ShoppingCartIcon className="btn-icon" />
+                      Đặt hàng
                     </button>
-                    <button
-                      type="button"
-                      className="icon-sm-btn del"
-                      title="Xóa"
-                      onClick={() => handleDelete(supp.id, supp.TenNCC)}
-                    >
-                      <TrashIcon className="ic" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td style={{ textAlign: "center" }}>
+                    <div className="row-actions" style={{ justifyContent: "center" }}>
+                      <button
+                        type="button"
+                        className="icon-sm-btn"
+                        title="Chỉnh sửa"
+                        onClick={() => openEdit(supp)}
+                      >
+                        <PencilSquareIcon className="ic" />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-sm-btn del"
+                        title={isInactive ? "Xóa vĩnh viễn" : "Xóa hoặc ngưng hoạt động"}
+                        onClick={() => handleDelete(supp.id, supp.TenNCC)}
+                      >
+                        <TrashIcon className="ic" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             {!visible.length && (
               <tr>
-                <td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
+                <td colSpan={8} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
                   Không tìm thấy nhà cung cấp nào phù hợp
                 </td>
               </tr>
@@ -316,6 +357,18 @@ export function SuppliersPage({ title, description }) {
             value={formData.DiaChi}
             onChange={(e) => setFormData({ ...formData, DiaChi: e.target.value })}
           />
+        </div>
+
+        <div className="field">
+          <label htmlFor="supp-status">Trạng thái</label>
+          <select
+            id="supp-status"
+            value={formData.TrangThai}
+            onChange={(e) => setFormData({ ...formData, TrangThai: e.target.value })}
+          >
+            <option value="Đang hoạt động">Đang hoạt động</option>
+            <option value="Ngưng hoạt động">Ngưng hoạt động</option>
+          </select>
         </div>
       </Modal>
     </section>
