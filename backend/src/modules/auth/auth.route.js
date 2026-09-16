@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { getDatabase } from "../../config/mongodb.js";
 import { passwordMatches } from "./password.js";
 import { isLockedStatus } from "./accountEmployee.js";
+import { getRolePermissions } from "../shared/permissions.js";
 
 const router = Router();
 const secret = process.env.JWT_SECRET || "baby-shop-development-secret";
@@ -77,6 +78,18 @@ router.post("/login", (req, res) => {
       });
     }
 
+    // Gửi kèm ma trận quyền chi tiết của vai trò để frontend lọc menu/chức năng
+    let permissions = null;
+    let roleName = null;
+    try {
+      const db = getDatabase();
+      permissions = await getRolePermissions(db, validAccount.role);
+      const roleDoc = await db.collection("VaiTro").findOne({ MaKey: validAccount.role });
+      roleName = roleDoc?.TenVaiTro || null;
+    } catch {
+      permissions = null;
+    }
+
     res.json({
       token: jwt.sign(
         {
@@ -88,7 +101,7 @@ router.post("/login", (req, res) => {
         secret,
         { expiresIn: "8h" }
       ),
-      user: validAccount,
+      user: { ...validAccount, permissions, roleName },
     });
   })().catch((error) => res.status(500).json({ message: error.message }));
 });
@@ -113,7 +126,13 @@ router.get("/me", async (req, res) => {
       // Ignored if db transient error
     }
 
-    res.json(decoded);
+    let payload = decoded;
+    try {
+      payload = { ...decoded, permissions: await getRolePermissions(getDatabase(), decoded.role) };
+    } catch {
+      // Giữ nguyên payload nếu không lấy được quyền
+    }
+    res.json(payload);
   } catch {
     res.status(401).json({ message: "Phiên đăng nhập không hợp lệ" });
   }

@@ -23,6 +23,7 @@ import { toast } from "../components/Toast.jsx";
 import { Badge, StatusBadge } from "../components/Badge.jsx";
 import { FilterChips } from "../components/FilterChips.jsx";
 import { StatCard } from "../components/StatCard.jsx";
+import { ProductImage } from "../components/ProductImage.jsx";
 import { ProgressBar } from "../components/BarChart.jsx";
 import { CustomersPage } from "./modules/CustomersPage.jsx";
 import { SuppliersPage } from "./modules/SuppliersPage.jsx";
@@ -390,6 +391,11 @@ function RecordsPage({ title, description, resource }) {
                       <Badge variant={Number(item[field]) <= 10 ? "red" : "gray"}>
                         {item[field]}
                       </Badge>
+                    ) : field === "TenSP" ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <ProductImage src={item.HinhAnh} alt={item.TenSP} category={item.LoaiHang} size={32} />
+                        {displayValue(item[field], field)}
+                      </div>
                     ) : (
                       displayValue(item[field], field)
                     )}
@@ -709,6 +715,7 @@ function PurchaseOrderPage({ title }) {
                         onMouseDown={(e) => { e.preventDefault(); addProductById(product); }}
                         tabIndex={-1}
                       >
+                        <ProductImage src={product.HinhAnh} alt={product.TenSP} category={product.LoaiHang} size={26} borderRadius={6} />
                         <span className="po-cb-code">{product.MaSP}</span>
                         <span className="po-cb-name">{product.TenSP}</span>
                         <svg className="po-cb-plus" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -746,6 +753,7 @@ function PurchaseOrderPage({ title }) {
                         <td>
                           <div className="po-product-cell">
                             <span className="po-product-index">{idx + 1}</span>
+                            <ProductImage src={line.HinhAnh} alt={line.TenSP} category={line.LoaiHang} size={36} />
                             <div>
                               <strong className="po-product-code">{line.MaSP}</strong>
                               <small className="po-product-name">{line.TenSP}</small>
@@ -875,7 +883,7 @@ function PurchaseOrderPage({ title }) {
                     <td><strong>{order.MaDDH || order.id}</strong></td>
                     <td>{s?.TenNCC || order.MaNCCCode || order.MaNCC}</td>
                     <td>{order.NgayDat}</td>
-                    <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{order.NguoiLap || order.MaNVCode || "—"}</span></td>
+                    <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{order.NguoiLap || order.MaNVCode || "Quản trị viên"}</span></td>
                     <td>{money.format(order.TongTien || 0)}</td>
                     <td><StatusBadge status={order.TrangThai} /></td>
                   </tr>
@@ -1278,8 +1286,13 @@ function StockDocument({ type, title }) {
                       key={item.id}
                     >
                       <td>
-                        <strong>{item.TenSP}</strong>
-                        <span className="cell-note">{item.MaSP}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <ProductImage src={item.HinhAnh} alt={item.TenSP} category={item.LoaiHang} size={36} />
+                          <div>
+                            <strong>{item.TenSP}</strong>
+                            <span className="cell-note">{item.MaSP}</span>
+                          </div>
+                        </div>
                       </td>
                       <td>{item.DonViTinh}</td>
                       <td>{item.stock || 0}</td>
@@ -1468,7 +1481,7 @@ function StockDocument({ type, title }) {
                         ? voucher.NguoiLienQuan || supplier?.TenNCC || "—"
                         : voucher.LyDoXuat || "—"}
                     </td>
-                    <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{voucher.NguoiLap || "—"}</span></td>
+                    <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{voucher.NguoiLap || "Quản trị viên"}</span></td>
                     <td>{money.format(voucher.TongTien || 0)}</td>
                     <td>
                       <button
@@ -2191,7 +2204,7 @@ function InvoicePage({ title }) {
     const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[character]));
     const printWindow = window.open("", "_blank", "width=900,height=720");
     if (!printWindow) return;
-    printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(invoice.MaHD || invoice.id)}</title><style>body{font-family:Arial,sans-serif;color:#1f2a37;margin:40px auto;max-width:780px}header{display:flex;justify-content:space-between;border-bottom:2px solid #3d7068;padding-bottom:18px}h1{font-size:24px;margin:0 0 6px}h2{font-size:16px;text-transform:uppercase;letter-spacing:1px;color:#3d7068;margin:0}p{margin:5px 0;color:#6b7680}table{width:100%;border-collapse:collapse;margin-top:28px}th,td{padding:11px 8px;border-bottom:1px solid #e3e6e5;text-align:left}th:last-child,td:last-child{text-align:right}.summary{margin:24px 0 0 auto;width:300px}.summary div{display:flex;justify-content:space-between;padding:6px 0}.grand{border-top:2px solid #3d7068;margin-top:7px;padding-top:12px!important;font-size:18px;font-weight:bold;color:#2a4f49}.foot{margin-top:42px;text-align:center;font-size:12px;color:#9aa3ab}@media print{body{margin:20px}}</style></head><body><header><div><h2>Mẹ &amp; Bé</h2><p>Hệ thống bán lẻ mẹ và bé</p></div><div style="text-align:right"><h1>HÓA ĐƠN BÁN HÀNG</h1><p>${escapeHtml(invoice.MaHD || invoice.id)} · ${escapeHtml(invoice.NgayLap)}</p><p style="font-size:13px;color:#555">Người lập: <strong>${escapeHtml(invoice.NguoiLap || "Nhân viên")}</strong></p></div></header><section style="margin-top:22px"><strong>Khách hàng:</strong> ${escapeHtml(customer?.HoTen || invoice.MaKHCode || "Khách lẻ")}<br><span style="color:#6b7680">${escapeHtml(customer?.SDT || "")} ${customer?.DiaChi ? ` · ${escapeHtml(customer.DiaChi)}` : ""}</span></section><table><thead><tr><th>Sản phẩm</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>${lines.map((line) => `<tr><td>${escapeHtml(line.TenSP || line.MaSPCode || line.MaSP)}</td><td>${Number(line.SoLuong || line.quantity || 0)}</td><td>${money.format(Number(line.DonGia || line.price || 0))}</td><td>${money.format(Number(line.ThanhTien || (line.SoLuong || line.quantity || 0) * (line.DonGia || line.price || 0)))}</td></tr>`).join("")}</tbody></table><div class="summary"><div><span>Tổng tiền</span><strong>${money.format(invoice.TongTien || 0)}</strong></div><div><span>Đã thanh toán</span><strong>${money.format(invoice.SoTienDaTra || 0)}</strong></div><div class="grand"><span>Còn phải thu</span><strong>${money.format(invoice.SoTienConLai ?? invoice.TongTien ?? 0)}</strong></div></div><p class="foot">Cảm ơn quý khách đã mua hàng tại Mẹ &amp; Bé.</p></body></html>`);
+    printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(invoice.MaHD || invoice.id)}</title><style>body{font-family:Arial,sans-serif;color:#1f2a37;margin:40px auto;max-width:780px}header{display:flex;justify-content:space-between;border-bottom:2px solid #3d7068;padding-bottom:18px}h1{font-size:24px;margin:0 0 6px}h2{font-size:16px;text-transform:uppercase;letter-spacing:1px;color:#3d7068;margin:0}p{margin:5px 0;color:#6b7680}table{width:100%;border-collapse:collapse;margin-top:28px}th,td{padding:11px 8px;border-bottom:1px solid #e3e6e5;text-align:left}th:last-child,td:last-child{text-align:right}.summary{margin:24px 0 0 auto;width:300px}.summary div{display:flex;justify-content:space-between;padding:6px 0}.grand{border-top:2px solid #3d7068;margin-top:7px;padding-top:12px!important;font-size:18px;font-weight:bold;color:#2a4f49}.foot{margin-top:42px;text-align:center;font-size:12px;color:#9aa3ab}@media print{body{margin:20px}}</style></head><body><header><div><h2>Mẹ &amp; Bé</h2><p>Hệ thống bán lẻ mẹ và bé</p></div><div style="text-align:right"><h1>HÓA ĐƠN BÁN HÀNG</h1><p>${escapeHtml(invoice.MaHD || invoice.id)} · ${escapeHtml(invoice.NgayLap)}</p><p style="font-size:13px;color:#555">Người lập: <strong>${escapeHtml(invoice.NguoiLap || "Quản trị viên")}</strong></p></div></header><section style="margin-top:22px"><strong>Khách hàng:</strong> ${escapeHtml(customer?.HoTen || invoice.MaKHCode || "Khách lẻ")}<br><span style="color:#6b7680">${escapeHtml(customer?.SDT || "")} ${customer?.DiaChi ? ` · ${escapeHtml(customer.DiaChi)}` : ""}</span></section><table><thead><tr><th>Sản phẩm</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>${lines.map((line) => `<tr><td><div style="display:flex;align-items:center;gap:8px">${line.HinhAnh ? `<img src="${line.HinhAnh}" alt="" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:cover;border-radius:4px;border:1px solid #e3e6e5"/>` : ""}<span>${escapeHtml(line.TenSP || line.MaSPCode || line.MaSP)}</span></div></td><td>${Number(line.SoLuong || line.quantity || 0)}</td><td>${money.format(Number(line.DonGia || line.price || 0))}</td><td>${money.format(Number(line.ThanhTien || (line.SoLuong || line.quantity || 0) * (line.DonGia || line.price || 0)))}</td></tr>`).join("")}</tbody></table><div class="summary"><div><span>Tổng tiền</span><strong>${money.format(invoice.TongTien || 0)}</strong></div><div><span>Đã thanh toán</span><strong>${money.format(invoice.SoTienDaTra || 0)}</strong></div><div class="grand"><span>Còn phải thu</span><strong>${money.format(invoice.SoTienConLai ?? invoice.TongTien ?? 0)}</strong></div></div><p class="foot">Cảm ơn quý khách đã mua hàng tại Mẹ &amp; Bé.</p></body></html>`);
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
@@ -2318,7 +2331,7 @@ function InvoicePage({ title }) {
                 <td><button className="invoice-code" type="button" onClick={() => setSelectedInvoice(invoice)}>{invoice.MaHD || invoice.id}</button><small>{invoice.MaDHCode || invoice.MaDH || "Không có đơn hàng"}</small></td>
                 <td>{customerFor(invoice)?.HoTen || invoice.MaKHCode || "Khách lẻ"}</td>
                 <td>{invoice.NgayLap}</td>
-                <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{invoice.NguoiLap || invoice.MaNVCode || "—"}</span></td>
+                <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{invoice.NguoiLap || invoice.MaNVCode || "Quản trị viên"}</span></td>
                 <td>{money.format(invoice.TongTien || 0)}</td>
                 <td><strong>{money.format(invoice.SoTienConLai ?? invoice.TongTien ?? 0)}</strong></td>
                 <td><StatusBadge status={invoice.TrangThai} /></td>
@@ -2357,7 +2370,7 @@ function InvoicePage({ title }) {
               <StatusBadge status={selectedInvoice.TrangThai} />
             </div>
             <div className="invoice-parties"><div><span>Khách hàng</span><strong>{customerFor(selectedInvoice)?.HoTen || selectedInvoice.MaKHCode || "Khách lẻ"}</strong><small>{customerFor(selectedInvoice)?.SDT || "Chưa có số điện thoại"}</small></div><div><span>Thanh toán</span><strong>{money.format(selectedInvoice.SoTienDaTra || 0)}</strong><small>Còn lại {money.format(selectedInvoice.SoTienConLai ?? selectedInvoice.TongTien ?? 0)}</small></div></div>
-            <div className="table-shell invoice-lines"><table><thead><tr><th>Sản phẩm</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>{(selectedInvoice.details || []).map((line, index) => <tr key={`${line.MaSP || line.productId}-${index}`}><td><strong>{line.TenSP || line.MaSPCode || line.MaSP || line.productId}</strong></td><td>{line.SoLuong || line.quantity}</td><td>{money.format(line.DonGia || line.price || 0)}</td><td><strong>{money.format(line.ThanhTien || (line.SoLuong || line.quantity) * (line.DonGia || line.price || 0))}</strong></td></tr>)}</tbody></table></div>
+            <div className="table-shell invoice-lines"><table><thead><tr><th>Sản phẩm</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>{(selectedInvoice.details || []).map((line, index) => <tr key={`${line.MaSP || line.productId}-${index}`}><td><div style={{ display: "flex", alignItems: "center", gap: 10 }}><ProductImage src={line.HinhAnh} alt={line.TenSP || line.MaSPCode} category={line.LoaiHang} size={34} /><strong>{line.TenSP || line.MaSPCode || line.MaSP || line.productId}</strong></div></td><td>{line.SoLuong || line.quantity}</td><td>{money.format(line.DonGia || line.price || 0)}</td><td><strong>{money.format(line.ThanhTien || (line.SoLuong || line.quantity) * (line.DonGia || line.price || 0))}</strong></td></tr>)}</tbody></table></div>
             <div className="invoice-total"><span>Tổng cộng</span><strong>{money.format(selectedInvoice.TongTien || 0)}</strong></div>
           </div>
         )}
@@ -2754,7 +2767,12 @@ function InventoryPage({ title }) {
             {visible.map((p) => (
               <tr key={p.id}>
                 <td>{p.MaSP}</td>
-                <td><strong>{p.TenSP}</strong></td>
+                <td>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <ProductImage src={p.HinhAnh} alt={p.TenSP} category={p.LoaiHang} size={34} />
+                    <strong>{p.TenSP}</strong>
+                  </div>
+                </td>
                 <td>{p.LoaiHang || "—"}</td>
                 <td>{p.DonViTinh}</td>
                 <td>

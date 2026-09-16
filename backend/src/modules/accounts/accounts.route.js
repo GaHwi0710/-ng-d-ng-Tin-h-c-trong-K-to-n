@@ -5,7 +5,18 @@ import { hashPassword } from "../auth/password.js";
 import { syncEmployee, isLockedStatus } from "../auth/accountEmployee.js";
 
 const router = Router();
-const roles = ["QuanLy", "KeToan", "NhanVienBanHang", "NhanVienKho", "NhanVienMuaHang"];
+const builtinRoles = ["QuanLy", "KeToan", "NhanVienBanHang", "NhanVienKho", "NhanVienMuaHang"];
+
+// Vai trò hợp lệ: 5 vai trò hệ thống hoặc vai trò tùy chỉnh có MaKey trong VaiTro
+async function isValidRole(db, roleKey) {
+  if (!roleKey) return false;
+  if (builtinRoles.includes(roleKey)) return true;
+  try {
+    return !!(await db.collection("VaiTro").findOne({ MaKey: roleKey }));
+  } catch {
+    return false;
+  }
+}
 
 function parseId(value) {
   return ObjectId.isValid(value) ? new ObjectId(value) : null;
@@ -20,7 +31,6 @@ function publicAccount(account) {
 function validateAccount(body, requirePassword = true) {
   if (!body.username?.trim() || !body.fullName?.trim()) return "Họ tên và tên đăng nhập là bắt buộc";
   if (requirePassword && (!body.password || body.password.length < 6)) return "Mật khẩu phải có ít nhất 6 ký tự";
-  if (body.role && !roles.includes(body.role)) return "Vai trò không hợp lệ";
   if (body.CCCD && !/^[0-9]{12}$/.test(String(body.CCCD).trim())) return "Số CCCD phải gồm đúng 12 chữ số hợp lệ";
   return null;
 }
@@ -57,6 +67,9 @@ router.post("/", async (req, res, next) => {
   try {
     const validation = validateAccount(req.body);
     if (validation) return res.status(400).json({ message: validation });
+    if (!(await isValidRole(getDatabase(), req.body.role))) {
+      return res.status(400).json({ message: "Vai trò không hợp lệ" });
+    }
 
     const users = getDatabase().collection("Users");
     const cleanUsername = req.body.username.trim();
@@ -94,6 +107,9 @@ router.put("/:id", async (req, res, next) => {
     if (!accountId) return res.status(400).json({ message: "ID tài khoản không hợp lệ" });
     const validation = validateAccount(req.body, false);
     if (validation) return res.status(400).json({ message: validation });
+    if (req.body.role && !(await isValidRole(getDatabase(), req.body.role))) {
+      return res.status(400).json({ message: "Vai trò không hợp lệ" });
+    }
 
     const existing = await getDatabase().collection("Users").findOne({ _id: accountId });
     if (!existing) return res.status(404).json({ message: "Không tìm thấy tài khoản" });

@@ -8,6 +8,7 @@ import { listRecords, saveRecord } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
+import { ProductImage } from "../../components/ProductImage.jsx";
 import { StatusBadge } from "../../components/Badge.jsx";
 
 const money = new Intl.NumberFormat("vi-VN", {
@@ -316,7 +317,16 @@ export function ReturnPage({ title }) {
                     </div>
                   </td>
                   <td>
-                    <strong style={{ color: "var(--primary-dark)" }}>{prodName}</strong>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      {(() => {
+                        const firstLine = r.details?.[0];
+                        const prod =
+                          products.find((p) => String(p.id) === String(firstLine?.MaSP)) ||
+                          products.find((p) => String(p.id) === String(r.productId));
+                        return <ProductImage src={firstLine?.HinhAnh || prod?.HinhAnh} alt={prodName} category={prod?.LoaiHang} size={34} />;
+                      })()}
+                      <strong style={{ color: "var(--primary-dark)" }}>{prodName}</strong>
+                    </div>
                   </td>
                   <td style={{ textAlign: "center" }}>
                     <span className="badge badge-amber" style={{ fontWeight: 700 }}>
@@ -331,7 +341,7 @@ export function ReturnPage({ title }) {
                   <td style={{ color: "var(--text-soft)", fontSize: 13 }}>{r.NgayTra}</td>
                   <td>
                     <span style={{ fontWeight: 600, color: "var(--text-dark)", fontSize: 13 }}>
-                      {r.NguoiLap || "Hệ thống"}
+                      {r.NguoiLap || "Quản trị viên"}
                     </span>
                   </td>
                   <td style={{ textAlign: "center" }}>

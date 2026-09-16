@@ -3,11 +3,13 @@ import authRouter from "./auth/auth.route.js";
 import reportsRouter from "./reports/reports.route.js";
 import businessRouter from "./business/business.route.js";
 import accountsRouter from "./accounts/accounts.route.js";
+import rolesRouter from "./roles/roles.route.js";
 
 export const modules = [
   { path: "/auth", router: authRouter },
   { path: "", router: businessRouter },
   { path: "/admin/accounts", router: accountsRouter },
+  { path: "/admin/roles", router: rolesRouter },
   createCrudModule("customers", "KhachHang"),
   createCrudModule("suppliers", "NhaCungCap"),
   createCrudModule("products", "SanPham"),
@@ -24,6 +26,5 @@ export const modules = [
   createCrudModule("debts", "CongNo"),
   createCrudModule("payments", "ThanhToan"),
   createCrudModule("admin/employees", "NhanVien"),
-  createCrudModule("admin/roles", "VaiTro"),
   { path: "/reports", router: reportsRouter }
 ];

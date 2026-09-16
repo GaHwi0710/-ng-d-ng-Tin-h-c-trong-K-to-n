@@ -25,7 +25,9 @@ import {
   KeyIcon,
 } from "@heroicons/react/24/outline";
 import { moduleRoutes } from "../routes/moduleRoutes.js";
+import { getUserPermissions, userCanAccessPath } from "../lib/permissions.js";
 import { ToastContainer } from "../components/Toast.jsx";
+import { NotificationPopover } from "../components/NotificationPopover.jsx";
 import { logout as logoutFromApi } from "../lib/api.js";
 
 const routeIcons = {
@@ -48,6 +50,14 @@ const routeIcons = {
   "/admin/employees": UsersIcon,
   "/admin/roles": ShieldCheckIcon,
   "/admin/accounts": KeyIcon,
+};
+
+const ROLE_LABELS = {
+  QuanLy: "Quản lý",
+  KeToan: "Kế toán",
+  NhanVienBanHang: "NV Bán hàng",
+  NhanVienKho: "NV Kho",
+  NhanVienMuaHang: "NV Mua hàng",
 };
 
 const navGroups = [
@@ -87,9 +97,12 @@ export function AppLayout() {
 
   const visiblePaths = new Set([
     "/dashboard",
-    ...moduleRoutes
-      .filter((route) => !route.allowedRoles || route.allowedRoles.includes(user.role))
-      .map((route) => route.path),
+    // Ưu tiên ma trận quyền chi tiết của vai trò; fallback về allowedRoles nếu chưa re-login
+    ...moduleRoutes.filter((route) =>
+      getUserPermissions()
+        ? userCanAccessPath(route.path)
+        : !route.allowedRoles || route.allowedRoles.includes(user.role)
+    ).map((route) => route.path),
   ]);
 
   async function logout() {
@@ -149,7 +162,7 @@ export function AppLayout() {
           </span>
           <hgroup>
             <strong>{user.fullName || user.username || "admin"}</strong>
-            <small>{user.role === "QuanLy" ? "Quản lý" : user.role === "NhanVienBanHang" ? "NV Bán hàng" : user.role === "NhanVienKho" ? "NV Kho" : user.role === "KeToan" ? "Kế toán" : user.role === "NhanVienMuaHang" ? "NV Mua hàng" : user.role || "Quản lý"}</small>
+            <small>{user.roleName || ROLE_LABELS[user.role] || user.role || "Thành viên"}</small>
           </hgroup>
         </div>
         <button className="logout-button" type="button" onClick={logout}>
@@ -189,7 +202,7 @@ export function AppLayout() {
 
       <main className="main">
         <header className="topbar">
-          <div>
+          <div className="topbar-left">
             <button
               className="mobile-menu-button"
               type="button"
@@ -198,19 +211,22 @@ export function AppLayout() {
             >
               <Bars3Icon style={{ width: 18, height: 18 }} aria-hidden="true" />
             </button>
-            <h2>{pageTitle}</h2>
             <nav aria-label="Breadcrumb">
               <ol className="topbar-breadcrumb">
-                <li>Trang chủ</li>
-                {location.pathname !== "/dashboard" && <li>{pageTitle}</li>}
+                <li>
+                  <NavLink to="/dashboard" className="breadcrumb-link">
+                    <HomeIcon className="breadcrumb-icon" aria-hidden="true" />
+                    <span>Trang chủ</span>
+                  </NavLink>
+                </li>
+                {location.pathname !== "/dashboard" && (
+                  <li className="breadcrumb-current">{pageTitle}</li>
+                )}
               </ol>
             </nav>
           </div>
           <div className="topbar-right">
-            <button className="notification-button" type="button" aria-label="Thông báo">
-              <BellIcon className="nav-icon" aria-hidden="true" />
-              <span className="notification-dot" aria-hidden="true" />
-            </button>
+            <NotificationPopover />
           </div>
         </header>
         <div className="content">

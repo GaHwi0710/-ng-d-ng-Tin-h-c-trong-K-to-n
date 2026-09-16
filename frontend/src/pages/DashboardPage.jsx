@@ -8,6 +8,7 @@ import {
   CubeIcon,
 } from "@heroicons/react/24/outline";
 import { StatCard } from "../components/StatCard.jsx";
+import { ProductImage } from "../components/ProductImage.jsx";
 import { BarChart, ProgressBar } from "../components/BarChart.jsx";
 import { Badge } from "../components/Badge.jsx";
 
@@ -30,14 +31,22 @@ export function DashboardPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    Promise.all([
+    // Dùng allSettled: dashboard hiển thị phần dữ liệu tài khoản được phép xem,
+    // phần không có quyền sẽ về rỗng thay vì báo lỗi cả trang
+    Promise.allSettled([
       listRecords("products"),
       listRecords("sales-orders"),
       listRecords("invoices"),
       listRecords("debts"),
       getReport("revenue"),
     ]).then(([products, orders, invoices, debts, revenue]) =>
-      setData({ products, orders, invoices, debts, revenue })
+      setData({
+        products: products.status === "fulfilled" ? products.value : [],
+        orders: orders.status === "fulfilled" ? orders.value : [],
+        invoices: invoices.status === "fulfilled" ? invoices.value : [],
+        debts: debts.status === "fulfilled" ? debts.value : [],
+        revenue: revenue.status === "fulfilled" ? revenue.value : { weekly: [] },
+      })
     ).then(() => setLoadError(""))
       .catch((error) => setLoadError(error.message || "Không tải được dữ liệu từ máy chủ"));
   }, [reloadKey]);
@@ -201,7 +210,10 @@ export function DashboardPage() {
                 lowStockProducts.map((p) => (
                   <tr key={p.id}>
                     <td>
-                      <strong>{p.TenSP}</strong>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <ProductImage src={p.HinhAnh} alt={p.TenSP} category={p.LoaiHang} size={34} />
+                        <strong>{p.TenSP}</strong>
+                      </div>
                     </td>
                     <td>{p.LoaiHang || "—"}</td>
                     <td>

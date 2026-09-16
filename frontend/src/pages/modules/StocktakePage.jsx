@@ -9,6 +9,7 @@ import {
 import { listRecords, saveRecord } from "../../lib/api.js";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
+import { ProductImage } from "../../components/ProductImage.jsx";
 
 function currentUserInfo() {
   try {
@@ -167,9 +168,12 @@ export function StocktakePage({ title }) {
                 <tr key={product.id} className="stocktake-row">
                   <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
                   <td>
-                    <div>
-                      <strong className="cust-name">{product.TenSP}</strong>
-                      <span className="prod-code-badge" style={{ marginTop: 2, display: "inline-block" }}>{product.MaSP}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <ProductImage src={product.HinhAnh} alt={product.TenSP} category={product.LoaiHang} size={36} />
+                      <div>
+                        <strong className="cust-name">{product.TenSP}</strong>
+                        <span className="prod-code-badge" style={{ marginTop: 2, display: "inline-block" }}>{product.MaSP}</span>
+                      </div>
                     </div>
                   </td>
                   <td style={{ color: "var(--text-soft)" }}>{product.DonViTinh}</td>

@@ -2,26 +2,31 @@ import { Router } from "express";
 import { modules } from "../modules/index.js";
 import { requireAuth } from "../common/middlewares/auth.middleware.js";
 import { allowRoles } from "../common/middlewares/role.middleware.js";
+import { requirePermission } from "../modules/shared/permissions.js";
 
 const router = Router();
-const permissions = {
-  "/customers": ["QuanLy", "NhanVienBanHang"],
-  "/suppliers": ["QuanLy", "NhanVienMuaHang"],
-  "/products": ["QuanLy", "NhanVienKho"],
-  "/product-categories": ["QuanLy", "NhanVienKho"],
-  "/purchase-orders": ["QuanLy", "NhanVienMuaHang"],
-  "/goods-receipts": ["QuanLy", "NhanVienKho", "NhanVienMuaHang"],
-  "/sales-orders": ["QuanLy", "NhanVienBanHang"],
-  "/invoices": ["QuanLy", "NhanVienBanHang", "KeToan"],
-  "/goods-issues": ["QuanLy", "NhanVienKho"],
-  "/inventory": ["QuanLy", "NhanVienKho"],
-  "/stocktakes": ["QuanLy", "NhanVienKho"],
-  "/returns": ["QuanLy", "NhanVienBanHang"],
-  "/promotions": ["QuanLy", "NhanVienBanHang"],
-  "/debts": ["QuanLy", "KeToan"],
-  "/reports": ["QuanLy", "KeToan"],
-  "/payments": ["QuanLy", "KeToan", "NhanVienBanHang"]
+
+// Ánh xạ đường dẫn module -> khóa phân quyền (định nghĩa trong shared/permissions.js)
+const permissionByPath = {
+  "/customers": "customers",
+  "/suppliers": "suppliers",
+  "/products": "products",
+  "/product-categories": "product-categories",
+  "/purchase-orders": "purchase-orders",
+  "/goods-receipts": "goods-receipts",
+  "/sales-orders": "sales-orders",
+  "/invoices": "invoices",
+  "/goods-issues": "goods-issues",
+  "/inventory": "inventory",
+  "/stocktakes": "stocktakes",
+  "/returns": "returns",
+  "/promotions": "promotions",
+  "/debts": "debts",
+  "/payments": "payments",
 };
+
+// HTTP method -> hành động cần kiểm tra quyền (kể cả XEM)
+const methodAction = { GET: "xem", POST: "tao", PUT: "sua", PATCH: "sua", DELETE: "xoa" };
 
 for (const moduleConfig of modules) {
   if (moduleConfig.path === "/auth") {
@@ -29,16 +34,19 @@ for (const moduleConfig of modules) {
   } else if (moduleConfig.path.startsWith("/admin")) {
     router.use(moduleConfig.path, requireAuth, allowRoles("QuanLy"), moduleConfig.router);
   } else if (moduleConfig.path === "/reports") {
-    router.use(moduleConfig.path, requireAuth, allowRoles("QuanLy", "KeToan"), moduleConfig.router);
+    // Báo cáo: cần quyền Xem báo cáo
+    router.use(moduleConfig.path, requireAuth, requirePermission("reports", "xem"), moduleConfig.router);
   } else {
+    const moduleKey = permissionByPath[moduleConfig.path];
     router.use(
       moduleConfig.path,
       requireAuth,
-      permissions[moduleConfig.path]
+      moduleKey
         ? (req, res, next) => {
-            // Cho phép tất cả nhân viên đã đăng nhập đọc dữ liệu (GET) để liên kết chéo
-            if (req.method === "GET") return next();
-            return allowRoles(...permissions[moduleConfig.path])(req, res, next);
+            // Mọi thao tác (kể cả Xem) đều kiểm tra theo ma trận quyền của vai trò
+            const action = methodAction[req.method];
+            if (!action) return next();
+            return requirePermission(moduleKey, action)(req, res, next);
           }
         : (_req, _res, next) => next(),
       moduleConfig.router

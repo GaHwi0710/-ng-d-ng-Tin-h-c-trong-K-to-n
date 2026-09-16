@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { ObjectId } from "mongodb";
 import { getDatabase, withTransaction } from "../../config/mongodb.js";
-import { allowRoles } from "../../common/middlewares/role.middleware.js";
+import { requirePermission } from "../shared/permissions.js";
 import { nextBusinessCode } from "../shared/businessCode.js";
 import { replaceDetails } from "../shared/detailCollections.js";
 
@@ -55,7 +55,7 @@ async function adjustStock(lines, direction, allowShortage = false, session) {
   }
 }
 
-router.post("/goods-receipts", allowRoles("QuanLy", "NhanVienKho", "NhanVienMuaHang"), async (req, res, next) => {
+router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async (req, res, next) => {
   try {
     const lines = await productsByLines(req.body.details || req.body.items);
     const supplier = await getDatabase().collection("NhaCungCap").findOne({ _id: id(req.body.supplierId || req.body.MaNCC) });
@@ -124,7 +124,7 @@ router.post("/goods-receipts", allowRoles("QuanLy", "NhanVienKho", "NhanVienMuaH
   } catch (error) { next(error); }
 });
 
-router.post("/goods-issues", allowRoles("QuanLy", "NhanVienKho"), async (req, res, next) => {
+router.post("/goods-issues", requirePermission("goods-issues", "tao"), async (req, res, next) => {
   try {
     const lines = await productsByLines(req.body.details || req.body.items);
     const reason = req.body.reason || req.body.LyDoXuat || "Bán hàng";
@@ -168,7 +168,7 @@ router.post("/goods-issues", allowRoles("QuanLy", "NhanVienKho"), async (req, re
   } catch (error) { next(error); }
 });
 
-router.post("/sales-orders", allowRoles("QuanLy", "NhanVienBanHang"), async (req, res, next) => {
+router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (req, res, next) => {
   try {
     const lines = await productsByLines(req.body.items || req.body.details);
     if (req.body.NgayDat && !/^\d{4}-\d{2}-\d{2}$/.test(req.body.NgayDat)) throw fail("Ngày bán không hợp lệ");
@@ -294,7 +294,7 @@ router.post("/sales-orders", allowRoles("QuanLy", "NhanVienBanHang"), async (req
   } catch (error) { next(error); }
 });
 
-router.post("/payments", allowRoles("QuanLy", "KeToan", "NhanVienBanHang"), async (req, res, next) => {
+router.post("/payments", requirePermission("payments", "tao"), async (req, res, next) => {
   try {
     const invoiceId = id(req.body.invoiceId || req.body.MaHD);
     const amount = Number(req.body.amount || req.body.SoTien);
@@ -324,7 +324,7 @@ router.post("/payments", allowRoles("QuanLy", "KeToan", "NhanVienBanHang"), asyn
   } catch (error) { next(error); }
 });
 
-router.post("/stocktakes", allowRoles("QuanLy", "NhanVienKho"), async (req, res, next) => {
+router.post("/stocktakes", requirePermission("stocktakes", "tao"), async (req, res, next) => {
   try {
     const created = await withTransaction(async (session) => {
       const items = [];
@@ -348,7 +348,7 @@ router.post("/stocktakes", allowRoles("QuanLy", "NhanVienKho"), async (req, res,
   } catch (error) { next(error); }
 });
 
-router.post("/returns", allowRoles("QuanLy", "NhanVienBanHang"), async (req, res, next) => {
+router.post("/returns", requirePermission("returns", "tao"), async (req, res, next) => {
   try {
     const lines = await productsByLines(req.body.items || [req.body]);
     const orderInput = req.body.orderId || req.body.MaDH || req.body.order?.id || req.body.order?.MaDH;
@@ -430,8 +430,8 @@ router.post("/returns", allowRoles("QuanLy", "NhanVienBanHang"), async (req, res
   } catch (error) { next(error); }
 });
 
-router.get("/inventory", allowRoles("QuanLy", "NhanVienKho"), async (_req, res, next) => { try { const products = await getDatabase().collection("SanPham").find().sort({ TenSP: 1 }).toArray(); const stocks = await getDatabase().collection("TonKho").find().toArray(); const byProduct = new Map(stocks.map((stock) => [stock.MaSP.toString(), stock])); res.json({ data: products.map((product) => ({ ...serialize(product), stock: Number(byProduct.get(product._id.toString())?.SoLuongTon ?? product.stock ?? 0), stockUpdatedAt: byProduct.get(product._id.toString())?.updatedAt || byProduct.get(product._id.toString())?.NgayCapNhat || null })) }); } catch (error) { next(error); } });
-router.get("/reports/revenue", allowRoles("QuanLy", "KeToan"), async (_req, res, next) => {
+router.get("/inventory", requirePermission("inventory", "xem"), async (_req, res, next) => { try { const products = await getDatabase().collection("SanPham").find().sort({ TenSP: 1 }).toArray(); const stocks = await getDatabase().collection("TonKho").find().toArray(); const byProduct = new Map(stocks.map((stock) => [stock.MaSP.toString(), stock])); res.json({ data: products.map((product) => ({ ...serialize(product), stock: Number(byProduct.get(product._id.toString())?.SoLuongTon ?? product.stock ?? 0), stockUpdatedAt: byProduct.get(product._id.toString())?.updatedAt || byProduct.get(product._id.toString())?.NgayCapNhat || null })) }); } catch (error) { next(error); } });
+router.get("/reports/revenue", requirePermission("reports", "xem"), async (_req, res, next) => {
   try {
     const formatDate = (date) => {
       const year = date.getFullYear();
@@ -470,7 +470,7 @@ router.get("/reports/revenue", allowRoles("QuanLy", "KeToan"), async (_req, res,
     });
   } catch (error) { next(error); }
 });
-router.get("/reports/debts", allowRoles("QuanLy", "KeToan"), async (_req, res, next) => { try { const data = await getDatabase().collection("CongNo").find().sort({ SoTienConLai: -1 }).toArray(); res.json({ report: "debts", data: data.map(serialize), total: data.reduce((sum, item) => sum + Number(item.SoTienConLai || 0), 0) }); } catch (error) { next(error); } });
-router.get("/reports/inventory", allowRoles("QuanLy", "KeToan"), async (_req, res, next) => { try { const data = await getDatabase().collection("TonKho").find().sort({ SoLuongTon: 1 }).toArray(); res.json({ report: "inventory", data: data.map(serialize) }); } catch (error) { next(error); } });
+router.get("/reports/debts", requirePermission("reports", "xem"), async (_req, res, next) => { try { const data = await getDatabase().collection("CongNo").find().sort({ SoTienConLai: -1 }).toArray(); res.json({ report: "debts", data: data.map(serialize), total: data.reduce((sum, item) => sum + Number(item.SoTienConLai || 0), 0) }); } catch (error) { next(error); } });
+router.get("/reports/inventory", requirePermission("reports", "xem"), async (_req, res, next) => { try { const data = await getDatabase().collection("TonKho").find().sort({ SoLuongTon: 1 }).toArray(); res.json({ report: "inventory", data: data.map(serialize) }); } catch (error) { next(error); } });
 
 export default router;

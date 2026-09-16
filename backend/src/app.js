@@ -29,7 +29,8 @@ app.use("/api", routes);
 
 app.use((error, _req, res, _next) => {
   console.error(error);
-  res.status(500).json({ message: "Loi may chu", detail: error.message });
+  const status = Number(error?.status) >= 400 ? error.status : 500;
+  res.status(status).json({ message: status === 500 ? "Loi may chu" : error.message, detail: error.message });
 });
 
 app.use(express.static(frontendDist));

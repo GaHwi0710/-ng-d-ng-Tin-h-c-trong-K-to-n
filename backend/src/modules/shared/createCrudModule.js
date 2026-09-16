@@ -86,6 +86,7 @@ async function serializeRecord(tableName, document) {
         record.MaSP = sp.MaSP;
         record.DonViTinh = sp.DonViTinh;
         record.LoaiHang = sp.LoaiHang;
+        record.HinhAnh = sp.HinhAnh || "";
         record.GiaBan = sp.GiaBan;
         record.TrangThai = sp.TrangThai;
         record.stock = record.SoLuongTon;
@@ -125,9 +126,17 @@ async function serializeRecord(tableName, document) {
       if (!ObjectId.isValid(line.MaSP)) return line;
       const product = await getDatabase().collection("SanPham").findOne(
         { _id: new ObjectId(line.MaSP) },
-        { projection: { MaSP: 1 } },
+        { projection: { MaSP: 1, TenSP: 1, HinhAnh: 1, DonViTinh: 1, GiaBan: 1, LoaiHang: 1 } },
       );
-      return product?.MaSP ? { ...line, MaSPCode: product.MaSP } : line;
+      if (!product) return line;
+      return {
+        ...line,
+        MaSPCode: product.MaSP ?? line.MaSPCode,
+        TenSP: line.TenSP || product.TenSP,
+        HinhAnh: line.HinhAnh ?? product.HinhAnh ?? "",
+        DonViTinh: line.DonViTinh || product.DonViTinh,
+        LoaiHang: line.LoaiHang || product.LoaiHang,
+      };
     }));
   }
   return record;

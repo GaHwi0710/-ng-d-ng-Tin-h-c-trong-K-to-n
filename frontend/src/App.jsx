@@ -4,6 +4,7 @@ import { LoginPage } from "./pages/LoginPage.jsx";
 import { DashboardPage } from "./pages/DashboardPage.jsx";
 import { ModulePage } from "./pages/ModulePage.jsx";
 import { moduleRoutes } from "./routes/moduleRoutes.js";
+import { getUserPermissions, userCanAccessPath } from "./lib/permissions.js";
 
 function getUserRole() {
   const user = JSON.parse(localStorage.getItem("baby-shop-user") || "{}");
@@ -23,9 +24,14 @@ function RequireAuth({ children }) {
   return localStorage.getItem("baby-shop-token") ? children : <Navigate to="/login" replace />;
 }
 
-function RequireRole({ roles, children }) {
+// Chặn truy cập trang theo ma trận quyền chi tiết của vai trò.
+// Nếu tài khoản đăng nhập trước khi có ma trận quyền (chưa re-login), fallback về allowedRoles tĩnh.
+function RequireRole({ path, roles, children }) {
   const user = getUserRole();
-  return !roles || roles.includes(user.role) ? children : <Navigate to="/dashboard" replace />;
+  const allowed = getUserPermissions()
+    ? userCanAccessPath(path)
+    : !roles || roles.includes(user.role);
+  return allowed ? children : <Navigate to="/dashboard" replace />;
 }
 
 export default function App() {
@@ -39,7 +45,7 @@ export default function App() {
           <Route
             key={route.path}
             path={route.path}
-            element={<RequireRole roles={route.allowedRoles}><ModulePage title={route.title} description={route.description} /></RequireRole>}
+            element={<RequireRole path={route.path} roles={route.allowedRoles}><ModulePage title={route.title} description={route.description} /></RequireRole>}
           />
         ))}
       </Route>

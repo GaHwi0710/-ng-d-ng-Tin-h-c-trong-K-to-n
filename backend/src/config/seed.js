@@ -3,6 +3,42 @@ import { syncEmployee } from "../modules/auth/accountEmployee.js";
 import { hashPassword } from "../modules/auth/password.js";
 import { ensureBusinessCodes } from "../modules/shared/businessCode.js";
 import { backfillDetailCollections, ensureDetailCollections } from "../modules/shared/detailCollections.js";
+import { DEFAULT_ROLE_PERMISSIONS, ROLE_DESCRIPTIONS } from "../modules/shared/permissions.js";
+
+// Đảm bảo 5 vai trò hệ thống luôn tồn tại kèm ma trận quyền mặc định
+// ($setOnInsert nên không ghi đè quyền đã được quản lý chỉnh sửa)
+async function upsertBuiltinRoles(database) {
+  const builtins = [
+    ["QuanLy", 1, "Quản lý"],
+    ["NhanVienBanHang", 2, "Nhân viên bán hàng"],
+    ["NhanVienKho", 3, "Nhân viên kho"],
+    ["KeToan", 4, "Kế toán"],
+    ["NhanVienMuaHang", 5, "Nhân viên mua hàng"],
+  ];
+  for (const [maKey, maVaiTro, tenVaiTro] of builtins) {
+    // Gộp vào bản ghi vai trò đã có (theo MaVaiTro) để không sinh bản trùng
+    await database.collection("VaiTro").updateOne(
+      { MaVaiTro: maVaiTro },
+      {
+        $set: { TenVaiTro: tenVaiTro, MaVaiTro: maVaiTro, MaKey: maKey, LaVaiTroHeThong: true },
+        $setOnInsert: {
+          MoTa: ROLE_DESCRIPTIONS[maKey] || "",
+          QuyenHan: DEFAULT_ROLE_PERMISSIONS[maKey] || {},
+          createdAt: new Date(),
+        },
+      },
+      { upsert: true }
+    );
+    const kept = await database.collection("VaiTro").findOne({ MaVaiTro: maVaiTro });
+    // Chỉ giữ lại đúng 1 bản ghi cho mỗi vai trò hệ thống
+    await database.collection("VaiTro").deleteMany({ MaVaiTro: maVaiTro, _id: { $ne: kept._id } });
+    // Nếu bản giữ lại chưa có ma trận quyền (bản cũ), bổ sung mặc định
+    await database.collection("VaiTro").updateOne(
+      { _id: kept._id, $or: [{ QuyenHan: { $exists: false } }, { QuyenHan: {} }] },
+      { $set: { QuyenHan: DEFAULT_ROLE_PERMISSIONS[maKey] || {} } }
+    );
+  }
+}
 
 export async function seedDatabase(database) {
   const now = new Date();
@@ -26,15 +62,82 @@ export async function seedDatabase(database) {
     );
   }
 
+  // Gắn ảnh mẫu cho sản phẩm nếu chưa có (dùng cho cả CSDL mới và CSDL đã khởi tạo)
+  const sampleImages = {
+    SP001: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&auto=format&fit=crop&q=80",
+    SP002: "https://images.unsplash.com/photo-1596464716127-f2a82984de30?w=300&auto=format&fit=crop&q=80",
+    SP003: "https://images.unsplash.com/photo-1576602976047-174e57a47881?w=300&auto=format&fit=crop&q=80",
+    SP004: "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=300&auto=format&fit=crop&q=80",
+    SP005: "https://images.unsplash.com/photo-1522771930-78848d9293e8?w=300&auto=format&fit=crop&q=80",
+    SP006: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=300&auto=format&fit=crop&q=80",
+    SP007: "https://images.unsplash.com/photo-1558060370-d644479cb6f7?w=300&auto=format&fit=crop&q=80",
+    SP008: "https://images.unsplash.com/photo-1607582278043-57198ac8da43?w=300&auto=format&fit=crop&q=80",
+    SP009: "https://images.unsplash.com/photo-1544816155-12df9643f363?w=300&auto=format&fit=crop&q=80",
+    SP010: "https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=300&auto=format&fit=crop&q=80",
+    SP011: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&auto=format&fit=crop&q=80",
+  };
+
+  // Ảnh theo danh mục: điền cho BẤT KỲ sản phẩm nào còn thiếu ảnh (kể cả sản phẩm tự tạo)
+  const categoryImagePool = [
+    { match: /sữa/i, url: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&auto=format&fit=crop&q=80" },
+    { match: /bỉm|tã/i, url: "https://images.unsplash.com/photo-1544816155-12df9643f363?w=300&auto=format&fit=crop&q=80" },
+    { match: /quần áo|quần|áo/i, url: "https://images.unsplash.com/photo-1522771930-78848d9293e8?w=300&auto=format&fit=crop&q=80" },
+    { match: /đồ dùng/i, url: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=300&auto=format&fit=crop&q=80" },
+    { match: /đồ chơi/i, url: "https://images.unsplash.com/photo-1558060370-d644479cb6f7?w=300&auto=format&fit=crop&q=80" },
+    { match: /chăm sóc/i, url: "https://images.unsplash.com/photo-1607582278043-57198ac8da43?w=300&auto=format&fit=crop&q=80" },
+  ];
+  const defaultImage = "https://images.unsplash.com/photo-1519689680058-324335c77eba?w=300&auto=format&fit=crop&q=80";
+  const productsMissingImage = await database.collection("SanPham").find({ $or: [{ HinhAnh: { $exists: false } }, { HinhAnh: "" }, { HinhAnh: null }] }).toArray();
+  for (const product of productsMissingImage) {
+    let categoryName = "";
+    if (product.MaLoai && ObjectId.isValid(product.MaLoai)) {
+      const category = await database.collection("LoaiHang").findOne({ _id: product.MaLoai });
+      categoryName = category?.TenLoai || "";
+    }
+    const matched = categoryImagePool.find((entry) => entry.match.test(categoryName));
+    await database.collection("SanPham").updateOne(
+      { _id: product._id },
+      { $set: { HinhAnh: matched?.url || defaultImage } }
+    );
+  }
+  const applySampleImages = () =>
+    Promise.all(Object.entries(sampleImages).map(([maSP, img]) =>
+      database.collection("SanPham").updateOne(
+        { MaSP: maSP, $or: [{ HinhAnh: { $exists: false } }, { HinhAnh: "" }, { HinhAnh: null }] },
+        { $set: { HinhAnh: img } }
+      )
+    ));
+  await applySampleImages();
+
+  // Điền "Quản trị viên" cho các chứng từ còn thiếu người lập (không ghi đè tên đã có)
+  // và chuẩn hóa bản ghi ghi bằng username "admin" thành "Quản trị viên"
+  const voucherCollections = ["DonDatHang", "PhieuNhap", "DonHang", "HoaDon", "PhieuXuat", "KiemKe", "PhieuTraHang", "CongNo"];
+  for (const collectionName of voucherCollections) {
+    await database.collection(collectionName).updateMany(
+      { $or: [{ NguoiLap: { $exists: false } }, { NguoiLap: null }, { NguoiLap: "" }, { NguoiLap: "admin" }, { NguoiLap: "Admin" }] },
+      { $set: { NguoiLap: "Quản trị viên" } }
+    );
+  }
+
+  await upsertBuiltinRoles(database);
+
+  // Một lần duy nhất: siết ma trận quyền của 5 vai trò hệ thống theo bộ mặc định chặt.
+  // Sau lần chạy này, các chỉnh sửa quyền của quản trị viên sẽ được giữ nguyên.
+  if (!(await database.collection("_metadata").findOne({ key: "strict-permissions-v3" }))) {
+    for (const [maKey, quyenHan] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+      await database.collection("VaiTro").updateOne({ MaKey: maKey }, { $set: { QuyenHan: quyenHan } });
+    }
+    await database.collection("_metadata").insertOne({ key: "strict-permissions-v3", createdAt: new Date() });
+    console.log("Đã áp dụng ma trận quyền chi tiết cho 5 vai trò hệ thống");
+  }
+
   // Nếu cơ sở dữ liệu đã được khởi tạo ban đầu, TUYỆT ĐỐI KHÔNG RESET hay ghi đè bất kỳ dữ liệu người dùng nào!
   if (await database.collection("_metadata").findOne({ key: "initial-seed-v1" })) {
-    await database.collection("VaiTro").updateOne(
-      { MaVaiTro: 5 },
-      { $setOnInsert: { MaVaiTro: 5, TenVaiTro: "Nhân viên mua hàng" } },
-      { upsert: true }
-    );
+    await upsertBuiltinRoles(database);
     return;
   }
+
+  await upsertBuiltinRoles(database);
 
   for (const [roleCode, roleName] of [[1, "Quản lý"], [2, "Nhân viên bán hàng"], [3, "Nhân viên kho"], [4, "Kế toán"], [5, "Nhân viên mua hàng"]]) {
     await database.collection("NhanVien").updateMany({ VaiTro: roleName }, { $set: { MaVaiTro: roleCode } });
@@ -129,27 +232,6 @@ export async function seedDatabase(database) {
     { TrangThai: { $exists: false } },
     { $set: { TrangThai: "Đang hoạt động" } }
   );
-
-  // Seed sample images for products if missing
-  const sampleImages = {
-    SP001: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&auto=format&fit=crop&q=80",
-    SP002: "https://images.unsplash.com/photo-1550572017-edd951aa8f72?w=300&auto=format&fit=crop&q=80",
-    SP003: "https://images.unsplash.com/photo-1544816155-12df9643f363?w=300&auto=format&fit=crop&q=80",
-    SP004: "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=300&auto=format&fit=crop&q=80",
-    SP005: "https://images.unsplash.com/photo-1522771930-78848d9293e8?w=300&auto=format&fit=crop&q=80",
-    SP006: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=300&auto=format&fit=crop&q=80",
-    SP007: "https://images.unsplash.com/photo-1558060370-d644479cb6f7?w=300&auto=format&fit=crop&q=80",
-    SP008: "https://images.unsplash.com/photo-1608248597359-00109968a356?w=300&auto=format&fit=crop&q=80",
-    SP009: "https://images.unsplash.com/photo-1544816155-12df9643f363?w=300&auto=format&fit=crop&q=80",
-    SP010: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=300&auto=format&fit=crop&q=80",
-    SP011: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&auto=format&fit=crop&q=80",
-  };
-  for (const [maSP, img] of Object.entries(sampleImages)) {
-    await database.collection("SanPham").updateOne(
-      { MaSP: maSP, $or: [{ HinhAnh: { $exists: false } }, { HinhAnh: "" }, { HinhAnh: null }] },
-      { $set: { HinhAnh: img } }
-    );
-  }
 
   // Seed default promotions and voucher tiers (upsert by MaKM)
   const defaultPromos = [
@@ -252,7 +334,8 @@ export async function seedDatabase(database) {
   await database.collection("KhachHang").insertMany(customers);
   await database.collection("SanPham").insertMany(products);
   await database.collection("TonKho").insertMany(products.map((product) => ({ MaSP: product._id, SoLuongTon: product.stock, NgayCapNhat: now.toISOString().slice(0, 10), updatedAt: now })));
-  await database.collection("VaiTro").insertMany([{ MaVaiTro: 1, TenVaiTro: "Quản lý" }, { MaVaiTro: 2, TenVaiTro: "Nhân viên bán hàng" }, { MaVaiTro: 3, TenVaiTro: "Nhân viên kho" }, { MaVaiTro: 4, TenVaiTro: "Kế toán" }, { MaVaiTro: 5, TenVaiTro: "Nhân viên mua hàng" }]);
+  await upsertBuiltinRoles(database);
+  await applySampleImages();
   await database.collection("_metadata").insertOne({ key: "initial-seed-v1", createdAt: now, source: "Nhom1_baiktraso1 (1).docx + schema.sql" });
   await ensureBusinessCodes(database);
   console.log(`Seeded ${products.length} products, ${customers.length} customers and ${suppliers.length} suppliers`);

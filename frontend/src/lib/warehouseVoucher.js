@@ -40,6 +40,7 @@ export function normalizeVoucherLines(details = [], products = []) {
     return {
       stt: index + 1,
       name: line.TenSP || product.TenSP || "",
+      image: line.HinhAnh || product.HinhAnh || "",
       code: line.MaSPCode || product.MaSP || "",
       unit: line.DonViTinh || product.DonViTinh || "",
       requested,
@@ -246,7 +247,7 @@ export function buildWarehouseVoucherHtml(model) {
       }
       return `<tr>
         <td class="c">${line.stt}</td>
-        <td class="l">${esc(line.name)}</td>
+        <td class="l"><div style="display:flex;align-items:center;gap:6px">${line.image ? `<img src="${line.image}" alt="" onerror="this.style.display='none'" style="width:26px;height:26px;object-fit:cover;border-radius:4px;border:1px solid #e3e6e5"/>` : ""}<span>${esc(line.name)}</span></div></td>
         <td class="c">${esc(line.code)}</td>
         <td class="c">${esc(line.unit)}</td>
         <td class="c">${line.requested || ""}</td>

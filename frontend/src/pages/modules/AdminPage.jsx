@@ -13,6 +13,7 @@ import {
   CheckCircleIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, saveRecord, deleteRecord } from "../../lib/api.js";
+import { PERMISSION_GROUPS, ACTIONS } from "../../lib/permissions.js";
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
@@ -32,6 +33,21 @@ const roleColors = {
   NhanVienBanHang: "amber",
   NhanVienKho: "blue",
   NhanVienMuaHang: "teal",
+};
+
+const ROLE_ICON_BY_KEY = {
+  QuanLy: "👑",
+  KeToan: "🧮",
+  NhanVienBanHang: "🛒",
+  NhanVienKho: "📦",
+  NhanVienMuaHang: "🚚",
+};
+
+const ACTION_STYLE = {
+  xem: { background: "#e0f2fe", color: "#0369a1" },
+  tao: { background: "#dcfce7", color: "#15803d" },
+  sua: { background: "#fef3c7", color: "#b45309" },
+  xoa: { background: "#fee2e2", color: "#b91c1c" },
 };
 
 function getInitials(name = "") {
@@ -63,7 +79,63 @@ export function AdminPage({ title, description, path }) {
   // Form states
   const [empForm, setEmpForm] = useState({ HoTen: "", SDT: "", CCCD: "", DiaChi: "", VaiTro: "Nhân viên bán hàng", TrangThai: "Đang làm việc" });
   const [accForm, setAccForm] = useState({ username: "", fullName: "", password: "", role: "NhanVienBanHang", status: "Hoạt động", CCCD: "", SDT: "", DiaChi: "" });
-  const [roleForm, setRoleForm] = useState({ TenVaiTro: "", MoTa: "" });
+  const [roleForm, setRoleForm] = useState({ id: null, TenVaiTro: "", MoTa: "", QuyenHan: {}, copyFrom: "" });
+
+  // ---- Helpers ma trận quyền ----
+  function permActions(quyenHan, moduleKey) {
+    return quyenHan?.[moduleKey] || [];
+  }
+
+  function togglePerm(moduleKey, action) {
+    setRoleForm((prev) => {
+      const current = prev.QuyenHan[moduleKey] || [];
+      const next = current.includes(action)
+        ? current.filter((a) => a !== action)
+        : [...current, action];
+      const quyenHan = { ...prev.QuyenHan, [moduleKey]: next };
+      if (!next.length) delete quyenHan[moduleKey];
+      return { ...prev, QuyenHan: quyenHan };
+    });
+  }
+
+  function toggleModuleAll(moduleKey) {
+    setRoleForm((prev) => {
+      const allOn = ACTIONS.every((a) => prev.QuyenHan[moduleKey]?.includes(a.key));
+      const quyenHan = { ...prev.QuyenHan };
+      if (allOn) delete quyenHan[moduleKey];
+      else quyenHan[moduleKey] = ACTIONS.map((a) => a.key);
+      return { ...prev, QuyenHan: quyenHan };
+    });
+  }
+
+  function toggleGroupAll(groupModules) {
+    setRoleForm((prev) => {
+      const quyenHan = { ...prev.QuyenHan };
+      const allOn = groupModules.every((m) =>
+        ACTIONS.every((a) => quyenHan[m.key]?.includes(a.key))
+      );
+      for (const m of groupModules) {
+        if (allOn) delete quyenHan[m.key];
+        else quyenHan[m.key] = ACTIONS.map((a) => a.key);
+      }
+      return { ...prev, QuyenHan };
+    });
+  }
+
+  function countGranted(quyenHan) {
+    return Object.values(quyenHan || {}).filter((acts) => acts?.length).length;
+  }
+
+  function countActions(quyenHan) {
+    return Object.values(quyenHan || {}).reduce((sum, acts) => sum + (acts?.length || 0), 0);
+  }
+
+  // Bản quyền nguồn để "sao chép quyền từ" khi tạo vai trò mới
+  function basePermissions(copyFromKey) {
+    if (!copyFromKey) return {};
+    const source = roles.find((r) => r.MaKey === copyFromKey);
+    return JSON.parse(JSON.stringify(source?.QuyenHan || {}));
+  }
 
   useEffect(() => {
     listRecords("admin/employees").then(setEmployees);
@@ -91,7 +163,7 @@ export function AdminPage({ title, description, path }) {
     } else if (currentTab === "accounts") {
       setAccForm({ username: "", fullName: "", password: "password123", role: "NhanVienBanHang", status: "Hoạt động", CCCD: "", SDT: "", DiaChi: "" });
     } else {
-      setRoleForm({ TenVaiTro: "", MoTa: "" });
+      setRoleForm({ id: null, TenVaiTro: "", MoTa: "", QuyenHan: {}, copyFrom: "" });
     }
     setModalOpen(true);
   }
@@ -121,7 +193,13 @@ export function AdminPage({ title, description, path }) {
         DiaChi: item.DiaChi || "",
       });
     } else {
-      setRoleForm({ id: item.id, TenVaiTro: item.TenVaiTro || "", MoTa: item.MoTa || "" });
+      setRoleForm({
+        id: item.id,
+        TenVaiTro: item.TenVaiTro || "",
+        MoTa: item.MoTa || "",
+        QuyenHan: JSON.parse(JSON.stringify(item.QuyenHan || {})),
+        copyFrom: "",
+      });
     }
     setModalOpen(true);
   }
@@ -164,8 +242,15 @@ export function AdminPage({ title, description, path }) {
         setEmployees(upEmps);
       } else {
         if (!roleForm.TenVaiTro.trim()) return toast("Tên vai trò là bắt buộc");
-        const saved = await saveRecord("admin/roles", roleForm);
-        setRoles((prev) => (editing ? prev.map((r) => (r.id === saved.id ? saved : r)) : [...prev, saved]));
+        if (editing && editing.MaKey === "QuanLy") return toast("Vai trò Quản lý luôn có toàn quyền, không thể chỉnh sửa");
+        const quyenHan = editing
+          ? roleForm.QuyenHan
+          : { ...basePermissions(roleForm.copyFrom), ...roleForm.QuyenHan };
+        const payload = { TenVaiTro: roleForm.TenVaiTro, MoTa: roleForm.MoTa, QuyenHan: quyenHan };
+        if (editing) payload.id = editing.id;
+        const saved = await saveRecord("admin/roles", payload);
+        const refreshed = await listRecords("admin/roles");
+        setRoles(refreshed);
       }
       setModalOpen(false);
       toast(editing ? "Đã cập nhật dữ liệu" : "Đã thêm mới thành công");
@@ -370,7 +455,7 @@ export function AdminPage({ title, description, path }) {
             </thead>
             <tbody>
               {filteredAccounts.map((acc, idx) => {
-                const roleName = roleLabels[acc.role] || acc.role;
+                const roleName = roleLabels[acc.role] || roles.find((r) => r.MaKey === acc.role)?.TenVaiTro || acc.role;
                 const isLocked = acc.status === "Đã khóa";
                 return (
                   <tr key={acc.id} className="admin-row">
@@ -454,26 +539,85 @@ export function AdminPage({ title, description, path }) {
       {/* TAB 3: ROLES */}
       {currentTab === "roles" && (
         <div className="admin-roles-grid" style={{ marginTop: 18 }}>
-          {filteredRoles.map((role) => (
-            <article key={role.id} className="cat-card">
-              <div className="cat-card-header">
-                <div className="cat-card-icon">🛡️</div>
-                <div className="cat-card-info">
-                  <h3 className="cat-card-title">{role.TenVaiTro}</h3>
-                  <span className="cat-card-badge">Cấp quyền hệ thống</span>
+          {filteredRoles.map((role) => {
+            const isManager = role.MaKey === "QuanLy";
+            const isSystem = role.LaVaiTroHeThong;
+            const granted = isManager ? PERMISSION_GROUPS.reduce((s, g) => s + g.modules.length, 0) : countGranted(role.QuyenHan);
+            const totalModules = PERMISSION_GROUPS.reduce((s, g) => s + g.modules.length, 0);
+            return (
+              <article key={role.id} className="cat-card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div className="cat-card-header">
+                  <div className="cat-card-icon">{ROLE_ICON_BY_KEY[role.MaKey] || "🛡️"}</div>
+                  <div className="cat-card-info">
+                    <h3 className="cat-card-title">{role.TenVaiTro}</h3>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <span
+                        className="cat-card-badge"
+                        style={
+                          isSystem
+                            ? { background: "#ede9fe", color: "#6d28d9" }
+                            : { background: "#e0f2fe", color: "#0369a1" }
+                        }
+                      >
+                        {isSystem ? "⚙ Vai trò hệ thống" : "✎ Vai trò tùy chỉnh"}
+                      </span>
+                      <span className="cat-card-badge" style={{ background: "var(--surface-sunken, #f1f5f9)", color: "var(--text-soft)" }}>
+                        👤 {role.SoNguoiDung || 0} tài khoản
+                      </span>
+                    </div>
+                  </div>
+                  <div className="row-actions">
+                    {!isManager && (
+                      <button type="button" className="icon-sm-btn" title="Chỉnh sửa vai trò & quyền hạn" onClick={() => openEdit(role)}>
+                        <PencilSquareIcon className="ic" />
+                      </button>
+                    )}
+                    {!isSystem && (
+                      <button type="button" className="icon-sm-btn del" title="Xóa vai trò" onClick={() => handleDelete(role.id, role.TenVaiTro)}>
+                        <TrashIcon className="ic" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="row-actions">
-                  <button type="button" className="icon-sm-btn" title="Chỉnh sửa" onClick={() => openEdit(role)}>
-                    <PencilSquareIcon className="ic" />
-                  </button>
-                  <button type="button" className="icon-sm-btn del" title="Xóa" onClick={() => handleDelete(role.id, role.TenVaiTro)}>
-                    <TrashIcon className="ic" />
-                  </button>
-                </div>
-              </div>
-              <p className="cat-card-desc">{role.MoTa || "Toàn quyền truy cập và thao tác dữ liệu được cấu hình."}</p>
-            </article>
-          ))}
+                <p className="cat-card-desc">{role.MoTa || "Chưa có mô tả quyền hạn."}</p>
+                {isManager ? (
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 8, padding: "8px 12px" }}>
+                    👑 Toàn quyền hệ thống — mọi chức năng, mọi thao tác
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                      {PERMISSION_GROUPS.map(({ group, modules }) => {
+                        const grantedInGroup = modules.filter((m) => (role.QuyenHan?.[m.key] || []).length > 0).length;
+                        if (!grantedInGroup) return null;
+                        return (
+                          <span key={group} style={{ fontSize: 11.5, fontWeight: 600, background: "var(--surface-sunken, #f1f5f9)", color: "var(--text-soft)", padding: "3px 8px", borderRadius: 6 }}>
+                            {group}: {grantedInGroup}/{modules.length}
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: "auto" }}>
+                      <div style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--surface-sunken, #e2e8f0)", overflow: "hidden" }}>
+                        <div
+                          style={{
+                            width: `${Math.round((countActions(role.QuyenHan) / (totalModules * 4)) * 100)}%`,
+                            height: "100%",
+                            borderRadius: 3,
+                            background: "linear-gradient(90deg, #3d7068, #10b981)",
+                            transition: "width .3s",
+                          }}
+                        />
+                      </div>
+                      <small style={{ fontSize: 11.5, color: "var(--text-soft)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                        {granted}/{totalModules} chức năng
+                      </small>
+                    </div>
+                  </>
+                )}
+              </article>
+            );
+          })}
           {!filteredRoles.length && (
             <div className="cat-empty-wrap" style={{ gridColumn: "1 / -1" }}>
               <p>Không có vai trò nào phù hợp</p>
@@ -494,6 +638,7 @@ export function AdminPage({ title, description, path }) {
         }
         onClose={() => setModalOpen(false)}
         onSubmit={handleSave}
+        wide={currentTab === "roles"}
       >
         {currentTab === "employees" && (
           <div>
@@ -665,6 +810,11 @@ export function AdminPage({ title, description, path }) {
                   {Object.entries(roleLabels).map(([val, lbl]) => (
                     <option key={val} value={val}>{lbl}</option>
                   ))}
+                  {roles
+                    .filter((r) => r.MaKey && !roleLabels[r.MaKey])
+                    .map((r) => (
+                      <option key={r.id} value={r.MaKey}>★ {r.TenVaiTro} (tùy chỉnh)</option>
+                    ))}
                 </select>
               </div>
               <div className="field">
@@ -690,19 +840,160 @@ export function AdminPage({ title, description, path }) {
                 id="role-name"
                 type="text"
                 required
+                placeholder="Ví dụ: Thủ quỹ, Thủ kho phụ..."
                 value={roleForm.TenVaiTro}
                 onChange={(e) => setRoleForm({ ...roleForm, TenVaiTro: e.target.value })}
               />
             </div>
             <div className="field">
-              <label htmlFor="role-desc">Mô tả quyền hạn</label>
+              <label htmlFor="role-desc">Mô tả vai trò</label>
               <textarea
                 id="role-desc"
-                rows={3}
+                rows={2}
+                placeholder="Mô tả ngắn nhiệm vụ của vai trò này"
                 value={roleForm.MoTa}
                 onChange={(e) => setRoleForm({ ...roleForm, MoTa: e.target.value })}
               />
             </div>
+
+            {!editing && (
+              <div className="field">
+                <label htmlFor="role-copy">Sao chép quyền từ vai trò có sẵn</label>
+                <select
+                  id="role-copy"
+                  value={roleForm.copyFrom}
+                  onChange={(e) => setRoleForm({ ...roleForm, copyFrom: e.target.value })}
+                >
+                  <option value="">— Bắt đầu từ quyền trống —</option>
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.MaKey}>
+                      {r.TenVaiTro}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                margin: "14px 0 8px",
+                paddingTop: 12,
+                borderTop: "1px solid var(--border, #e2e8f0)",
+              }}
+            >
+              <h4 style={{ margin: 0, fontSize: 12.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--primary-dark, #1e3a8a)" }}>
+                Ma trận quyền hạn chi tiết
+              </h4>
+              <div style={{ display: "flex", gap: 6 }}>
+                {ACTIONS.map((a) => (
+                  <span key={a.key} style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 5, ...ACTION_STYLE[a.key] }}>
+                    {a.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ maxHeight: 320, overflowY: "auto", border: "1px solid var(--border, #e2e8f0)", borderRadius: 10 }}>
+                {PERMISSION_GROUPS.map(({ group, modules }) => {
+                  const allOn = modules.every((m) => ACTIONS.every((a) => (roleForm.QuyenHan[m.key] || []).includes(a.key)));
+                  return (
+                    <div key={group} style={{ borderBottom: "1px solid var(--border, #e2e8f0)" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "8px 12px",
+                          background: "var(--surface-sunken, #f8fafc)",
+                          position: "sticky",
+                          top: 0,
+                        }}
+                      >
+                        <strong style={{ fontSize: 12.5, color: "var(--text-dark, #0f172a)" }}>{group}</strong>
+                        <button
+                          type="button"
+                          onClick={() => toggleGroupAll(modules)}
+                          style={{ background: "none", border: "none", color: "var(--primary-dark, #0f766e)", fontSize: 12, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}
+                        >
+                          {allOn ? "Bỏ chọn nhóm" : "Chọn tất cả nhóm"}
+                        </button>
+                      </div>
+                      {modules.map((m) => {
+                        const acts = permActions(roleForm.QuyenHan, m.key);
+                        const allModuleOn = ACTIONS.every((a) => acts.includes(a.key));
+                        return (
+                          <div
+                            key={m.key}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 10,
+                              padding: "7px 12px 7px 16px",
+                              borderTop: "1px dashed var(--border, #eef2f7)",
+                            }}
+                          >
+                            <label
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                fontSize: 13,
+                                cursor: "pointer",
+                                minWidth: 0,
+                                flex: 1,
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={allModuleOn}
+                                onChange={() => toggleModuleAll(m.key)}
+                                style={{ accentColor: "#3d7068", width: 15, height: 15 }}
+                              />
+                              <span style={{ fontWeight: 500, color: "var(--text-dark, #1e293b)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {m.label}
+                              </span>
+                            </label>
+                            <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
+                              {ACTIONS.map((a) => {
+                                const on = acts.includes(a.key);
+                                return (
+                                  <button
+                                    key={a.key}
+                                    type="button"
+                                    title={`${a.label} — ${m.label}`}
+                                    onClick={() => togglePerm(m.key, a.key)}
+                                    style={{
+                                      minWidth: 34,
+                                      padding: "3px 8px",
+                                      borderRadius: 6,
+                                      fontSize: 11.5,
+                                      fontWeight: 700,
+                                      cursor: "pointer",
+                                      border: on ? "1px solid transparent" : "1px solid var(--border, #cbd5e1)",
+                                      background: on ? ACTION_STYLE[a.key].background : "#fff",
+                                      color: on ? ACTION_STYLE[a.key].color : "#94a3b8",
+                                      transition: "all .15s",
+                                    }}
+                                  >
+                                    {a.short}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+            </div>
+            <small style={{ display: "block", marginTop: 6, fontSize: 12, color: "var(--text-faint)" }}>
+              💡 X = Xem · T = Tạo mới · S = Sửa · D = Xóa. Bấm nút để bật/tắt từng thao tác; tích ô đầu dòng để bật/tắt cả chức năng. Quyền có hiệu lực ngay sau khi lưu.
+            </small>
           </div>
         )}
       </Modal>
