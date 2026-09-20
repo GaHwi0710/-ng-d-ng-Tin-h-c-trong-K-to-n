@@ -20,6 +20,8 @@ const permissionByPath = {
   "/inventory": "inventory",
   "/stocktakes": "stocktakes",
   "/returns": "returns",
+  "/cash-receipts": "cash-receipts",
+  "/cash-payments": "cash-payments",
   "/promotions": "promotions",
   "/debts": "debts",
   "/payments": "payments",

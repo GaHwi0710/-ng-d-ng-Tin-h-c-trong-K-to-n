@@ -53,8 +53,16 @@ function validateRecord(tableName, body) {
     NhaCungCap: ["TenNCC"],
     SanPham: ["MaSP", "TenSP", "MaLoai", "DonViTinh", "GiaNhap", "GiaBan", "TrangThai", "HanSuDung"],
     LoaiHang: ["TenLoai"],
+    PhieuThu: ["NguoiNopTien", "LyDo", "SoTien"],
+    PhieuChi: ["NguoiNhanTien", "LyDo", "SoTien"],
   }[tableName] || [];
-  if (required.some((field) => !String(body[field] || "").trim())) return "Vui lòng nhập đủ các trường bắt buộc";
+  if (required.some((field) => !String(body[field] ?? "").toString().trim())) return "Vui lòng nhập đủ các trường bắt buộc";
+  if ((tableName === "PhieuThu" || tableName === "PhieuChi") && (!Number.isFinite(Number(body.SoTien)) || Number(body.SoTien) <= 0)) {
+    return "Số tiền thu/chi phải là số lớn hơn 0";
+  }
+  if ((tableName === "PhieuThu" || tableName === "PhieuChi") && body.NgayLap && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.NgayLap).slice(0, 10))) {
+    return "Ngày lập phiếu không hợp lệ";
+  }
   if (body.Email && !/^\S+@\S+\.\S+$/.test(body.Email)) return "Email không hợp lệ";
   if (body.SDT && !/^0\d{9,10}$/.test(String(body.SDT).trim())) return "Số điện thoại phải gồm 10-11 chữ số và bắt đầu bằng 0";
   if (tableName === "SanPham" && !["Đang bán", "Ngừng bán"].includes(body.TrangThai)) return "Trạng thái sản phẩm không hợp lệ";
@@ -97,6 +105,8 @@ async function serializeRecord(tableName, document) {
     HoaDon: [{ field: "MaDH", table: "DonHang", code: "MaDH", output: "MaDHCode" }],
     PhieuXuat: [{ field: "MaDH", table: "DonHang", code: "MaDH", output: "MaDHCode" }],
     PhieuNhap: [{ field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode" }],
+    PhieuThu: [{ field: "MaHD", table: "HoaDon", code: "MaHD", output: "MaHDCode" }],
+    PhieuChi: [{ field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode" }],
     DonDatHang: [{ field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode" }],
     CongNo: [
       { field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode" },
@@ -121,17 +131,24 @@ async function serializeRecord(tableName, document) {
     if (linked?.[reference.code]) record[reference.output] = linked[reference.code];
     if (linked?.[reference.name]) record[reference.nameOutput] = linked[reference.name];
   }
-  if (Array.isArray(record.details)) {
-    record.details = await Promise.all(record.details.map(async (line) => {
-      if (!ObjectId.isValid(line.MaSP)) return line;
+  const detailProp = Array.isArray(record.details) ? "details" : Array.isArray(record.items) ? "items" : null;
+  if (detailProp) {
+    record[detailProp] = await Promise.all(record[detailProp].map(async (line) => {
+      const rawId = line.productId || line.MaSP || line.id;
+      let query = null;
+      if (ObjectId.isValid(rawId)) query = { _id: new ObjectId(rawId) };
+      else if (rawId) query = { MaSP: String(rawId) };
+      if (!query) return line;
+
       const product = await getDatabase().collection("SanPham").findOne(
-        { _id: new ObjectId(line.MaSP) },
-        { projection: { MaSP: 1, TenSP: 1, HinhAnh: 1, DonViTinh: 1, GiaBan: 1, LoaiHang: 1 } },
+        query,
+        { projection: { MaSP: 1, TenSP: 1, HinhAnh: 1, DonViTinh: 1, GiaBan: 1, GiaNhap: 1, LoaiHang: 1 } },
       );
       if (!product) return line;
       return {
         ...line,
-        MaSPCode: product.MaSP ?? line.MaSPCode,
+        MaSPCode: product.MaSP,
+        MaSP: product.MaSP,
         TenSP: line.TenSP || product.TenSP,
         HinhAnh: line.HinhAnh ?? product.HinhAnh ?? "",
         DonViTinh: line.DonViTinh || product.DonViTinh,
@@ -148,7 +165,7 @@ export function createCrudModule(routeName, tableName) {
   router.get("/", async (_req, res, next) => {
     try {
       const data = await getDatabase().collection(tableName).find().sort({ createdAt: -1 }).toArray();
-      res.json({ table: tableName, data: await Promise.all(data.map((item) => serializeRecord(tableName, item))), message: `Danh sach ${routeName}` });
+      res.json({ table: tableName, data: await Promise.all(data.map((item) => serializeRecord(tableName, item))), message: `Danh sách ${routeName}` });
     } catch (error) {
       next(error);
     }
@@ -157,8 +174,8 @@ export function createCrudModule(routeName, tableName) {
   router.get("/:id", async (req, res, next) => {
     try {
       const data = await findDocument(getDatabase().collection(tableName), tableName, req.params.id);
-      if (!data) return res.status(404).json({ message: `Khong tim thay ${routeName}` });
-      res.json({ table: tableName, data: await serializeRecord(tableName, data), message: `Chi tiet ${routeName}` });
+      if (!data) return res.status(404).json({ message: `Không tìm thấy ${routeName}` });
+      res.json({ table: tableName, data: await serializeRecord(tableName, data), message: `Chi tiết ${routeName}` });
     } catch (error) {
       next(error);
     }
@@ -267,6 +284,12 @@ export function createCrudModule(routeName, tableName) {
       if (["KhachHang", "NhaCungCap"].includes(tableName) && !body.TrangThai) {
         body.TrangThai = "Đang hoạt động";
       }
+      if (["PhieuThu", "PhieuChi"].includes(tableName)) {
+        if (!body.NgayLap) body.NgayLap = new Date().toISOString().slice(0, 10);
+        if (!body.TrangThai) body.TrangThai = "Đã lập";
+        const soTien = Number(body.SoTien);
+        body.SoTien = Number.isFinite(soTien) ? soTien : 0;
+      }
       const definition = getCodeDefinition(tableName);
       if (definition && !body[definition.field]) {
         body[definition.field] = await nextBusinessCode(collection, tableName);
@@ -300,7 +323,7 @@ export function createCrudModule(routeName, tableName) {
       }
       if (tableName === "DonDatHang") await replaceDetails(getDatabase(), "CT_DonDatHang", result.insertedId, document.items || document.details);
       if (tableName === "KhuyenMai") await replaceDetails(getDatabase(), "CT_KhuyenMai", result.insertedId, document.details || document.items);
-      res.status(201).json({ table: tableName, data: await serializeRecord(tableName, { _id: result.insertedId, ...document }), message: `Tao moi ${routeName}` });
+      res.status(201).json({ table: tableName, data: await serializeRecord(tableName, { _id: result.insertedId, ...document }), message: `Đã tạo ${routeName} thành công` });
     } catch (error) {
       next(error);
     }
@@ -309,7 +332,7 @@ export function createCrudModule(routeName, tableName) {
   router.put("/:id", async (req, res, next) => {
     try {
       const existingDoc = await findDocument(getDatabase().collection(tableName), tableName, req.params.id);
-      if (!existingDoc) return res.status(404).json({ message: `Khong tim thay ${routeName}` });
+      if (!existingDoc) return res.status(404).json({ message: `Không tìm thấy ${routeName}` });
       const id = existingDoc._id;
 
       if (tableName === "CongNo") {
@@ -389,7 +412,7 @@ export function createCrudModule(routeName, tableName) {
         { $set: update },
         { returnDocument: "after" }
       );
-      if (!result) return res.status(404).json({ message: `Khong tim thay ${routeName}` });
+      if (!result) return res.status(404).json({ message: `Không tìm thấy ${routeName}` });
       if (tableName === "SanPham" && update.stock !== undefined) {
         await getDatabase().collection("TonKho").updateOne(
           { MaSP: id },
@@ -418,7 +441,7 @@ export function createCrudModule(routeName, tableName) {
           { $set: { status: isLocked ? "Đã khóa" : "Hoạt động", updatedAt: new Date() } }
         );
       }
-      res.json({ table: tableName, data: await serializeRecord(tableName, result), message: `Cap nhat ${routeName}` });
+      res.json({ table: tableName, data: await serializeRecord(tableName, result), message: `Đã cập nhật ${routeName} thành công` });
     } catch (error) {
       next(error);
     }

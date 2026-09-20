@@ -123,12 +123,32 @@ export async function seedDatabase(database) {
 
   // Một lần duy nhất: siết ma trận quyền của 5 vai trò hệ thống theo bộ mặc định chặt.
   // Sau lần chạy này, các chỉnh sửa quyền của quản trị viên sẽ được giữ nguyên.
-  if (!(await database.collection("_metadata").findOne({ key: "strict-permissions-v3" }))) {
+  // v4: bổ sung nhóm "Thu chi" (Phiếu thu / Phiếu chi) vào ma trận quyền.
+  if (!(await database.collection("_metadata").findOne({ key: "strict-permissions-v4" }))) {
     for (const [maKey, quyenHan] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
       await database.collection("VaiTro").updateOne({ MaKey: maKey }, { $set: { QuyenHan: quyenHan } });
     }
-    await database.collection("_metadata").insertOne({ key: "strict-permissions-v3", createdAt: new Date() });
-    console.log("Đã áp dụng ma trận quyền chi tiết cho 5 vai trò hệ thống");
+    await database.collection("_metadata").insertOne({ key: "strict-permissions-v4", createdAt: new Date() });
+    console.log("Đã áp dụng ma trận quyền chi tiết cho 5 vai trò hệ thống (v4 - có Thu chi)");
+  }
+
+  // Dữ liệu mẫu Phiếu thu / Phiếu chi (chỉ chèn khi cả 2 collection trống để luôn có dữ liệu demo)
+  if (
+    (await database.collection("PhieuThu").countDocuments()) === 0 &&
+    (await database.collection("PhieuChi").countDocuments()) === 0
+  ) {
+    const now2 = new Date();
+    const ngay = now2.toISOString().slice(0, 10);
+    await database.collection("PhieuThu").insertMany([
+      { MaPT: "PT001", NgayLap: ngay, NguoiNopTien: "Nguyễn Thị Lan", DiaChi: "25 Nguyễn Trãi, Thanh Xuân, Hà Nội", LyDo: "Thu tiền bán hàng theo hóa đơn HD001", SoTien: 1500000, ChungTuGoc: "HD001", KemTheo: "01 hóa đơn", TrangThai: "Đã lập", NguoiLap: "Quản trị viên", createdAt: now2, updatedAt: now2 },
+      { MaPT: "PT002", NgayLap: ngay, NguoiNopTien: "Trần Minh Quân", DiaChi: "8 Phố Huế, Hai Bà Trưng, Hà Nội", LyDo: "Khách hàng trả nợ công nợ CN002", SoTien: 800000, ChungTuGoc: "CN002", KemTheo: "01 bản sao kê", TrangThai: "Đã lập", NguoiLap: "Quản trị viên", createdAt: now2, updatedAt: now2 },
+      { MaPT: "PT003", NgayLap: ngay, NguoiNopTien: "Nguyễn Văn Hoà", DiaChi: "40 Xuân Thủy, Cầu Giấy, Hà Nội", LyDo: "Thu tiền đặt cọc đơn hàng DH005", SoTien: 500000, ChungTuGoc: "DH005", KemTheo: "", TrangThai: "Đã lập", NguoiLap: "Quản trị viên", createdAt: now2, updatedAt: now2 },
+    ]);
+    await database.collection("PhieuChi").insertMany([
+      { MaPC: "PC001", NgayLap: ngay, NguoiNhanTien: "Công ty TNHH Pigeon Việt Nam", DiaChi: "KCN Việt Nam – Singapore, Bình Dương", LyDo: "Chi tiền trả nhà cung cấp theo phiếu nhập PN001", SoTien: 3200000, ChungTuGoc: "PN001", KemTheo: "01 phiếu nhập", TrangThai: "Đã lập", NguoiLap: "Quản trị viên", createdAt: now2, updatedAt: now2 },
+      { MaPC: "PC002", NgayLap: ngay, NguoiNhanTien: "Xe tải Ngọc Hùng", DiaChi: "Bắc Từ Liêm, Hà Nội", LyDo: "Chi phí vận chuyển hàng nhập kho tháng 9", SoTien: 450000, ChungTuGoc: "", KemTheo: "01 biên lai", TrangThai: "Đã lập", NguoiLap: "Quản trị viên", createdAt: now2, updatedAt: now2 },
+    ]);
+    console.log("Đã seed dữ liệu mẫu Phiếu thu / Phiếu chi");
   }
 
   // Nếu cơ sở dữ liệu đã được khởi tạo ban đầu, TUYỆT ĐỐI KHÔNG RESET hay ghi đè bất kỳ dữ liệu người dùng nào!
@@ -256,6 +276,7 @@ export async function seedDatabase(database) {
       LoaiKM: "Số tiền",
       PhanTramGiam: 0,
       GiaTriGiam: 50000,
+      DiemYeuCau: 100,
       PhamVi: "Theo đối tượng",
       DoiTuong: "Hạng Bạc",
       NgayBatDau: "2026-01-01",
@@ -271,6 +292,7 @@ export async function seedDatabase(database) {
       LoaiKM: "Số tiền",
       PhanTramGiam: 0,
       GiaTriGiam: 100000,
+      DiemYeuCau: 500,
       PhamVi: "Theo đối tượng",
       DoiTuong: "Hạng Vàng",
       NgayBatDau: "2026-01-01",
@@ -286,6 +308,7 @@ export async function seedDatabase(database) {
       LoaiKM: "Số tiền",
       PhanTramGiam: 0,
       GiaTriGiam: 200000,
+      DiemYeuCau: 1000,
       PhamVi: "Theo đối tượng",
       DoiTuong: "Kim Cương",
       NgayBatDau: "2026-01-01",

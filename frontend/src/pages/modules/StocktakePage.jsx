@@ -10,6 +10,7 @@ import { listRecords, saveRecord } from "../../lib/api.js";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import { ProductImage } from "../../components/ProductImage.jsx";
+import { LOW_STOCK_THRESHOLD } from "../../lib/constants.js";
 
 function currentUserInfo() {
   try {
@@ -34,10 +35,20 @@ export function StocktakePage({ title }) {
   const [stocktakes, setStocktakes] = useState([]);
   const [actual, setActual] = useState({});
   const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    listRecords("products").then(setProducts);
-    listRecords("stocktakes").then(setStocktakes).catch(() => setStocktakes([]));
+    setLoading(true);
+    setLoadError("");
+    Promise.allSettled([
+      listRecords("products"),
+      listRecords("stocktakes"),
+    ]).then(([prodRes, stRes]) => {
+      if (prodRes.status === "fulfilled") setProducts(prodRes.value);
+      if (stRes.status === "fulfilled") setStocktakes(stRes.value);
+      if (prodRes.status === "rejected") setLoadError("Không thể tải danh sách sản phẩm để kiểm kê.");
+    }).finally(() => setLoading(false));
   }, []);
 
   const stats = useMemo(() => {
@@ -111,6 +122,15 @@ export function StocktakePage({ title }) {
         </div>
       </header>
 
+      {loading && (
+        <p style={{ color: "var(--text-faint)", padding: "16px 0" }}>⏳ Đang tải dữ liệu kiểm kê...</p>
+      )}
+      {loadError && (
+        <div className="alert danger" role="alert" style={{ marginBottom: 16 }}>
+          ⚠️ {loadError}
+        </div>
+      )}
+
       {/* Discrepancy stats */}
       <div className="stats-grid">
         <StatCard
@@ -177,8 +197,14 @@ export function StocktakePage({ title }) {
                     </div>
                   </td>
                   <td style={{ color: "var(--text-soft)" }}>{product.DonViTinh}</td>
-                  <td style={{ textAlign: "right", fontSize: 14, fontWeight: 600 }}>
-                    {sys} {product.DonViTinh}
+                  <td style={{ textAlign: "right" }}>
+                    {sys <= 0 ? (
+                      <span className="stock-status-out">⛔ 0 {product.DonViTinh}</span>
+                    ) : sys <= LOW_STOCK_THRESHOLD ? (
+                      <span className="stock-status-low">⚠️ {sys} {product.DonViTinh}</span>
+                    ) : (
+                      <span className="stock-status-ok">✅ {sys} {product.DonViTinh}</span>
+                    )}
                   </td>
                   <td style={{ textAlign: "center" }}>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -228,6 +254,19 @@ export function StocktakePage({ title }) {
                 </tr>
               );
             })}
+            {loading ? (
+              <tr>
+                <td colSpan={6} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
+                  ⏳ Đang tải danh sách sản phẩm...
+                </td>
+              </tr>
+            ) : !filteredProducts.length ? (
+              <tr>
+                <td colSpan={6} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
+                  Không tìm thấy sản phẩm phù hợp
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

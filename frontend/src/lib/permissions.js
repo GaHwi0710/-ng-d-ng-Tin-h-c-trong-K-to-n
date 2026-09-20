@@ -46,6 +46,13 @@ export const PERMISSION_GROUPS = [
     ],
   },
   {
+    group: "Thu chi",
+    modules: [
+      { key: "cash-receipts", label: "Phiếu thu" },
+      { key: "cash-payments", label: "Phiếu chi" },
+    ],
+  },
+  {
     group: "Báo cáo & Khuyến mãi",
     modules: [
       { key: "promotions", label: "Khuyến mãi" },
@@ -78,6 +85,8 @@ export const PATH_PERMISSION_KEY = {
   "/inventory": "inventory",
   "/stocktakes": "stocktakes",
   "/returns": "returns",
+  "/cash-receipts": "cash-receipts",
+  "/cash-payments": "cash-payments",
   "/promotions": "promotions",
   "/debts": "debts",
   "/reports": "reports",

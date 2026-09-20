@@ -18,6 +18,8 @@ import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import { StatusBadge } from "../../components/Badge.jsx";
+import ConfirmDialog from "../../components/ConfirmDialog";
+import { LOW_STOCK_THRESHOLD } from "../../lib/constants.js";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -95,6 +97,7 @@ export function ProductsPage({ title, description }) {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [viewingProduct, setViewingProduct] = useState(null);
   const [showUrlInput, setShowUrlInput] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null, name: "" });
 
   const [formData, setFormData] = useState({
     MaSP: "",
@@ -141,7 +144,7 @@ export function ProductsPage({ title, description }) {
   const stats = useMemo(() => {
     const total = products.length;
     const active = products.filter((p) => p.TrangThai !== "Ngừng bán").length;
-    const lowStock = products.filter((p) => Number(p.stock || 0) > 0 && Number(p.stock || 0) <= 10).length;
+    const lowStock = products.filter((p) => Number(p.stock || 0) > 0 && Number(p.stock || 0) <= LOW_STOCK_THRESHOLD).length;
     const outOfStock = products.filter((p) => Number(p.stock || 0) <= 0).length;
     return { total, active, lowStock, outOfStock };
   }, [products]);
@@ -279,8 +282,8 @@ export function ProductsPage({ title, description }) {
         LoaiHang: matchedCat?.TenLoai || formData.LoaiHang,
         GiaNhap: Number(formData.GiaNhap) || 0,
         GiaBan: Number(formData.GiaBan) || 0,
-        stock: Number(formData.stock) || 0,
       };
+      delete payload.stock;
       const saved = await saveRecord("products", payload);
       const completeSaved = {
         ...saved,
@@ -300,23 +303,24 @@ export function ProductsPage({ title, description }) {
     }
   }
 
-  async function handleDelete(id, name) {
-    if (!window.confirm(`Bạn có chắc muốn xóa sản phẩm "${name}"?`)) return;
+  function handleDelete(id, name) {
+    setConfirmDialog({ open: true, id, name });
+  }
+
+  async function executeDelete() {
+    const { id, name } = confirmDialog;
+    setConfirmDialog({ open: false, id: null, name: "" });
     try {
       const res = await deleteRecord("products", id);
       if (res?.softDeleted || res?.status === "Ngừng bán") {
-        setProducts((prev) =>
-          prev.map((p) =>
-            p.id === id || p.MaSP === id ? { ...p, TrangThai: "Ngừng bán" } : p
-          )
-        );
-        toast(res.message || "Sản phẩm đã phát sinh chứng từ nên được chuyển sang trạng thái 'Ngừng bán'.");
+        setProducts(prev => prev.map(p => p.id === id ? { ...p, TrangThai: "Ngừng bán" } : p));
+        toast(`Sản phẩm "${name}" đã chuyển sang trạng thái ngừng bán do có chứng từ phát sinh`);
       } else {
-        setProducts((prev) => prev.filter((p) => p.id !== id && p.MaSP !== id));
-        toast("Đã xóa sản phẩm hoàn toàn khỏi danh mục");
+        setProducts(prev => prev.filter(p => p.id !== id));
+        toast("Đã xóa sản phẩm thành công");
       }
     } catch (err) {
-      toast(err.message || "Không thể xóa sản phẩm");
+      toast(err?.message || "Lỗi khi xóa");
     }
   }
 
@@ -548,20 +552,18 @@ export function ProductsPage({ title, description }) {
                     </span>
                   </td>
                   <td>
-                    <div className="prod-stock-cell">
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
-                        <strong style={{ color: st <= 0 ? "var(--danger)" : st <= 10 ? "var(--warn)" : "var(--success)" }}>
-                          {st} {p.DonViTinh}
-                        </strong>
-                        <span style={{ color: "var(--text-faint)", fontSize: 11 }}>
-                          {st <= 0 ? "Hết" : st <= 10 ? "Ít" : "Sẵn"}
-                        </span>
-                      </div>
-                      <div className="prod-stock-bar-wrap">
-                        <div
-                          className={`prod-stock-bar ${st <= 0 ? "bar-out" : st <= 10 ? "bar-low" : "bar-ok"}`}
-                          style={{ width: `${Math.min(100, (st / 150) * 100)}%` }}
-                        />
+                    <div className="prod-stock-cell" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <strong style={{ fontSize: 13, color: "var(--text-dark)" }}>
+                        {st} {p.DonViTinh}
+                      </strong>
+                      <div>
+                        {st <= 0 ? (
+                          <span className="badge badge-danger">⚠️ Hết hàng</span>
+                        ) : st <= 10 ? (
+                          <span className="badge badge-amber">Sắp hết</span>
+                        ) : (
+                          <span className="badge badge-green">Còn hàng</span>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -619,7 +621,7 @@ export function ProductsPage({ title, description }) {
       >
         <div className="form-grid">
           <div className="field">
-            <label htmlFor="p-code">Mã sản phẩm *</label>
+            <label htmlFor="p-code">Mã sản phẩm <span className="required-star">*</span></label>
             <input
               id="p-code"
               type="text"
@@ -629,7 +631,7 @@ export function ProductsPage({ title, description }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="p-cat">Loại hàng / Danh mục *</label>
+            <label htmlFor="p-cat">Loại hàng / Danh mục <span className="required-star">*</span></label>
             <select
               id="p-cat"
               required
@@ -663,7 +665,7 @@ export function ProductsPage({ title, description }) {
         </div>
 
         <div className="field">
-          <label htmlFor="p-name">Tên sản phẩm *</label>
+          <label htmlFor="p-name">Tên sản phẩm <span className="required-star">*</span></label>
           <input
             id="p-name"
             type="text"
@@ -674,34 +676,22 @@ export function ProductsPage({ title, description }) {
           />
         </div>
 
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="p-dvt">Đơn vị tính</label>
-            <select
-              id="p-dvt"
-              value={formData.DonViTinh}
-              onChange={(e) => setFormData({ ...formData, DonViTinh: e.target.value })}
-            >
-              <option value="Chiếc">Chiếc</option>
-              <option value="Cái">Cái</option>
-              <option value="Hộp">Hộp</option>
-              <option value="Gói">Gói</option>
-              <option value="Bịch">Bịch</option>
-              <option value="Bộ">Bộ</option>
-              <option value="Chai">Chai</option>
-              <option value="Lon">Lon</option>
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="p-stock">Số lượng tồn kho</label>
-            <input
-              id="p-stock"
-              type="number"
-              min="0"
-              value={formData.stock}
-              onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
-            />
-          </div>
+        <div className="field">
+          <label htmlFor="p-dvt">Đơn vị tính</label>
+          <select
+            id="p-dvt"
+            value={formData.DonViTinh}
+            onChange={(e) => setFormData({ ...formData, DonViTinh: e.target.value })}
+          >
+            <option value="Chiếc">Chiếc</option>
+            <option value="Cái">Cái</option>
+            <option value="Hộp">Hộp</option>
+            <option value="Gói">Gói</option>
+            <option value="Bịch">Bịch</option>
+            <option value="Bộ">Bộ</option>
+            <option value="Chai">Chai</option>
+            <option value="Lon">Lon</option>
+          </select>
         </div>
 
         <div className="form-grid">
@@ -979,19 +969,19 @@ export function ProductsPage({ title, description }) {
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
                 <span style={{ fontSize: 13, color: "var(--text-soft)" }}>Tồn hiện tại:</span>
-                <strong style={{ fontSize: 15, color: Number(viewingProduct.stock || 0) <= 0 ? "var(--danger)" : Number(viewingProduct.stock || 0) <= 10 ? "var(--warn)" : "var(--success)" }}>
+                <strong style={{ fontSize: 15, color: Number(viewingProduct.stock || 0) <= 0 ? "var(--danger)" : Number(viewingProduct.stock || 0) <= LOW_STOCK_THRESHOLD ? "var(--warn)" : "var(--success)" }}>
                   {viewingProduct.stock || 0} {viewingProduct.DonViTinh}
                 </strong>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-faint)", marginBottom: 4 }}>
                 <span>Đánh giá kho:</span>
-                <span style={{ fontWeight: 500, color: Number(viewingProduct.stock || 0) <= 0 ? "var(--danger)" : Number(viewingProduct.stock || 0) <= 10 ? "var(--warn)" : "var(--success)" }}>
-                  {Number(viewingProduct.stock || 0) <= 0 ? "⚠️ Hết hàng" : Number(viewingProduct.stock || 0) <= 10 ? "⚡ Cận mức tối thiểu" : "✓ Sẵn sàng bán"}
+                <span style={{ fontWeight: 500, color: Number(viewingProduct.stock || 0) <= 0 ? "var(--danger)" : Number(viewingProduct.stock || 0) <= LOW_STOCK_THRESHOLD ? "var(--warn)" : "var(--success)" }}>
+                  {Number(viewingProduct.stock || 0) <= 0 ? "⚠️ Hết hàng" : Number(viewingProduct.stock || 0) <= LOW_STOCK_THRESHOLD ? "⚡ Cận mức tối thiểu" : "✓ Sẵn sàng bán"}
                 </span>
               </div>
               <div className="prod-stock-bar-wrap" style={{ marginTop: 6 }}>
                 <div
-                  className={`prod-stock-bar ${Number(viewingProduct.stock || 0) <= 0 ? "bar-out" : Number(viewingProduct.stock || 0) <= 10 ? "bar-low" : "bar-ok"}`}
+                  className={`prod-stock-bar ${Number(viewingProduct.stock || 0) <= 0 ? "bar-out" : Number(viewingProduct.stock || 0) <= LOW_STOCK_THRESHOLD ? "bar-low" : "bar-ok"}`}
                   style={{ width: `${Math.min(100, ((viewingProduct.stock || 0) / 150) * 100)}%` }}
                 />
               </div>
@@ -1045,6 +1035,14 @@ export function ProductsPage({ title, description }) {
           </div>
         </Modal>
       )}
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Xác nhận xóa sản phẩm"
+        itemName={confirmDialog.name}
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmDialog({ open: false, id: null, name: "" })}
+      />
     </section>
   );
 }

@@ -30,7 +30,7 @@ app.use("/api", routes);
 app.use((error, _req, res, _next) => {
   console.error(error);
   const status = Number(error?.status) >= 400 ? error.status : 500;
-  res.status(status).json({ message: status === 500 ? "Loi may chu" : error.message, detail: error.message });
+  res.status(status).json({ message: status === 500 ? "Lỗi máy chủ nội bộ" : error.message, detail: error.message });
 });
 
 app.use(express.static(frontendDist));

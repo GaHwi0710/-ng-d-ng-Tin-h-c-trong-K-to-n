@@ -13,6 +13,7 @@ import { listRecords, saveRecord, deleteRecord } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
+import ConfirmDialog from "../../components/ConfirmDialog";
 
 const AVAILABLE_ICONS = ["🍼", "👶", "👕", "🥣", "🧸", "🧴", "🚲", "🚼", "🛴", "🍎", "👟", "🛏️", "📚", "🏷️"];
 
@@ -71,6 +72,7 @@ export function CategoriesPage({ title, description }) {
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null, name: "" });
   const [formData, setFormData] = useState({
     TenLoai: "",
     MoTa: "",
@@ -146,19 +148,23 @@ export function CategoriesPage({ title, description }) {
     }
   }
 
-  async function handleDelete(id, name) {
-    const inUse = products.some((p) => p.LoaiHang === name);
-    if (inUse) {
+  function handleDelete(id, name) {
+    setConfirmDialog({ open: true, id, name });
+  }
+
+  async function executeDelete() {
+    const { id, name } = confirmDialog;
+    setConfirmDialog({ open: false, id: null, name: "" });
+    // Keep the existing integrity check
+    if (products.some((p) => p.LoaiHang === name)) {
       return toast(`Không thể xóa vì đang có sản phẩm thuộc danh mục "${name}"`);
     }
-
-    if (!window.confirm(`Bạn có chắc muốn xóa loại hàng "${name}"?`)) return;
     try {
       await deleteRecord("product-categories", id);
       setCategories((prev) => prev.filter((c) => c.id !== id));
-      toast("Đã xóa loại hàng");
+      toast("Đã xóa loại hàng thành công");
     } catch (err) {
-      toast(err.message || "Không thể xóa");
+      toast(err?.message || "Lỗi khi xóa");
     }
   }
 
@@ -276,7 +282,7 @@ export function CategoriesPage({ title, description }) {
         onSubmit={handleSave}
       >
         <div className="field">
-          <label htmlFor="cat-name">Tên loại hàng *</label>
+          <label htmlFor="cat-name">Tên loại hàng <span className="required-star">*</span></label>
           <input
             id="cat-name"
             type="text"
@@ -333,6 +339,14 @@ export function CategoriesPage({ title, description }) {
           />
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Xác nhận xóa loại hàng"
+        itemName={confirmDialog.name}
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmDialog({ open: false, id: null, name: "" })}
+      />
     </section>
   );
 }

@@ -15,6 +15,7 @@ import { listRecords, saveRecord, deleteRecord } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
+import ConfirmDialog from "../../components/ConfirmDialog";
 
 export function SuppliersPage({ title, description }) {
   const navigate = useNavigate();
@@ -24,6 +25,7 @@ export function SuppliersPage({ title, description }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null, name: "" });
   const [formData, setFormData] = useState({
     TenNCC: "",
     SDT: "",
@@ -112,21 +114,24 @@ export function SuppliersPage({ title, description }) {
     }
   }
 
-  async function handleDelete(id, name) {
-    if (!window.confirm(`Bạn có chắc muốn xóa nhà cung cấp "${name}"?`)) return;
+  function handleDelete(id, name) {
+    setConfirmDialog({ open: true, id, name });
+  }
+
+  async function executeDelete() {
+    const { id, name } = confirmDialog;
+    setConfirmDialog({ open: false, id: null, name: "" });
     try {
       const res = await deleteRecord("suppliers", id);
       if (res?.softDeleted || res?.status === "Ngưng hoạt động") {
-        setSuppliers((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, TrangThai: "Ngưng hoạt động" } : s))
-        );
-        toast(res?.message || "Đã chuyển nhà cung cấp sang 'Ngưng hoạt động' do đã có chứng từ phát sinh");
+        setSuppliers(prev => prev.map(s => s.id === id ? { ...s, TrangThai: "Ngưng hoạt động" } : s));
+        toast(`NCC "${name}" đã chuyển sang ngưng hoạt động do có đơn đặt hàng phát sinh`);
       } else {
-        setSuppliers((prev) => prev.filter((s) => s.id !== id));
-        toast("Đã xóa nhà cung cấp hoàn toàn thành công");
+        setSuppliers(prev => prev.filter(s => s.id !== id));
+        toast("Đã xóa nhà cung cấp thành công");
       }
     } catch (err) {
-      toast(err.message || "Không thể xóa");
+      toast(err?.message || "Lỗi khi xóa");
     }
   }
 
@@ -314,7 +319,7 @@ export function SuppliersPage({ title, description }) {
         onSubmit={handleSave}
       >
         <div className="field">
-          <label htmlFor="supp-name">Tên nhà cung cấp / Công ty phân phối *</label>
+          <label htmlFor="supp-name">Tên nhà cung cấp / Công ty phân phối <span className="required-star">*</span></label>
           <input
             id="supp-name"
             type="text"
@@ -371,6 +376,14 @@ export function SuppliersPage({ title, description }) {
           </select>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Xác nhận xóa nhà cung cấp"
+        itemName={confirmDialog.name}
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmDialog({ open: false, id: null, name: "" })}
+      />
     </section>
   );
 }

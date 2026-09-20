@@ -107,7 +107,7 @@ router.post("/login", (req, res) => {
 });
 
 router.post("/logout", (_req, res) => {
-  res.json({ message: "Dang xuat thanh cong" });
+  res.json({ message: "Đăng xuất thành công" });
 });
 
 router.get("/me", async (req, res) => {

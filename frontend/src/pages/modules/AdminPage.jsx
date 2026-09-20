@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import ConfirmDialog from "../../components/ConfirmDialog";
 import {
   PlusIcon,
   PencilSquareIcon,
@@ -75,6 +76,7 @@ export function AdminPage({ title, description, path }) {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null, name: "", resource: "" });
 
   // Form states
   const [empForm, setEmpForm] = useState({ HoTen: "", SDT: "", CCCD: "", DiaChi: "", VaiTro: "Nhân viên bán hàng", TrangThai: "Đang làm việc" });
@@ -88,11 +90,11 @@ export function AdminPage({ title, description, path }) {
 
   function togglePerm(moduleKey, action) {
     setRoleForm((prev) => {
-      const current = prev.QuyenHan[moduleKey] || [];
+      const current = prev.QuyenHan?.[moduleKey] || [];
       const next = current.includes(action)
         ? current.filter((a) => a !== action)
         : [...current, action];
-      const quyenHan = { ...prev.QuyenHan, [moduleKey]: next };
+      const quyenHan = { ...(prev.QuyenHan || {}), [moduleKey]: next };
       if (!next.length) delete quyenHan[moduleKey];
       return { ...prev, QuyenHan: quyenHan };
     });
@@ -100,8 +102,8 @@ export function AdminPage({ title, description, path }) {
 
   function toggleModuleAll(moduleKey) {
     setRoleForm((prev) => {
-      const allOn = ACTIONS.every((a) => prev.QuyenHan[moduleKey]?.includes(a.key));
-      const quyenHan = { ...prev.QuyenHan };
+      const quyenHan = { ...(prev.QuyenHan || {}) };
+      const allOn = ACTIONS.every((a) => quyenHan[moduleKey]?.includes(a.key));
       if (allOn) delete quyenHan[moduleKey];
       else quyenHan[moduleKey] = ACTIONS.map((a) => a.key);
       return { ...prev, QuyenHan: quyenHan };
@@ -110,7 +112,7 @@ export function AdminPage({ title, description, path }) {
 
   function toggleGroupAll(groupModules) {
     setRoleForm((prev) => {
-      const quyenHan = { ...prev.QuyenHan };
+      const quyenHan = { ...(prev.QuyenHan || {}) };
       const allOn = groupModules.every((m) =>
         ACTIONS.every((a) => quyenHan[m.key]?.includes(a.key))
       );
@@ -118,7 +120,21 @@ export function AdminPage({ title, description, path }) {
         if (allOn) delete quyenHan[m.key];
         else quyenHan[m.key] = ACTIONS.map((a) => a.key);
       }
-      return { ...prev, QuyenHan };
+      return { ...prev, QuyenHan: quyenHan };
+    });
+  }
+
+  function toggleAllGroups(enableAll) {
+    setRoleForm((prev) => {
+      const quyenHan = {};
+      if (enableAll) {
+        for (const g of PERMISSION_GROUPS) {
+          for (const m of g.modules) {
+            quyenHan[m.key] = ACTIONS.map((a) => a.key);
+          }
+        }
+      }
+      return { ...prev, QuyenHan: quyenHan };
     });
   }
 
@@ -224,6 +240,7 @@ export function AdminPage({ title, description, path }) {
     try {
       if (currentTab === "employees") {
         if (!empForm.HoTen.trim()) return toast("Họ và tên là bắt buộc");
+        if (!empForm.SDT?.trim()) return toast("Số điện thoại là bắt buộc");
         if (empForm.CCCD && !/^[0-9]{12}$/.test(empForm.CCCD.trim())) {
           return toast("Số CCCD phải gồm đúng 12 chữ số hợp lệ");
         }
@@ -233,6 +250,7 @@ export function AdminPage({ title, description, path }) {
         setAccounts(upAccs);
       } else if (currentTab === "accounts") {
         if (!accForm.username.trim() || !accForm.fullName.trim()) return toast("Tên đăng nhập và họ tên là bắt buộc");
+        if (!accForm.SDT?.trim()) return toast("Số điện thoại là bắt buộc");
         if (accForm.CCCD && !/^[0-9]{12}$/.test(accForm.CCCD.trim())) {
           return toast("Số CCCD phải gồm đúng 12 chữ số hợp lệ");
         }
@@ -260,17 +278,22 @@ export function AdminPage({ title, description, path }) {
   }
 
   async function handleDelete(id, name) {
-    if (!window.confirm(`Bạn có chắc muốn xóa "${name}"?`)) return;
+    const resource = currentTab === "employees" ? "admin/employees" : currentTab === "accounts" ? "admin/accounts" : "admin/roles";
+    setConfirmDialog({ open: true, id, name, resource });
+  }
+
+  async function executeDelete() {
+    const { id, resource } = confirmDialog;
     try {
-      const resource = currentTab === "employees" ? "admin/employees" : currentTab === "accounts" ? "admin/accounts" : "admin/roles";
       await deleteRecord(resource, id);
-      if (currentTab === "employees") setEmployees((prev) => prev.filter((e) => e.id !== id));
-      else if (currentTab === "accounts") setAccounts((prev) => prev.filter((a) => a.id !== id));
-      else setRoles((prev) => prev.filter((r) => r.id !== id));
+      if (currentTab === "employees") setEmployees(prev => prev.filter(e => e.id !== id));
+      else if (currentTab === "accounts") setAccounts(prev => prev.filter(a => a.id !== id));
+      else setRoles(prev => prev.filter(r => r.id !== id));
       toast("Đã xóa thành công");
     } catch (err) {
-      toast(err.message || "Không thể xóa");
+      toast(err?.message || "Lỗi khi xóa");
     }
+    setConfirmDialog({ open: false, id: null, name: "", resource: "" });
   }
 
   // Filtered visible items
@@ -643,7 +666,7 @@ export function AdminPage({ title, description, path }) {
         {currentTab === "employees" && (
           <div>
             <div className="field">
-              <label htmlFor="emp-name">Họ và tên nhân viên *</label>
+              <label htmlFor="emp-name">Họ và tên nhân viên <span className="required-star">*</span></label>
               <input
                 id="emp-name"
                 type="text"
@@ -654,21 +677,23 @@ export function AdminPage({ title, description, path }) {
             </div>
             <div className="form-grid">
               <div className="field">
-                <label htmlFor="emp-cccd">Số CCCD (12 chữ số) *</label>
+                <label htmlFor="emp-cccd">Số CCCD (12 chữ số) <span className="required-star">*</span></label>
                 <input
                   id="emp-cccd"
                   type="text"
-                  maxLength="12"
+                  inputMode="numeric"
+                  maxLength={12}
                   placeholder="Ví dụ: 079198000123"
                   value={empForm.CCCD || ""}
-                  onChange={(e) => setEmpForm({ ...empForm, CCCD: e.target.value })}
+                  onChange={(e) => setEmpForm({ ...empForm, CCCD: e.target.value.replace(/\D/g, '') })}
                 />
               </div>
               <div className="field">
-                <label htmlFor="emp-phone">Số điện thoại</label>
+                <label htmlFor="emp-phone">Số điện thoại <span className="required-star">*</span></label>
                 <input
                   id="emp-phone"
                   type="tel"
+                  required
                   placeholder="Ví dụ: 0912345678"
                   value={empForm.SDT}
                   onChange={(e) => setEmpForm({ ...empForm, SDT: e.target.value })}
@@ -726,7 +751,7 @@ export function AdminPage({ title, description, path }) {
               1. Thông tin nhân sự
             </h4>
             <div className="field">
-              <label htmlFor="acc-name">Họ và tên nhân viên *</label>
+              <label htmlFor="acc-name">Họ và tên nhân viên <span className="required-star">*</span></label>
               <input
                 id="acc-name"
                 type="text"
@@ -738,21 +763,23 @@ export function AdminPage({ title, description, path }) {
             </div>
             <div className="form-grid">
               <div className="field">
-                <label htmlFor="acc-cccd">Số CCCD (12 chữ số) *</label>
+                <label htmlFor="acc-cccd">Số CCCD (12 chữ số) <span className="required-star">*</span></label>
                 <input
                   id="acc-cccd"
                   type="text"
-                  maxLength="12"
+                  inputMode="numeric"
+                  maxLength={12}
                   placeholder="Ví dụ: 001095012345"
                   value={accForm.CCCD || ""}
-                  onChange={(e) => setAccForm({ ...accForm, CCCD: e.target.value })}
+                  onChange={(e) => setAccForm({ ...accForm, CCCD: e.target.value.replace(/\D/g, '') })}
                 />
               </div>
               <div className="field">
-                <label htmlFor="acc-phone">Số điện thoại</label>
+                <label htmlFor="acc-phone">Số điện thoại <span className="required-star">*</span></label>
                 <input
                   id="acc-phone"
                   type="tel"
+                  required
                   placeholder="Ví dụ: 0912345678"
                   value={accForm.SDT || ""}
                   onChange={(e) => setAccForm({ ...accForm, SDT: e.target.value })}
@@ -775,7 +802,7 @@ export function AdminPage({ title, description, path }) {
             </h4>
             <div className="form-grid">
               <div className="field">
-                <label htmlFor="acc-user">Tên đăng nhập *</label>
+                <label htmlFor="acc-user">Tên đăng nhập <span className="required-star">*</span></label>
                 <input
                   id="acc-user"
                   type="text"
@@ -788,7 +815,7 @@ export function AdminPage({ title, description, path }) {
               </div>
               <div className="field">
                 <label htmlFor="acc-pw">
-                  {editing ? "Mật khẩu mới (bỏ trống nếu giữ nguyên)" : "Mật khẩu khởi tạo *"}
+                  {editing ? "Mật khẩu mới (bỏ trống nếu giữ nguyên)" : <>Mật khẩu khởi tạo <span className="required-star">*</span></>}
                 </label>
                 <input
                   id="acc-pw"
@@ -835,7 +862,7 @@ export function AdminPage({ title, description, path }) {
         {currentTab === "roles" && (
           <div>
             <div className="field">
-              <label htmlFor="role-name">Tên vai trò *</label>
+              <label htmlFor="role-name">Tên vai trò <span className="required-star">*</span></label>
               <input
                 id="role-name"
                 type="text"
@@ -862,7 +889,11 @@ export function AdminPage({ title, description, path }) {
                 <select
                   id="role-copy"
                   value={roleForm.copyFrom}
-                  onChange={(e) => setRoleForm({ ...roleForm, copyFrom: e.target.value })}
+                  onChange={(e) => {
+                    const copyKey = e.target.value;
+                    const newPerms = copyKey ? basePermissions(copyKey) : {};
+                    setRoleForm({ ...roleForm, copyFrom: copyKey, QuyenHan: newPerms });
+                  }}
                 >
                   <option value="">— Bắt đầu từ quyền trống —</option>
                   {roles.map((r) => (
@@ -874,31 +905,61 @@ export function AdminPage({ title, description, path }) {
               </div>
             )}
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                margin: "14px 0 8px",
-                paddingTop: 12,
-                borderTop: "1px solid var(--border, #e2e8f0)",
-              }}
-            >
-              <h4 style={{ margin: 0, fontSize: 12.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--primary-dark, #1e3a8a)" }}>
-                Ma trận quyền hạn chi tiết
-              </h4>
-              <div style={{ display: "flex", gap: 6 }}>
-                {ACTIONS.map((a) => (
-                  <span key={a.key} style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 5, ...ACTION_STYLE[a.key] }}>
-                    {a.label}
-                  </span>
-                ))}
-              </div>
-            </div>
+            {(() => {
+              const allGlobalOn = PERMISSION_GROUPS.every((g) =>
+                g.modules.every((m) => ACTIONS.every((a) => (roleForm.QuyenHan?.[m.key] || []).includes(a.key)))
+              );
+              return (
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    margin: "14px 0 8px",
+                    paddingTop: 12,
+                    borderTop: "1px solid var(--border, #e2e8f0)",
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <h4 style={{ margin: 0, fontSize: 12.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--primary-dark, #1e3a8a)" }}>
+                      Ma trận quyền hạn chi tiết
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => toggleAllGroups(!allGlobalOn)}
+                      style={{
+                        background: allGlobalOn ? "#fee2e2" : "#f0fdf4",
+                        color: allGlobalOn ? "#b91c1c" : "#15803d",
+                        border: `1px solid ${allGlobalOn ? "#fecaca" : "#bbf7d0"}`,
+                        borderRadius: 6,
+                        padding: "3px 10px",
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      {allGlobalOn ? "✕ Bỏ chọn tất cả các nhóm" : "✓ Chọn tất cả các nhóm"}
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {ACTIONS.map((a) => (
+                      <span key={a.key} style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 5, ...ACTION_STYLE[a.key] }}>
+                        {a.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div style={{ maxHeight: 320, overflowY: "auto", border: "1px solid var(--border, #e2e8f0)", borderRadius: 10 }}>
                 {PERMISSION_GROUPS.map(({ group, modules }) => {
-                  const allOn = modules.every((m) => ACTIONS.every((a) => (roleForm.QuyenHan[m.key] || []).includes(a.key)));
+                  const allOn = modules.every((m) => ACTIONS.every((a) => (roleForm.QuyenHan?.[m.key] || []).includes(a.key)));
                   return (
                     <div key={group} style={{ borderBottom: "1px solid var(--border, #e2e8f0)" }}>
                       <div
@@ -910,6 +971,7 @@ export function AdminPage({ title, description, path }) {
                           background: "var(--surface-sunken, #f8fafc)",
                           position: "sticky",
                           top: 0,
+                          zIndex: 2,
                         }}
                       >
                         <strong style={{ fontSize: 12.5, color: "var(--text-dark, #0f172a)" }}>{group}</strong>
@@ -997,6 +1059,13 @@ export function AdminPage({ title, description, path }) {
           </div>
         )}
       </Modal>
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Xác nhận xóa"
+        itemName={confirmDialog.name}
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmDialog({ open: false, id: null, name: "", resource: "" })}
+      />
     </section>
   );
 }

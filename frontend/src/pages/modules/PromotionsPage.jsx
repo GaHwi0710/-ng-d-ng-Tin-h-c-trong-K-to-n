@@ -14,6 +14,7 @@ import { listRecords, saveRecord, deleteRecord } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
+import ConfirmDialog from "../../components/ConfirmDialog";
 
 export function PromotionsPage({ title, description }) {
   const [promotions, setPromotions] = useState([]);
@@ -22,6 +23,7 @@ export function PromotionsPage({ title, description }) {
   const [scopeFilter, setScopeFilter] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null, name: "" });
 
   const initialForm = {
     MaKM: "",
@@ -31,7 +33,7 @@ export function PromotionsPage({ title, description }) {
     GiaTriGiam: 50000,
     PhamVi: "Toàn bộ", // "Toàn bộ" | "Theo đối tượng"
     DoiTuong: "Tất cả", // "Tất cả" | "Hạng Bạc" | "Hạng Vàng" | "Hạng Kim Cương"
-    DiemYeuCau: 0,
+    DiemYeuCau: "",
     NgayBatDau: new Date().toISOString().slice(0, 10),
     NgayKetThuc: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
     DieuKienApDung: "",
@@ -106,7 +108,7 @@ export function PromotionsPage({ title, description }) {
       GiaTriGiam: promo.GiaTriGiam || 50000,
       PhamVi: promo.PhamVi || (promo.DoiTuong && promo.DoiTuong !== "Tất cả" ? "Theo đối tượng" : "Toàn bộ"),
       DoiTuong: promo.DoiTuong || "Tất cả",
-      DiemYeuCau: promo.DiemYeuCau || 0,
+      DiemYeuCau: promo.DiemYeuCau || "",
       NgayBatDau: promo.NgayBatDau || "",
       NgayKetThuc: promo.NgayKetThuc || "",
       DieuKienApDung: promo.DieuKienApDung || "",
@@ -152,14 +154,19 @@ export function PromotionsPage({ title, description }) {
     }
   }
 
-  async function handleDelete(id, name) {
-    if (!window.confirm(`Bạn có chắc muốn xóa chương trình "${name}"?`)) return;
+  function handleDelete(id, name) {
+    setConfirmDialog({ open: true, id, name });
+  }
+
+  async function executeDelete() {
+    const { id } = confirmDialog;
+    setConfirmDialog({ open: false, id: null, name: "" });
     try {
       await deleteRecord("promotions", id);
-      setPromotions((prev) => prev.filter((p) => p.id !== id));
-      toast("Đã xóa khuyến mãi");
+      setPromotions(prev => prev.filter(p => p.id !== id));
+      toast("Đã xóa chương trình khuyến mãi thành công");
     } catch (err) {
-      toast(err.message || "Không thể xóa");
+      toast(err?.message || "Lỗi khi xóa");
     }
   }
 
@@ -458,7 +465,7 @@ export function PromotionsPage({ title, description }) {
       >
         <div className="form-grid">
           <div className="field">
-            <label htmlFor="pm-code">Mã khuyến mãi / Voucher *</label>
+            <label htmlFor="pm-code">Mã khuyến mãi / Voucher <span className="required-star">*</span></label>
             <input
               id="pm-code"
               type="text"
@@ -483,7 +490,7 @@ export function PromotionsPage({ title, description }) {
         </div>
 
         <div className="field">
-          <label htmlFor="pm-name">Tên chương trình khuyến mãi / Voucher *</label>
+          <label htmlFor="pm-name">Tên chương trình khuyến mãi / Voucher <span className="required-star">*</span></label>
           <input
             id="pm-name"
             type="text"
@@ -509,7 +516,7 @@ export function PromotionsPage({ title, description }) {
           <div className="field">
             {formData.LoaiGiam === "percentage" ? (
               <>
-                <label htmlFor="pm-pct">Mức giảm (%) *</label>
+                <label htmlFor="pm-pct">Mức giảm (%) <span className="required-star">*</span></label>
                 <input
                   id="pm-pct"
                   type="number"
@@ -522,7 +529,7 @@ export function PromotionsPage({ title, description }) {
               </>
             ) : (
               <>
-                <label htmlFor="pm-amt">Số tiền giảm (VNĐ) *</label>
+                <label htmlFor="pm-amt">Số tiền giảm (VNĐ) <span className="required-star">*</span></label>
                 <input
                   id="pm-amt"
                   type="number"
@@ -575,33 +582,34 @@ export function PromotionsPage({ title, description }) {
           </div>
         </div>
 
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="pm-pts">Điểm tích lũy yêu cầu (nếu đổi voucher)</label>
-            <input
-              id="pm-pts"
-              type="number"
-              min="0"
-              placeholder="0 (không yêu cầu)"
-              value={formData.DiemYeuCau}
-              onChange={(e) => setFormData({ ...formData, DiemYeuCau: e.target.value })}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="pm-cond">Điều kiện áp dụng</label>
-            <input
-              id="pm-cond"
-              type="text"
-              placeholder="Ví dụ: Đơn hàng từ 300.000đ, áp dụng nhóm sữa..."
-              value={formData.DieuKienApDung}
-              onChange={(e) => setFormData({ ...formData, DieuKienApDung: e.target.value })}
-            />
-          </div>
+        <div className="form-group">
+          <label htmlFor="promo-points">Số điểm cần đổi <span className="required-star">*</span></label>
+          <input
+            id="promo-points"
+            type="number"
+            min="0"
+            value={formData.DiemYeuCau || ""}
+            onChange={e => setFormData({ ...formData, DiemYeuCau: e.target.value })}
+            placeholder="VD: 100, 500, 1000"
+            required
+          />
+          <small style={{ color: "var(--text-faint)", fontSize: "11.5px" }}>Số điểm khách hàng cần đổi để nhận voucher này</small>
+        </div>
+
+        <div className="field">
+          <label htmlFor="pm-cond">Điều kiện áp dụng</label>
+          <input
+            id="pm-cond"
+            type="text"
+            placeholder="Ví dụ: Đơn hàng từ 300.000đ, áp dụng nhóm sữa..."
+            value={formData.DieuKienApDung}
+            onChange={(e) => setFormData({ ...formData, DieuKienApDung: e.target.value })}
+          />
         </div>
 
         <div className="form-grid">
           <div className="field">
-            <label htmlFor="pm-start">Ngày bắt đầu *</label>
+            <label htmlFor="pm-start">Ngày bắt đầu <span className="required-star">*</span></label>
             <input
               id="pm-start"
               type="date"
@@ -611,7 +619,7 @@ export function PromotionsPage({ title, description }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="pm-end">Ngày kết thúc *</label>
+            <label htmlFor="pm-end">Ngày kết thúc <span className="required-star">*</span></label>
             <input
               id="pm-end"
               type="date"
@@ -622,6 +630,14 @@ export function PromotionsPage({ title, description }) {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Xác nhận xóa khuyến mãi"
+        itemName={confirmDialog.name}
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmDialog({ open: false, id: null, name: "" })}
+      />
     </section>
   );
 }

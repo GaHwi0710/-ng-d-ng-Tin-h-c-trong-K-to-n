@@ -13,6 +13,8 @@ export const codeDefinitions = {
   KhuyenMai: { field: "MaKM", prefix: "KM" },
   CongNo: { field: "MaCN", prefix: "CN" },
   ThanhToan: { field: "MaTT", prefix: "TT" },
+  PhieuThu: { field: "MaPT", prefix: "PT" },
+  PhieuChi: { field: "MaPC", prefix: "PC" },
   NhanVien: { field: "MaNV", prefix: "NV" },
   VaiTro: { field: "MaVaiTro", prefix: "VT" },
 };

@@ -22,6 +22,8 @@ export const modules = [
   createCrudModule("inventory", "TonKho"),
   createCrudModule("stocktakes", "KiemKe"),
   createCrudModule("returns", "PhieuTraHang"),
+  createCrudModule("cash-receipts", "PhieuThu"),
+  createCrudModule("cash-payments", "PhieuChi"),
   createCrudModule("promotions", "KhuyenMai"),
   createCrudModule("debts", "CongNo"),
   createCrudModule("payments", "ThanhToan"),

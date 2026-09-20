@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getReport, listRecords } from "../lib/api.js";
+import { LOW_STOCK_THRESHOLD } from "../lib/constants.js";
 import {
   DocumentTextIcon,
   ShoppingCartIcon,
   ExclamationTriangleIcon,
   CubeIcon,
+  BanknotesIcon,
 } from "@heroicons/react/24/outline";
 import { StatCard } from "../components/StatCard.jsx";
 import { ProductImage } from "../components/ProductImage.jsx";
@@ -25,58 +27,64 @@ export function DashboardPage() {
     orders: [],
     invoices: [],
     debts: [],
-    revenue: { weekly: [] },
+    revenue: { total: 0, orders: 0, weekly: [] },
   });
   const [loadError, setLoadError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     // Dùng allSettled: dashboard hiển thị phần dữ liệu tài khoản được phép xem,
-    // phần không có quyền sẽ về rỗng thay vì báo lỗi cả trang
+    // phần không có quyền sẽ về rỗng thay vì báo lỗi cả trang.
+    // Không fetch riêng "invoices" nữa — dùng data từ revenue report + invoices
+    // chỉ để tính categories (fetch 1 lần).
     Promise.allSettled([
       listRecords("products"),
       listRecords("sales-orders"),
       listRecords("invoices"),
       listRecords("debts"),
       getReport("revenue"),
-    ]).then(([products, orders, invoices, debts, revenue]) =>
+    ]).then(([products, orders, invoices, debts, revenue]) => {
       setData({
         products: products.status === "fulfilled" ? products.value : [],
         orders: orders.status === "fulfilled" ? orders.value : [],
         invoices: invoices.status === "fulfilled" ? invoices.value : [],
         debts: debts.status === "fulfilled" ? debts.value : [],
-        revenue: revenue.status === "fulfilled" ? revenue.value : { weekly: [] },
-      })
-    ).then(() => setLoadError(""))
-      .catch((error) => setLoadError(error.message || "Không tải được dữ liệu từ máy chủ"));
+        revenue: revenue.status === "fulfilled" ? revenue.value : { total: 0, orders: 0, weekly: [] },
+      });
+      setLoadError("");
+    }).catch((error) => setLoadError(error.message || "Không tải được dữ liệu từ máy chủ"));
   }, [reloadKey]);
 
-  const totalRevenue = data.invoices
+  // Dùng total từ API report (đã lọc "Đã thanh toán") để tránh tính lại
+  const totalRevenue = data.revenue?.total || data.invoices
     .filter((inv) => inv.TrangThai === "Đã thanh toán")
     .reduce((sum, inv) => sum + Number(inv.TongTien || 0), 0);
+
   const totalOrders = data.orders.length;
+
   const pendingInvoices = data.invoices.filter(
     (inv) => inv.TrangThai === "Chưa thanh toán"
   ).length;
+
   const lowStockProducts = data.products.filter(
-    (p) => Number(p.stock || 0) <= 10
+    (p) => Number(p.stock || 0) <= LOW_STOCK_THRESHOLD
   );
+
   const totalDebt = data.debts.reduce(
     (sum, d) => sum + Number(d.SoTienConLai || 0),
     0
   );
 
-  // Tính doanh thu 7 ngày gần nhất trực tiếp từ invoices (không cần API report)
+  // Doanh thu 7 ngày gần nhất — ưu tiên API report
+  const apiWeekly = data.revenue?.weekly;
+  const hasApiData = Array.isArray(apiWeekly) && apiWeekly.length > 0 && apiWeekly.some((w) => w.total > 0);
+
   const today = new Date();
   const last7Days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
     d.setDate(d.getDate() - (6 - i));
     return d.toISOString().slice(0, 10);
   });
-
-  // Ưu tiên dữ liệu API nếu có; nếu không, tính từ invoices đã fetch
-  const apiWeekly = data.revenue?.weekly;
-  const hasApiData = Array.isArray(apiWeekly) && apiWeekly.length > 0 && apiWeekly.some((w) => w.total > 0);
 
   const weeklyRevenue = hasApiData
     ? apiWeekly.map((item) => item.total / 100000)
@@ -94,16 +102,54 @@ export function DashboardPage() {
         new Intl.DateTimeFormat("vi-VN", { weekday: "short" }).format(new Date(`${date}T00:00:00`))
       );
 
-  // Revenue by category
-  const categories = [
-    { name: "Sữa", value: 2815000 },
-    { name: "Bỉm/tã", value: 916000 },
-    { name: "Đồ dùng cho bé", value: 370000 },
-    { name: "Quần áo trẻ em", value: 198000 },
-    { name: "Đồ chơi", value: 188000 },
-    { name: "Chăm sóc mẹ và bé", value: 228000 },
-  ];
+  // Doanh thu theo danh mục — tính từ hóa đơn đã thanh toán
+  const categories = useMemo(() => {
+    const byCategory = new Map();
+    for (const inv of data.invoices) {
+      if (inv.TrangThai !== "Đã thanh toán") continue;
+      for (const line of inv.details || []) {
+        const name = line.LoaiHang || "Không phân loại";
+        const amount = Number(line.ThanhTien) ||
+          (Number(line.SoLuong || line.quantity || 0) * Number(line.DonGia || line.price || 0));
+        byCategory.set(name, (byCategory.get(name) || 0) + amount);
+      }
+    }
+    return [...byCategory.entries()]
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [data.invoices]);
   const maxCatValue = Math.max(1, ...categories.map((c) => c.value));
+
+  // % thay đổi doanh thu tuần này so với tuần trước
+  const revenueWeekDelta = useMemo(() => {
+    const now = new Date();
+    const startOfThisWeek = new Date(now);
+    startOfThisWeek.setDate(now.getDate() - 6);
+    const startOfLastWeek = new Date(startOfThisWeek);
+    startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
+
+    const paid = data.invoices.filter((inv) => inv.TrangThai === "Đã thanh toán");
+
+    const thisWeek = paid
+      .filter((inv) => {
+        const d = inv.NgayLap?.slice(0, 10);
+        return d && d >= startOfThisWeek.toISOString().slice(0, 10);
+      })
+      .reduce((s, inv) => s + Number(inv.TongTien || 0), 0);
+
+    const lastWeek = paid
+      .filter((inv) => {
+        const d = inv.NgayLap?.slice(0, 10);
+        const from = startOfLastWeek.toISOString().slice(0, 10);
+        const to = startOfThisWeek.toISOString().slice(0, 10);
+        return d && d >= from && d < to;
+      })
+      .reduce((s, inv) => s + Number(inv.TongTien || 0), 0);
+
+    if (!lastWeek) return thisWeek > 0 ? "+100%" : "Chưa có dữ liệu tuần trước";
+    const pct = Math.round(((thisWeek - lastWeek) / lastWeek) * 100);
+    return `${pct >= 0 ? "+" : ""}${pct}% so với tuần trước`;
+  }, [data.invoices]);
 
   return (
     <section aria-labelledby="dashboard-heading">
@@ -124,35 +170,43 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* Stat Cards */}
+      {/* Stat Cards — 5 thẻ: doanh thu, đơn hàng, hóa đơn chưa thu, công nợ, tồn kho */}
       <div className="stats-grid">
         <StatCard
           icon={DocumentTextIcon}
           label="Doanh thu đã thu"
           value={money.format(totalRevenue)}
           valueClass="accent"
-          delta="+12% so với tuần trước"
+          delta={revenueWeekDelta}
         />
         <StatCard
           icon={ShoppingCartIcon}
           label="Tổng đơn hàng"
           value={totalOrders.toLocaleString("vi-VN")}
-          delta={`${totalOrders} đơn trong tuần này`}
+          delta={`${data.revenue?.orders ?? totalOrders} đơn tổng cộng`}
         />
         <StatCard
           icon={ExclamationTriangleIcon}
           label="Hóa đơn chưa thu"
           value={pendingInvoices.toString()}
           valueClass="danger"
-          delta="Cần theo dõi công nợ"
+          delta="Cần ghi nhận thanh toán"
           deltaDown
+        />
+        <StatCard
+          icon={BanknotesIcon}
+          label="Công nợ còn lại"
+          value={money.format(totalDebt)}
+          valueClass={totalDebt > 0 ? "danger" : undefined}
+          delta={totalDebt > 0 ? "Cần theo dõi thu hồi" : "Không có công nợ"}
+          deltaDown={totalDebt > 0}
         />
         <StatCard
           icon={CubeIcon}
           label="Sản phẩm sắp hết"
           value={lowStockProducts.length.toString()}
           valueClass="warn"
-          delta="Dưới mức tồn tối thiểu"
+          delta={`Dưới mức tồn tối thiểu (≤ ${LOW_STOCK_THRESHOLD})`}
           deltaDown
         />
       </div>
@@ -175,7 +229,7 @@ export function DashboardPage() {
             <h3>Doanh thu theo danh mục sản phẩm</h3>
           </hgroup>
         </header>
-        {categories.map((cat) => (
+        {categories.length > 0 ? categories.map((cat) => (
           <ProgressBar
             key={cat.name}
             label={cat.name}
@@ -183,7 +237,11 @@ export function DashboardPage() {
             max={maxCatValue}
             amount={money.format(cat.value)}
           />
-        ))}
+        )) : (
+          <p style={{ textAlign: "center", color: "var(--text-faint)", padding: "18px 0" }}>
+            Chưa có dữ liệu — số liệu hiển thị sau khi có hóa đơn đã thanh toán.
+          </p>
+        )}
       </article>
 
       {/* Low Stock Warning */}

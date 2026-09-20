@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   PlusIcon,
   PencilSquareIcon,
@@ -14,6 +14,7 @@ import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import { Badge } from "../../components/Badge.jsx";
+import ConfirmDialog from "../../components/ConfirmDialog";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -31,6 +32,9 @@ export function DebtsPage({ title, description }) {
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [selectedDebt, setSelectedDebt] = useState(null);
   const [payAmount, setPayAmount] = useState(0);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null });
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const [formData, setFormData] = useState({
     type: "suppliers",
@@ -43,9 +47,18 @@ export function DebtsPage({ title, description }) {
   });
 
   useEffect(() => {
-    listRecords("debts").then(setDebts);
-    listRecords("suppliers").then(setSuppliers);
-    listRecords("customers").then(setCustomers);
+    setLoading(true);
+    setLoadError("");
+    Promise.allSettled([
+      listRecords("debts"),
+      listRecords("suppliers"),
+      listRecords("customers"),
+    ]).then(([debtsRes, suppRes, custRes]) => {
+      if (debtsRes.status === "fulfilled") setDebts(debtsRes.value);
+      if (suppRes.status === "fulfilled") setSuppliers(suppRes.value);
+      if (custRes.status === "fulfilled") setCustomers(custRes.value);
+      if (debtsRes.status === "rejected") setLoadError("Không tải được danh sách công nợ. Vui lòng thử lại sau.");
+    }).finally(() => setLoading(false));
   }, []);
 
   const stats = useMemo(() => {
@@ -152,14 +165,19 @@ export function DebtsPage({ title, description }) {
     }
   }
 
-  async function handleDelete(id) {
-    if (!window.confirm("Bạn có chắc muốn xóa bản ghi công nợ này?")) return;
+  function handleDelete(id) {
+    setConfirmDialog({ open: true, id });
+  }
+
+  async function executeDelete() {
+    const { id } = confirmDialog;
+    setConfirmDialog({ open: false, id: null });
     try {
       await deleteRecord("debts", id);
-      setDebts((prev) => prev.filter((d) => d.id !== id));
-      toast("Đã xóa công nợ");
+      setDebts(prev => prev.filter(d => d.id !== id));
+      toast("Đã xóa bản ghi công nợ thành công");
     } catch (err) {
-      toast(err.message || "Không thể xóa");
+      toast(err?.message || "Lỗi khi xóa");
     }
   }
 
@@ -175,6 +193,15 @@ export function DebtsPage({ title, description }) {
           Ghi nhận công nợ mới
         </button>
       </header>
+
+      {loading && (
+        <p style={{ color: "var(--text-faint)", padding: "16px 0" }}>⏳ Đang tải dữ liệu công nợ...</p>
+      )}
+      {loadError && (
+        <div className="alert danger" role="alert" style={{ marginBottom: 16 }}>
+          ⚠️ {loadError}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="stats-grid">
@@ -319,13 +346,19 @@ export function DebtsPage({ title, description }) {
                 </tr>
               );
             })}
-            {!visible.length && (
+            {loading ? (
+              <tr>
+                <td colSpan={10} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
+                  ⏳ Đang tải danh sách công nợ...
+                </td>
+              </tr>
+            ) : !visible.length ? (
               <tr>
                 <td colSpan={10} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
                   Không có khoản công nợ nào trong danh mục này
                 </td>
               </tr>
-            )}
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -359,7 +392,7 @@ export function DebtsPage({ title, description }) {
 
         <div className="field">
           <label htmlFor="debt-partner">
-            {formData.type === "suppliers" ? "Nhà cung cấp *" : "Khách hàng *"}
+            {formData.type === "suppliers" ? "Nhà cung cấp" : "Khách hàng"} <span className="required-star">*</span>
           </label>
           <select
             id="debt-partner"
@@ -375,7 +408,7 @@ export function DebtsPage({ title, description }) {
 
         <div className="form-grid">
           <div className="field">
-            <label htmlFor="debt-total">Số tiền công nợ (VNĐ) *</label>
+            <label htmlFor="debt-total">Số tiền công nợ (VNĐ) <span className="required-star">*</span></label>
             <input
               id="debt-total"
               type="number"
@@ -424,7 +457,7 @@ export function DebtsPage({ title, description }) {
               Ghi nhận thanh toán cho khoản nợ <strong>{selectedDebt.MaCN || selectedDebt.id}</strong>.
             </p>
             <div className="field">
-              <label htmlFor="pay-amt">Số tiền thanh toán lần này (VNĐ) *</label>
+              <label htmlFor="pay-amt">Số tiền thanh toán lần này (VNĐ) <span className="required-star">*</span></label>
               <input
                 id="pay-amt"
                 type="number"
@@ -444,6 +477,14 @@ export function DebtsPage({ title, description }) {
           </div>
         )}
       </Modal>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Xác nhận xóa công nợ"
+        message="Bạn có chắc chắn muốn xóa bản ghi công nợ này? Hành động này không thể hoàn tác."
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmDialog({ open: false, id: null })}
+      />
     </section>
   );
 }

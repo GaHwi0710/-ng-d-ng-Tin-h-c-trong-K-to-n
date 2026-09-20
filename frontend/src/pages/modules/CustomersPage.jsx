@@ -15,6 +15,7 @@ import { listRecords, saveRecord, deleteRecord } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
+import ConfirmDialog from "../../components/ConfirmDialog";
 
 export function getMemberTier(points = 0) {
   const pts = Number(points) || 0;
@@ -38,6 +39,9 @@ export function CustomersPage({ title, description }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null, name: "" });
+  const [redeemCustomer, setRedeemCustomer] = useState(null);
+  const [selectedVoucherCode, setSelectedVoucherCode] = useState("BAC50K");
   const [formData, setFormData] = useState({
     HoTen: "",
     SDT: "",
@@ -129,21 +133,65 @@ export function CustomersPage({ title, description }) {
     }
   }
 
-  async function handleDelete(id, name) {
-    if (!window.confirm(`Bạn có chắc muốn xóa khách hàng "${name}"?`)) return;
+  function handleDelete(id, name) {
+    setConfirmDialog({ open: true, id, name });
+  }
+
+  async function executeDelete() {
+    const { id, name } = confirmDialog;
+    setConfirmDialog({ open: false, id: null, name: "" });
     try {
       const res = await deleteRecord("customers", id);
       if (res?.softDeleted || res?.status === "Ngưng hoạt động") {
-        setCustomers((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, TrangThai: "Ngưng hoạt động" } : c))
-        );
-        toast(res?.message || "Đã chuyển trạng thái khách hàng sang 'Ngưng hoạt động' do đã có chứng từ phát sinh");
+        setCustomers(prev => prev.map(c => c.id === id ? { ...c, TrangThai: "Ngưng hoạt động" } : c));
+        toast(`Khách hàng "${name}" đã được chuyển sang trạng thái ngưng hoạt động do có đơn hàng phát sinh`);
       } else {
-        setCustomers((prev) => prev.filter((c) => c.id !== id));
-        toast("Đã xóa khách hàng hoàn toàn thành công");
+        setCustomers(prev => prev.filter(c => c.id !== id));
+        toast("Đã xóa khách hàng thành công");
       }
     } catch (err) {
-      toast(err.message || "Không thể xóa");
+      toast(err?.message || "Lỗi khi xóa");
+    }
+  }
+
+  const VOUCHER_OPTIONS = [
+    { code: "BAC50K", name: "Voucher giảm 50.000đ", points: 100 },
+    { code: "VANG100K", name: "Voucher giảm 100.000đ", points: 500 },
+    { code: "KC200K", name: "Voucher VIP giảm 200.000đ", points: 1000 },
+  ];
+
+  async function handleRedeemVoucher() {
+    if (!redeemCustomer) return;
+    const v = VOUCHER_OPTIONS.find((opt) => opt.code === selectedVoucherCode);
+    if (!v) return;
+    const currentPts = Number(redeemCustomer.DiemTichLuy || 0);
+    if (currentPts < v.points) {
+      return toast(`Khách hàng không đủ điểm (cần ${v.points} điểm, hiện có ${currentPts} điểm)`);
+    }
+    try {
+      const newPoints = currentPts - v.points;
+      const newVoucher = {
+        id: "VCH-" + Date.now().toString(36).toUpperCase(),
+        code: v.code,
+        name: v.name,
+        discountAmount: v.code === "BAC50K" ? 50000 : v.code === "VANG100K" ? 100000 : 200000,
+        points: v.points,
+        redeemedAt: new Date().toISOString().slice(0, 10),
+        status: "Chưa sử dụng",
+      };
+      const updatedVouchers = [...(redeemCustomer.VouchersDaDoi || []), newVoucher];
+      await saveRecord("customers", {
+        ...redeemCustomer,
+        DiemTichLuy: newPoints,
+        VouchersDaDoi: updatedVouchers,
+      });
+      setCustomers((prev) =>
+        prev.map((c) => (c.id === redeemCustomer.id ? { ...c, DiemTichLuy: newPoints, VouchersDaDoi: updatedVouchers } : c))
+      );
+      toast(`Đã đổi thành công mã "${v.code}" (${v.name})! Đã trừ ${v.points} điểm tích lũy. Voucher đã được lưu vào hồ sơ khách hàng để dùng khi bán hàng.`);
+      setRedeemCustomer(null);
+    } catch (err) {
+      toast(err?.message || "Lỗi khi đổi voucher");
     }
   }
 
@@ -167,9 +215,9 @@ export function CustomersPage({ title, description }) {
           <div>
             <strong style={{ color: "var(--primary-dark)" }}>Chính sách Voucher thành viên (dựa trên Điểm tích lũy):</strong>
             <div style={{ fontSize: "13px", color: "var(--text-soft)", marginTop: 2 }}>
-              🥈 <strong>Hạng Bạc</strong> (≥100 điểm): nhận <strong>Voucher 50.000đ</strong> &nbsp;·&nbsp;
-              👑 <strong>Hạng Vàng</strong> (≥500 điểm): nhận <strong>Voucher 100.000đ</strong> &nbsp;·&nbsp;
-              💎 <strong>Kim Cương</strong> (≥1.000 điểm): nhận <strong>Voucher 200.000đ</strong>
+              🥈 <strong>Hạng Bạc</strong>: Đổi 100 điểm → Voucher giảm 50.000đ (BAC50K) &nbsp;·&nbsp;
+              👑 <strong>Hạng Vàng</strong>: Đổi 500 điểm → Voucher giảm 100.000đ (VANG100K) &nbsp;·&nbsp;
+              💎 <strong>Kim Cương</strong>: Đổi 1.000 điểm → Voucher giảm 200.000đ (KC200K)
             </div>
           </div>
         </div>
@@ -309,9 +357,39 @@ export function CustomersPage({ title, description }) {
                         <span>{tier.icon}</span>
                         <strong>{tier.name}</strong>
                       </span>
-                      {tier.voucherVal > 0 && (
-                        <div style={{ fontSize: "11px", color: "var(--primary)", marginTop: 3, fontWeight: 600 }}>
-                          🎟️ {tier.voucher}
+                      {Number(cust.DiemTichLuy || 0) >= 100 ? (
+                        <div style={{ marginTop: 4 }}>
+                          <button
+                            type="button"
+                            className="btn btn-outline"
+                            style={{
+                              padding: "2px 8px",
+                              fontSize: "11px",
+                              borderRadius: "6px",
+                              fontWeight: 600,
+                              borderColor: "var(--primary)",
+                              color: "var(--primary-dark)",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4
+                            }}
+                            onClick={() => {
+                              setRedeemCustomer(cust);
+                              setSelectedVoucherCode(
+                                Number(cust.DiemTichLuy || 0) >= 1000
+                                  ? "KC200K"
+                                  : Number(cust.DiemTichLuy || 0) >= 500
+                                  ? "VANG100K"
+                                  : "BAC50K"
+                              );
+                            }}
+                          >
+                            🎟️ Đổi voucher (-điểm)
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: "11px", color: "var(--text-faint)", marginTop: 3 }}>
+                          Chưa đủ 100đ đổi voucher
                         </div>
                       )}
                     </div>
@@ -368,7 +446,7 @@ export function CustomersPage({ title, description }) {
         onSubmit={handleSave}
       >
         <div className="field">
-          <label htmlFor="cust-name">Họ và tên khách hàng *</label>
+          <label htmlFor="cust-name">Họ và tên khách hàng <span className="required-star">*</span></label>
           <input
             id="cust-name"
             type="text"
@@ -437,6 +515,94 @@ export function CustomersPage({ title, description }) {
           </div>
         </div>
       </Modal>
+
+      {/* Modal Đổi điểm lấy Voucher */}
+      <Modal
+        open={!!redeemCustomer}
+        title={`Đổi điểm lấy Voucher — ${redeemCustomer?.HoTen || ""}`}
+        onClose={() => setRedeemCustomer(null)}
+        onSubmit={handleRedeemVoucher}
+        submitLabel="Xác nhận đổi voucher & Trừ điểm"
+      >
+        {redeemCustomer && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ padding: "12px 16px", background: "var(--primary-light, #f0fdfa)", borderRadius: 10, border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 13, color: "var(--text-soft)" }}>
+                Khách hàng: <strong>{redeemCustomer.HoTen}</strong> ({redeemCustomer.MaKH || redeemCustomer.id})
+              </div>
+              <div style={{ fontSize: 15, color: "var(--primary-dark)", fontWeight: 700, marginTop: 4 }}>
+                ⭐ Điểm tích lũy hiện có: <strong>{Number(redeemCustomer.DiemTichLuy || 0).toLocaleString("vi-VN")}</strong> điểm
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
+                Chọn loại Voucher muốn đổi <span className="required-star">*</span>
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {VOUCHER_OPTIONS.map((v) => {
+                  const pts = Number(redeemCustomer.DiemTichLuy || 0);
+                  const isEligible = pts >= v.points;
+                  const isSelected = selectedVoucherCode === v.code;
+                  return (
+                    <label
+                      key={v.code}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "10px 14px",
+                        borderRadius: 8,
+                        border: isSelected ? "2px solid var(--primary)" : "1px solid var(--border)",
+                        background: isSelected ? "var(--primary-light)" : isEligible ? "#fff" : "#f8fafc",
+                        cursor: isEligible ? "pointer" : "not-allowed",
+                        opacity: isEligible ? 1 : 0.6,
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <input
+                          type="radio"
+                          name="voucher_redeem"
+                          value={v.code}
+                          checked={isSelected}
+                          disabled={!isEligible}
+                          onChange={() => setSelectedVoucherCode(v.code)}
+                        />
+                        <div>
+                          <strong style={{ fontSize: 13.5, color: isEligible ? "var(--text)" : "var(--text-faint)" }}>
+                            🎟️ {v.name} (Mã: {v.code})
+                          </strong>
+                          <div style={{ fontSize: 11.5, color: "var(--text-soft)" }}>
+                            Cần đổi: <strong>{v.points} điểm</strong>
+                          </div>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: isEligible ? "var(--danger)" : "var(--text-faint)" }}>
+                        {isEligible ? `- ${v.points} điểm` : "Không đủ điểm"}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {selectedVoucherCode && (
+              <div style={{ padding: "10px 14px", background: "#fefce8", border: "1px solid #fef08a", borderRadius: 8, fontSize: 12.5, color: "#854d0e" }}>
+                ⚠️ <strong>Lưu ý</strong>: Khi bấm xác nhận, khách hàng sẽ bị <strong>trừ {VOUCHER_OPTIONS.find((v) => v.code === selectedVoucherCode)?.points} điểm</strong> tích lũy ngay lập tức. Điểm còn lại sau khi đổi: <strong>{Math.max(0, Number(redeemCustomer.DiemTichLuy || 0) - (VOUCHER_OPTIONS.find((v) => v.code === selectedVoucherCode)?.points || 0))} điểm</strong>.
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Xác nhận xóa khách hàng"
+        itemName={confirmDialog.name}
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmDialog({ open: false, id: null, name: "" })}
+      />
     </section>
   );
 }

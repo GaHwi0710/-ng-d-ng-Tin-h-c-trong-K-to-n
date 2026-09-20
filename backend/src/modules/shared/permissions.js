@@ -20,6 +20,8 @@ export const PERMISSION_MODULES = [
   { key: "inventory", label: "Tồn kho", group: "Kho", path: "/inventory" },
   { key: "stocktakes", label: "Kiểm kê kho", group: "Kho", path: "/stocktakes" },
   { key: "returns", label: "Trả hàng", group: "Kho", path: "/returns" },
+  { key: "cash-receipts", label: "Phiếu thu", group: "Thu chi", path: "/cash-receipts" },
+  { key: "cash-payments", label: "Phiếu chi", group: "Thu chi", path: "/cash-payments" },
   { key: "promotions", label: "Khuyến mãi", group: "Báo cáo & KM", path: "/promotions" },
   { key: "debts", label: "Công nợ", group: "Báo cáo & KM", path: "/debts" },
   { key: "reports", label: "Báo cáo thống kê", group: "Báo cáo & KM", path: "/reports" },
@@ -36,9 +38,9 @@ const READ = ["xem"];
 // Riêng các thao tác GHI (tạo/sửa/xóa) bị siết chặt theo đúng nghiệp vụ từng vai trò.
 // Quản trị (nhân sự, phân quyền, tài khoản) chỉ dành cho Quản lý.
 const STAFF_WRITE = {
-  NhanVienBanHang: ["customers", "sales-orders", "invoices", "payments", "returns", "promotions"],
+  NhanVienBanHang: ["customers", "sales-orders", "invoices", "payments", "returns", "promotions", "cash-receipts"],
   NhanVienKho: ["products", "product-categories", "goods-receipts", "goods-issues", "inventory", "stocktakes"],
-  KeToan: ["invoices", "payments", "debts", "reports"],
+  KeToan: ["invoices", "payments", "debts", "reports", "cash-receipts", "cash-payments"],
   NhanVienMuaHang: ["suppliers", "purchase-orders", "goods-receipts"],
 };
 
@@ -59,7 +61,7 @@ for (const [roleKey, writeModules] of Object.entries(STAFF_WRITE)) {
 
 export const ROLE_DESCRIPTIONS = {
   QuanLy: "Toàn quyền hệ thống: quản trị nhân sự, phân quyền và mọi nghiệp vụ.",
-  KeToan: "Quản lý hóa đơn, thanh toán, công nợ và báo cáo thống kê.",
+  KeToan: "Quản lý hóa đơn, thanh toán, công nợ, thu chi tiền mặt và báo cáo thống kê.",
   NhanVienBanHang: "Bán hàng tại quầy, lập hóa đơn, thu tiền, xử lý trả hàng và khuyến mãi.",
   NhanVienKho: "Quản lý sản phẩm, nhập - xuất kho, tồn kho và kiểm kê.",
   NhanVienMuaHang: "Quản lý nhà cung cấp, đặt hàng NCC và nhập kho.",

@@ -177,6 +177,9 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
     if (customerId) {
       customer = await getDatabase().collection("KhachHang").findOne({ _id: customerId });
       if (!customer) throw fail("Khách hàng không tồn tại", 404);
+      if (customer.TrangThai === "Ngưng hoạt động" || customer.status === "inactive") {
+        throw fail("Không thể lập hóa đơn cho khách hàng đã ngưng hoạt động", 400);
+      }
     }
     const subtotal = lines.reduce((sum, line) => sum + line.quantity * line.price, 0);
 
@@ -261,6 +264,46 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
       await replaceDetails(getDatabase(), "CT_HoaDon", invoiceResult.insertedId, invoice.details, session);
 
       if (customerId) {
+        const usedVoucherId = req.body.usedVoucherId;
+        if (usedVoucherId) {
+          // Khách hàng chọn voucher đã đổi từ trước -> Đánh dấu voucher đã sử dụng, không trừ điểm lần 2
+          await getDatabase().collection("KhachHang").updateOne(
+            { _id: customerId, "VouchersDaDoi.id": usedVoucherId },
+            {
+              $set: {
+                "VouchersDaDoi.$.status": "Đã sử dụng",
+                "VouchersDaDoi.$.usedAt": today(),
+                "VouchersDaDoi.$.orderCode": order.MaDH,
+              }
+            },
+            { session }
+          );
+        } else {
+          // Đổi điểm lấy voucher trực tiếp tại quầy thanh toán (nếu áp dụng voucher cần điểm)
+          let redeemPoints = Number(req.body.redeemPoints || 0);
+          if (!redeemPoints && promo) {
+            redeemPoints = Number(promo.DiemYeuCau || 0);
+            if (!redeemPoints) {
+              const pCode = String(promoCode || "").toUpperCase();
+              if (pCode === "BAC50K") redeemPoints = 100;
+              else if (pCode === "VANG100K") redeemPoints = 500;
+              else if (pCode === "KC200K") redeemPoints = 1000;
+            }
+          }
+          if (redeemPoints > 0) {
+            const custDoc = await getDatabase().collection("KhachHang").findOne({ _id: customerId }, { session });
+            const currentPoints = Number(custDoc?.DiemTichLuy || 0);
+            if (currentPoints < redeemPoints) {
+              throw fail(`Khách hàng không đủ điểm tích lũy để đổi voucher (cần ${redeemPoints} điểm, hiện có ${currentPoints} điểm)`, 400);
+            }
+            await getDatabase().collection("KhachHang").updateOne(
+              { _id: customerId },
+              { $inc: { DiemTichLuy: -redeemPoints } },
+              { session }
+            );
+          }
+        }
+
         // Award points: 1 point per 10,000 VND
         const earnedPoints = Math.floor(total / 10000);
         if (earnedPoints > 0) {
@@ -431,46 +474,60 @@ router.post("/returns", requirePermission("returns", "tao"), async (req, res, ne
 });
 
 router.get("/inventory", requirePermission("inventory", "xem"), async (_req, res, next) => { try { const products = await getDatabase().collection("SanPham").find().sort({ TenSP: 1 }).toArray(); const stocks = await getDatabase().collection("TonKho").find().toArray(); const byProduct = new Map(stocks.map((stock) => [stock.MaSP.toString(), stock])); res.json({ data: products.map((product) => ({ ...serialize(product), stock: Number(byProduct.get(product._id.toString())?.SoLuongTon ?? product.stock ?? 0), stockUpdatedAt: byProduct.get(product._id.toString())?.updatedAt || byProduct.get(product._id.toString())?.NgayCapNhat || null })) }); } catch (error) { next(error); } });
-router.get("/reports/revenue", requirePermission("reports", "xem"), async (_req, res, next) => {
+
+router.post("/customers/:id/redeem-voucher", requirePermission("customers", "sua"), async (req, res, next) => {
   try {
-    const formatDate = (date) => {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, "0");
-      const day = String(date.getDate()).padStart(2, "0");
-      return `${year}-${month}-${day}`;
-    };
-    const [invoices, orders] = await Promise.all([
-      getDatabase().collection("HoaDon").find({ TrangThai: "Đã thanh toán" }).toArray(),
-      getDatabase().collection("DonHang").countDocuments(),
-    ]);
-    const makeDates = (lastDate) => Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(`${lastDate}T00:00:00`);
-      date.setDate(date.getDate() - (6 - index));
-      return formatDate(date);
-    });
-    const today = formatDate(new Date());
-    let dates = makeDates(today);
-    const revenueFor = (date) => invoices
-      .filter((invoice) => String(invoice.NgayLap).slice(0, 10) === date)
-      .reduce((sum, invoice) => sum + Number(invoice.TongTien || 0), 0);
-    let weekly = dates.map((date) => ({ date, total: revenueFor(date) }));
-    if (!weekly.some((item) => item.total > 0) && invoices.length) {
-      const latestPaidDate = invoices
-        .map((invoice) => String(invoice.NgayLap).slice(0, 10))
-        .sort()
-        .at(-1);
-      dates = makeDates(latestPaidDate);
-      weekly = dates.map((date) => ({ date, total: revenueFor(date) }));
+    const custId = id(req.params.id);
+    if (!custId) throw fail("ID khách hàng không hợp lệ", 400);
+    const voucherCode = String(req.body.voucherCode || req.body.code || "").trim().toUpperCase();
+    let points = Number(req.body.points || 0);
+    if (!points) {
+      if (voucherCode === "BAC50K") points = 100;
+      else if (voucherCode === "VANG100K") points = 500;
+      else if (voucherCode === "KC200K") points = 1000;
+      else {
+        const promo = await getDatabase().collection("KhuyenMai").findOne({ MaKM: voucherCode });
+        points = Number(promo?.DiemYeuCau || 0);
+      }
     }
+    if (points <= 0) throw fail("Số điểm cần đổi không hợp lệ", 400);
+
+    const cust = await getDatabase().collection("KhachHang").findOne({ _id: custId });
+    if (!cust) throw fail("Không tìm thấy khách hàng", 404);
+    if (Number(cust.DiemTichLuy || 0) < points) {
+      throw fail(`Khách hàng không đủ điểm tích lũy (cần ${points} điểm, hiện có ${cust.DiemTichLuy || 0} điểm)`, 400);
+    }
+
+    const discountAmount = voucherCode === "BAC50K" ? 50000 : voucherCode === "VANG100K" ? 100000 : voucherCode === "KC200K" ? 200000 : 50000;
+    const newVoucher = {
+      id: "VCH-" + Date.now().toString(36).toUpperCase(),
+      code: voucherCode,
+      name: voucherCode === "BAC50K" ? "Voucher giảm 50.000đ" : voucherCode === "VANG100K" ? "Voucher giảm 100.000đ" : "Voucher VIP giảm 200.000đ",
+      discountAmount,
+      points,
+      redeemedAt: today(),
+      status: "Chưa sử dụng",
+    };
+
+    await getDatabase().collection("KhachHang").updateOne(
+      { _id: custId },
+      {
+        $inc: { DiemTichLuy: -points },
+        $push: { VouchersDaDoi: newVoucher },
+        $set: { updatedAt: new Date() },
+      }
+    );
+    const updated = await getDatabase().collection("KhachHang").findOne({ _id: custId });
     res.json({
-      report: "revenue",
-      total: invoices.reduce((sum, invoice) => sum + Number(invoice.TongTien || 0), 0),
-      orders,
-      weekly,
+      data: serialize(updated),
+      message: `Đã đổi thành công voucher ${voucherCode}! Đã trừ ${points} điểm tích lũy.`,
+      voucher: newVoucher,
+      voucherCode,
+      pointsDeducted: points,
+      remainingPoints: updated.DiemTichLuy
     });
   } catch (error) { next(error); }
 });
-router.get("/reports/debts", requirePermission("reports", "xem"), async (_req, res, next) => { try { const data = await getDatabase().collection("CongNo").find().sort({ SoTienConLai: -1 }).toArray(); res.json({ report: "debts", data: data.map(serialize), total: data.reduce((sum, item) => sum + Number(item.SoTienConLai || 0), 0) }); } catch (error) { next(error); } });
-router.get("/reports/inventory", requirePermission("reports", "xem"), async (_req, res, next) => { try { const data = await getDatabase().collection("TonKho").find().sort({ SoLuongTon: 1 }).toArray(); res.json({ report: "inventory", data: data.map(serialize) }); } catch (error) { next(error); } });
 
 export default router;
+

@@ -23,6 +23,8 @@ import {
   UsersIcon,
   ShieldCheckIcon,
   KeyIcon,
+  WalletIcon,
+  DocumentCurrencyDollarIcon,
 } from "@heroicons/react/24/outline";
 import { moduleRoutes } from "../routes/moduleRoutes.js";
 import { getUserPermissions, userCanAccessPath } from "../lib/permissions.js";
@@ -44,6 +46,8 @@ const routeIcons = {
   "/inventory": CubeIcon,
   "/stocktakes": ClipboardDocumentCheckIcon,
   "/returns": ArrowUturnLeftIcon,
+  "/cash-receipts": WalletIcon,
+  "/cash-payments": DocumentCurrencyDollarIcon,
   "/debts": CreditCardIcon,
   "/promotions": GiftIcon,
   "/reports": ChartBarIcon,
@@ -66,6 +70,7 @@ const navGroups = [
   ["Mua hàng", ["/purchase-orders", "/goods-receipts"]],
   ["Bán hàng", ["/sales-orders", "/invoices"]],
   ["Kho", ["/goods-issues", "/inventory", "/stocktakes", "/returns"]],
+  ["Thu chi", ["/cash-receipts", "/cash-payments"]],
   ["Báo cáo", ["/debts", "/promotions", "/reports"]],
   ["Quản trị", ["/admin/employees", "/admin/roles", "/admin/accounts"]],
 ];

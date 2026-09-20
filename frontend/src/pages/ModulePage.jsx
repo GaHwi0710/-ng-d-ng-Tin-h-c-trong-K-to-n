@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { LOW_STOCK_THRESHOLD } from "../lib/constants.js";
 import {
   PlusIcon,
   PencilSquareIcon,
@@ -24,6 +25,7 @@ import { Badge, StatusBadge } from "../components/Badge.jsx";
 import { FilterChips } from "../components/FilterChips.jsx";
 import { StatCard } from "../components/StatCard.jsx";
 import { ProductImage } from "../components/ProductImage.jsx";
+import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import { ProgressBar } from "../components/BarChart.jsx";
 import { CustomersPage } from "./modules/CustomersPage.jsx";
 import { SuppliersPage } from "./modules/SuppliersPage.jsx";
@@ -34,6 +36,7 @@ import { PromotionsPage } from "./modules/PromotionsPage.jsx";
 import { AdminPage } from "./modules/AdminPage.jsx";
 import { StocktakePage } from "./modules/StocktakePage.jsx";
 import { ReturnPage } from "./modules/ReturnPage.jsx";
+import { CashVouchersPage } from "./modules/CashVouchersPage.jsx";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -260,6 +263,7 @@ function RecordsPage({ title, description, resource }) {
   const [formData, setFormData] = useState({});
   const [catFilter, setCatFilter] = useState("all");
   const [lookups, setLookups] = useState({ suppliers: [], categories: [] });
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null });
 
   useEffect(() => {
     listRecords(resource).then(setRecords);
@@ -328,11 +332,20 @@ function RecordsPage({ title, description, resource }) {
     }
   }
 
-  async function handleDelete(id) {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa?")) return;
-    await deleteRecord(resource, id);
-    setRecords((current) => current.filter((item) => item.id !== id));
-    toast("Đã xóa thành công");
+  function handleDelete(id) {
+    setConfirmDialog({ open: true, id });
+  }
+
+  async function executeDelete() {
+    const { id } = confirmDialog;
+    setConfirmDialog({ open: false, id: null });
+    try {
+      await deleteRecord(resource, id);
+      setRecords((current) => current.filter((item) => item.id !== id));
+      toast("Đã xóa thành công");
+    } catch (err) {
+      toast(err?.message || "Lỗi khi xóa");
+    }
   }
 
   return (
@@ -449,7 +462,7 @@ function RecordsPage({ title, description, resource }) {
         <fieldset className="form-grid" style={{ border: "none", padding: 0, margin: 0 }}>
           {config.fields.map((f) => (
             <div className={`field ${f.full ? "full" : ""}`} key={f.name}>
-              <label htmlFor={`field-${f.name}`}>{f.label}</label>
+              <label htmlFor={`field-${f.name}`}>{f.label}{f.required && <span className="required-star">*</span>}</label>
               {f.lookup ? (
                 <select
                   id={`field-${f.name}`}
@@ -494,6 +507,14 @@ function RecordsPage({ title, description, resource }) {
           ))}
         </fieldset>
       </Modal>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Xác nhận xóa"
+        message="Bạn có chắc chắn muốn xóa mục này? Hành động này không thể hoàn tác."
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmDialog({ open: false, id: null })}
+      />
     </section>
   );
 }
@@ -522,6 +543,7 @@ function PurchaseOrderPage({ title }) {
   const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
   const [status, setStatus] = useState("Đang chờ");
   const [selected, setSelected] = useState([]);
+  const [poDetailModal, setPoDetailModal] = useState(null);
 
   // Filter state for saved orders
   const [filterSupplier, setFilterSupplier] = useState("all");
@@ -625,7 +647,7 @@ function PurchaseOrderPage({ title }) {
             <h2>THÔNG TIN ĐƠN ĐẶT HÀNG</h2>
             <div className="form-grid">
               <label className="field">
-                <span>Nhà cung cấp *</span>
+                <span>Nhà cung cấp <span className="required-star">*</span></span>
                 <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} required>
                   <option value="">Chọn nhà cung cấp</option>
                   {suppliers.map((supplier) => (
@@ -636,7 +658,7 @@ function PurchaseOrderPage({ title }) {
                 </select>
               </label>
               <label className="field">
-                <span>Ngày đặt *</span>
+                <span>Ngày đặt <span className="required-star">*</span></span>
                 <input type="date" value={orderDate} onChange={(event) => setOrderDate(event.target.value)} required />
               </label>
               <label className="field">
@@ -718,6 +740,13 @@ function PurchaseOrderPage({ title }) {
                         <ProductImage src={product.HinhAnh} alt={product.TenSP} category={product.LoaiHang} size={26} borderRadius={6} />
                         <span className="po-cb-code">{product.MaSP}</span>
                         <span className="po-cb-name">{product.TenSP}</span>
+                        {Number(product.stock || 0) <= 0 ? (
+                          <span className="stock-status-out" style={{ fontSize: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Hết hàng</span>
+                        ) : Number(product.stock || 0) <= LOW_STOCK_THRESHOLD ? (
+                          <span className="stock-status-low" style={{ fontSize: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Tồn {product.stock}</span>
+                        ) : (
+                          <span className="stock-status-ok" style={{ fontSize: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Tồn {product.stock}</span>
+                        )}
                         <svg className="po-cb-plus" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                       </button>
                     ))}
@@ -873,6 +902,7 @@ function PurchaseOrderPage({ title }) {
                 <th>Người lập phiếu</th>
                 <th>Tổng tiền</th>
                 <th>Trạng thái</th>
+                <th>Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -886,12 +916,24 @@ function PurchaseOrderPage({ title }) {
                     <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{order.NguoiLap || order.MaNVCode || "Quản trị viên"}</span></td>
                     <td>{money.format(order.TongTien || 0)}</td>
                     <td><StatusBadge status={order.TrangThai} /></td>
+                    <td>
+                      <button type="button" className="icon-sm-btn" title="Xem chi tiết" onClick={async () => {
+                        try {
+                          const details = await listRecords(`purchase-orders/${order.id || order._id}`);
+                          setPoDetailModal({ ...order, loadedDetails: details?.items || details?.details || order.items || order.details || [] });
+                        } catch {
+                          setPoDetailModal({ ...order, loadedDetails: order.items || order.details || [] });
+                        }
+                      }}>
+                        <EyeIcon className="ic" />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
               {!filteredOrders.length && (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", color: "var(--text-faint)", padding: 24 }}>
+                  <td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)", padding: 24 }}>
                     Không tìm thấy đơn đặt hàng nào phù hợp với bộ lọc
                   </td>
                 </tr>
@@ -900,6 +942,87 @@ function PurchaseOrderPage({ title }) {
           </table>
         </div>
       </section>
+
+      <Modal
+        open={!!poDetailModal}
+        title={`Chi tiết đơn đặt hàng ${poDetailModal?.MaDDH || poDetailModal?.id || ""}`}
+        onClose={() => setPoDetailModal(null)}
+        wide
+      >
+        {poDetailModal && (
+          <div>
+            <div className="po-detail-header">
+              <div className="po-detail-field">
+                <span className="po-detail-label">Mã đơn</span>
+                <span className="po-detail-value">{poDetailModal.MaDDH || poDetailModal.id}</span>
+              </div>
+              <div className="po-detail-field">
+                <span className="po-detail-label">Nhà cung cấp</span>
+                <span className="po-detail-value">{suppliers.find(s => String(s.id) === String(poDetailModal.MaNCC))?.TenNCC || poDetailModal.MaNCCCode || ""}</span>
+              </div>
+              <div className="po-detail-field">
+                <span className="po-detail-label">Ngày đặt</span>
+                <span className="po-detail-value">{poDetailModal.NgayDat}</span>
+              </div>
+              <div className="po-detail-field">
+                <span className="po-detail-label">Người lập</span>
+                <span className="po-detail-value">{poDetailModal.NguoiLap || poDetailModal.MaNVCode || "Quản trị viên"}</span>
+              </div>
+              <div className="po-detail-field">
+                <span className="po-detail-label">Trạng thái</span>
+                <span className="po-detail-value"><StatusBadge status={poDetailModal.TrangThai} /></span>
+              </div>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>STT</th>
+                    <th>Mã SP</th>
+                    <th>Tên sản phẩm</th>
+                    <th>ĐVT</th>
+                    <th style={{ textAlign: "right" }}>Số lượng</th>
+                    <th style={{ textAlign: "right" }}>Đơn giá</th>
+                    <th style={{ textAlign: "right" }}>Thành tiền</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(poDetailModal.loadedDetails || []).map((item, idx) => {
+                    const prod = products.find((p) =>
+                      String(p.id) === String(item.productId || item.MaSP || item._id) ||
+                      String(p.MaSP) === String(item.MaSPCode || item.MaSP)
+                    );
+                    const spCode = prod?.MaSP || item.MaSPCode || (!/^[0-9a-fA-F]{24}$/.test(item.MaSP) ? item.MaSP : "") || "—";
+                    const spName = prod?.TenSP || item.TenSP || item.name || "—";
+                    const spUnit = prod?.DonViTinh || item.DonViTinh || "—";
+                    const spPrice = Number(item.DonGia ?? item.price ?? prod?.GiaNhap ?? 0);
+                    const spQty = Number(item.SoLuong ?? item.quantity ?? 0);
+                    const spTotal = Number(item.ThanhTien || spQty * spPrice);
+                    return (
+                      <tr key={idx}>
+                        <td>{idx + 1}</td>
+                        <td><code style={{ fontSize: 12, fontWeight: 700, color: "var(--primary)" }}>{spCode}</code></td>
+                        <td>{spName}</td>
+                        <td>{spUnit}</td>
+                        <td style={{ textAlign: "right" }}>{spQty}</td>
+                        <td style={{ textAlign: "right" }}>{money.format(spPrice)}</td>
+                        <td style={{ textAlign: "right", fontWeight: 700 }}>{money.format(spTotal)}</td>
+                      </tr>
+                    );
+                  })}
+                  {!(poDetailModal.loadedDetails || []).length && (
+                    <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)", padding: 24 }}>Chưa có dữ liệu chi tiết sản phẩm</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="po-detail-total">
+              <span>Tổng tiền:</span>
+              <span>{money.format(poDetailModal.TongTien || 0)}</span>
+            </div>
+          </div>
+        )}
+      </Modal>
     </section>
   );
 }
@@ -988,7 +1111,13 @@ function StockDocument({ type, title }) {
     const id = event.target.value;
     if (!id) return;
     const product = products.find((item) => item.id === id);
+    if (!product) return;
     if (selected.some((item) => item.id === id)) return;
+    if (!isReceipt && reason !== "Điều chỉnh kiểm kê thiếu" && Number(product.stock || 0) <= 0) {
+      toast(`Sản phẩm "${product.TenSP}" đã hết hàng trong kho! Không thể xuất kho.`);
+      event.target.value = "";
+      return;
+    }
     setSelected((current) => [
       ...current,
       { ...product, quantity: 1, price: product.GiaNhap },
@@ -1115,7 +1244,11 @@ function StockDocument({ type, title }) {
             {isReceipt ? (
               <>
               <div className="field">
+                <label htmlFor="supp-select" style={{ display: "block", marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+                  Nhà cung cấp <span className="required-star">*</span>
+                </label>
                 <select
+                  id="supp-select"
                   value={supplierId}
                   onChange={(e) => {
                     const id = e.target.value;
@@ -1256,7 +1389,7 @@ function StockDocument({ type, title }) {
                 <option value="">+ Thêm sản phẩm</option>
                 {products.map((item) => (
                   <option value={item.id} key={item.id}>
-                    {item.MaSP} · {item.TenSP} · tồn {item.stock || 0}
+                    {item.MaSP} · {item.TenSP} · {Number(item.stock || 0) <= 0 ? "⛔ Hết hàng" : Number(item.stock || 0) <= LOW_STOCK_THRESHOLD ? `⚠️ Tồn ${item.stock}` : `✅ Tồn ${item.stock}`}
                   </option>
                 ))}
               </select>
@@ -1295,7 +1428,15 @@ function StockDocument({ type, title }) {
                         </div>
                       </td>
                       <td>{item.DonViTinh}</td>
-                      <td>{item.stock || 0}</td>
+                      <td>
+                        {Number(item.stock || 0) <= 0 ? (
+                          <span className="stock-status-out">⛔ 0</span>
+                        ) : Number(item.stock || 0) <= LOW_STOCK_THRESHOLD ? (
+                          <span className="stock-status-low">⚠️ {item.stock}</span>
+                        ) : (
+                          <span className="stock-status-ok">✅ {item.stock}</span>
+                        )}
+                      </td>
                       <td>
                         <input
                           className="quantity-input"
@@ -1572,17 +1713,65 @@ function SalesPage({ title }) {
   const [appliedPromo, setAppliedPromo] = useState(null);
   const [discountAmount, setDiscountAmount] = useState(0);
 
+  const [showClearCartConfirm, setShowClearCartConfirm] = useState(false);
+  const [custSearchQuery, setCustSearchQuery] = useState("");
+  const [custDropdownOpen, setCustDropdownOpen] = useState(false);
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
+  const [newCustForm, setNewCustForm] = useState({ HoTen: "", SDT: "", Email: "", DiaChi: "" });
+  const [appliedRedeemedVoucher, setAppliedRedeemedVoucher] = useState(null);
+  const [showRedeemModalSales, setShowRedeemModalSales] = useState(false);
+  const [salesRedeemCode, setSalesRedeemCode] = useState("BAC50K");
+
   useEffect(() => {
+    const loadCustomers = () => {
+      listRecords("customers")
+        .then(setCustomers)
+        .catch((error) => setCustomerError(error.message || "Không tải được danh sách khách hàng"));
+    };
+
     listRecords("products").then(setProducts);
     listRecords("promotions").then(setPromotions).catch(() => []);
-    listRecords("customers")
-      .then(setCustomers)
-      .catch((error) => setCustomerError(error.message || "Không tải được danh sách khách hàng"));
+    loadCustomers();
+    window.addEventListener("focus", loadCustomers);
+    document.addEventListener("visibilitychange", loadCustomers);
+
+    return () => {
+      window.removeEventListener("focus", loadCustomers);
+      document.removeEventListener("visibilitychange", loadCustomers);
+    };
   }, []);
 
   const selectedCustomer = useMemo(() => {
     return customers.find((c) => c.id === customerId);
   }, [customers, customerId]);
+
+  const activeCustomers = useMemo(
+    () => customers.filter((customer) => customer.TrangThai !== "Ngưng hoạt động" && customer.status !== "inactive"),
+    [customers]
+  );
+
+  const filteredCustSearch = useMemo(() => {
+    if (!custSearchQuery) return activeCustomers;
+    const q = custSearchQuery.toLowerCase();
+    return activeCustomers.filter(c =>
+      (c.HoTen || "").toLowerCase().includes(q) ||
+      (c.SDT || "").includes(q) ||
+      (c.MaKH || c.id || "").toLowerCase().includes(q)
+    );
+  }, [activeCustomers, custSearchQuery]);
+
+  const customerRedeemedVouchers = useMemo(() => {
+    if (!selectedCustomer || !Array.isArray(selectedCustomer.VouchersDaDoi)) return [];
+    return selectedCustomer.VouchersDaDoi.filter((v) => v.status === "Chưa sử dụng" || !v.status);
+  }, [selectedCustomer]);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (!e.target.closest(".sales-cust-search")) setCustDropdownOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const customerPts = Number(selectedCustomer?.DiemTichLuy || 0);
   const customerTier = !selectedCustomer
@@ -1658,6 +1847,20 @@ function SalesPage({ title }) {
       }
     }
 
+    // Check if customer has enough points to redeem
+    const requiredPoints = Number(found.DiemYeuCau || 0) || (
+      cleanCode === "BAC50K" ? 100 :
+      cleanCode === "VANG100K" ? 500 :
+      cleanCode === "KC200K" ? 1000 : 0
+    );
+    if (requiredPoints > 0) {
+      if (!selectedCustomer) return toast("Cần chọn khách hàng để đổi điểm lấy voucher");
+      const currentPoints = Number(selectedCustomer.DiemTichLuy || 0);
+      if (currentPoints < requiredPoints) {
+        return toast(`Khách hàng không đủ điểm (cần ${requiredPoints} điểm, hiện có ${currentPoints} điểm)`);
+      }
+    }
+
     let disc = 0;
     if (found.GiaTriGiam && Number(found.GiaTriGiam) > 0) {
       disc = Math.min(subtotal, Number(found.GiaTriGiam));
@@ -1665,17 +1868,80 @@ function SalesPage({ title }) {
       disc = Math.min(subtotal, Math.round((subtotal * Number(found.PhanTramGiam)) / 100));
     }
 
-    setAppliedPromo(found);
+    setAppliedPromo({ ...found, DiemYeuCau: requiredPoints });
     setDiscountAmount(disc);
     setPromoInput(cleanCode);
-    toast(`Đã áp dụng mã "${cleanCode}": Giảm ${money.format(disc)}`);
+    toast(`Đã áp dụng mã "${cleanCode}": Giảm ${money.format(disc)}${requiredPoints > 0 ? ` (Trừ ${requiredPoints} điểm khi thanh toán)` : ""}`);
   }
 
   function removePromo() {
     setAppliedPromo(null);
+    setAppliedRedeemedVoucher(null);
     setDiscountAmount(0);
     setPromoInput("");
     toast("Đã gỡ bỏ mã khuyến mãi");
+  }
+
+  function applyRedeemedVoucher(v) {
+    if (!v) {
+      setAppliedRedeemedVoucher(null);
+      setAppliedPromo(null);
+      setDiscountAmount(0);
+      setPromoInput("");
+      return;
+    }
+    setAppliedRedeemedVoucher(v);
+    const disc = Number(v.discountAmount || (v.code === "BAC50K" ? 50000 : v.code === "VANG100K" ? 100000 : 200000));
+    setAppliedPromo({
+      MaKM: v.code,
+      TenKM: v.name,
+      GiaTriGiam: disc,
+      DiemYeuCau: 0,
+      isRedeemedVoucher: true,
+      voucherId: v.id,
+    });
+    setDiscountAmount(disc);
+    setPromoInput(v.code);
+    toast(`Đã áp dụng voucher đã đổi: "${v.code}" (Giảm ${money.format(disc)}). Không trừ thêm điểm.`);
+  }
+
+  async function handleRedeemInSales() {
+    if (!selectedCustomer) return;
+    const vOpt = [
+      { code: "BAC50K", name: "Voucher giảm 50.000đ", points: 100, discount: 50000 },
+      { code: "VANG100K", name: "Voucher giảm 100.000đ", points: 500, discount: 100000 },
+      { code: "KC200K", name: "Voucher VIP giảm 200.000đ", points: 1000, discount: 200000 },
+    ].find((x) => x.code === salesRedeemCode);
+    if (!vOpt) return;
+    const currentPts = Number(selectedCustomer.DiemTichLuy || 0);
+    if (currentPts < vOpt.points) {
+      return toast(`Khách hàng không đủ điểm (cần ${vOpt.points} điểm, hiện có ${currentPts} điểm)`);
+    }
+    try {
+      const newPoints = currentPts - vOpt.points;
+      const newVoucher = {
+        id: "VCH-" + Date.now().toString(36).toUpperCase(),
+        code: vOpt.code,
+        name: vOpt.name,
+        discountAmount: vOpt.discount,
+        points: vOpt.points,
+        redeemedAt: new Date().toISOString().slice(0, 10),
+        status: "Chưa sử dụng",
+      };
+      const updatedVouchers = [...(selectedCustomer.VouchersDaDoi || []), newVoucher];
+      await saveRecord("customers", {
+        ...selectedCustomer,
+        DiemTichLuy: newPoints,
+        VouchersDaDoi: updatedVouchers,
+      });
+      const updatedCusts = await listRecords("customers");
+      setCustomers(updatedCusts);
+      applyRedeemedVoucher(newVoucher);
+      setShowRedeemModalSales(false);
+      toast(`Đã đổi thành công voucher "${vOpt.code}" (-${vOpt.points} điểm) và áp dụng ngay vào đơn hàng!`);
+    } catch (err) {
+      toast(err?.message || "Lỗi khi đổi voucher");
+    }
   }
 
   function add(product) {
@@ -1719,21 +1985,35 @@ function SalesPage({ title }) {
 
   function clearCart() {
     if (!cart.length) return;
-    if (window.confirm("Bạn có chắc muốn xóa tất cả sản phẩm trong giỏ?")) {
-      setCart([]);
-      setAppliedPromo(null);
-      setDiscountAmount(0);
-      setPromoInput("");
-    }
+    setShowClearCartConfirm(true);
+  }
+  function executeClearCart() {
+    setCart([]);
+    setAppliedPromo(null);
+    setAppliedRedeemedVoucher(null);
+    setDiscountAmount(0);
+    setPromoInput("");
+    setShowClearCartConfirm(false);
+    toast("Đã xóa giỏ hàng");
   }
 
   async function submitSale() {
     if (!cart.length) return toast("Giỏ hàng đang trống");
+    if (selectedCustomer?.TrangThai === "Ngưng hoạt động" || selectedCustomer?.status === "inactive") {
+      return toast("Không thể lập hóa đơn cho khách hàng đã ngưng hoạt động");
+    }
     if (cart.some((item) => !Number.isInteger(Number(item.quantity)) || Number(item.quantity) <= 0)) return toast("Số lượng sản phẩm không hợp lệ");
     if (cart.some((item) => !Number.isFinite(Number(item.GiaBan)) || Number(item.GiaBan) < 0)) return toast("Giá bán sản phẩm không hợp lệ");
+    const pointsToRedeem = appliedPromo?.DiemYeuCau ? Number(appliedPromo.DiemYeuCau) : (
+      appliedPromo?.MaKM === "BAC50K" ? 100 :
+      appliedPromo?.MaKM === "VANG100K" ? 500 :
+      appliedPromo?.MaKM === "KC200K" ? 1000 : 0
+    );
     try {
       const result = await saveRecord("sales-orders", {
         customerId: customerId || null,
+        usedVoucherId: appliedRedeemedVoucher?.id || null,
+        redeemPoints: appliedRedeemedVoucher ? 0 : pointsToRedeem,
         items: cart.map((item) => ({
           productId: item.id,
           quantity: item.quantity,
@@ -1748,10 +2028,15 @@ function SalesPage({ title }) {
       });
       setCart([]);
       setAppliedPromo(null);
+      setAppliedRedeemedVoucher(null);
       setDiscountAmount(0);
       setPromoInput("");
       setCreatedInvoice(result.invoice || result);
-      toast("Đã lập đơn hàng và xuất hóa đơn thành công!");
+      // Cập nhật lại danh sách khách hàng từ CSDL để điểm tích lũy và voucher mới nhất hiển thị ngay lập tức
+      listRecords("customers").then((custs) => {
+        setCustomers(custs);
+      }).catch(() => {});
+      toast(`Đã lập đơn hàng và xuất hóa đơn thành công!${appliedRedeemedVoucher ? ` (Đã áp dụng voucher ${appliedRedeemedVoucher.code})` : pointsToRedeem > 0 ? ` (Đã trừ ${pointsToRedeem} điểm đổi voucher)` : ""}`);
     } catch (error) {
       toast(error.message);
     }
@@ -1885,26 +2170,59 @@ function SalesPage({ title }) {
 
           {/* Customer Selection & Membership Badge */}
           <div style={{ margin: "14px 0 10px" }}>
-            <label className="field" style={{ margin: 0 }}>
-              <span style={{ fontWeight: 600, fontSize: 12.5 }}>Khách hàng <small style={{fontWeight:400,color:'var(--text-faint)'}}>(tích điểm &amp; nhận voucher)</small></span>
-              <select
-                value={customerId}
-                onChange={(e) => {
-                  setCustomerId(e.target.value);
-                  setAppliedPromo(null);
-                  setDiscountAmount(0);
-                  setPromoInput("");
-                }}
-              >
-                <option value="">-- Khách vãng lai (không tích điểm) --</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.MaKH || customer.id} · {customer.HoTen} ({customer.DiemTichLuy || 0} điểm)
-                  </option>
-                ))}
-              </select>
-              {customerError && <small className="text-danger">{customerError}</small>}
-            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <label style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap" }}>Khách hàng:</label>
+              <div className="sales-cust-search" style={{ flex: 1 }}>
+                <div className="sales-cust-input-wrap">
+                  <MagnifyingGlassIcon style={{ width: 16, height: 16, color: "var(--text-faint)" }} />
+                  <input
+                    className="sales-cust-input"
+                    type="text"
+                    placeholder="Tìm theo tên, SĐT, mã KH..."
+                    value={custSearchQuery}
+                    onChange={e => { setCustSearchQuery(e.target.value); setCustDropdownOpen(true); }}
+                    onFocus={() => setCustDropdownOpen(true)}
+                  />
+                  {customerId && (
+                    <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-faint)", padding: 2 }} onClick={() => { setCustomerId(""); setSelectedCustomer(null); setCustSearchQuery(""); setAppliedPromo(null); setDiscountAmount(0); setPromoInput(""); }}>
+                      ✕
+                    </button>
+                  )}
+                </div>
+                {custDropdownOpen && (
+                  <div className="sales-cust-dropdown">
+                    {filteredCustSearch.length === 0 ? (
+                      <div style={{ padding: "12px", color: "var(--text-faint)", fontSize: 13 }}>Không tìm thấy khách hàng</div>
+                    ) : filteredCustSearch.slice(0, 8).map(c => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="sales-cust-option"
+                        onClick={() => {
+                          setCustomerId(c.id);
+                          setSelectedCustomer(c);
+                          setCustSearchQuery(c.HoTen || "");
+                          setCustDropdownOpen(false);
+                          setAppliedPromo(null); setDiscountAmount(0); setPromoInput("");
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{c.HoTen}</span>
+                        <span style={{ color: "var(--text-faint)", fontSize: 12 }}>{c.SDT || ""}</span>
+                        <span style={{ color: "var(--primary)", fontSize: 11, fontWeight: 700 }}>{c.MaKH || c.id}</span>
+                      </button>
+                    ))}
+                    <div style={{ borderTop: "1px solid var(--border)", padding: "4px" }}>
+                      <button type="button" className="sales-cust-option" style={{ color: "var(--primary)", fontWeight: 600 }} onClick={() => { setCustDropdownOpen(false); }}>
+                        Khách vãng lai (không tích điểm)
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button type="button" className="sales-cust-add-btn" onClick={() => setShowAddCustomerModal(true)}>
+                <PlusIcon style={{ width: 14, height: 14 }} /> Thêm KH mới
+              </button>
+            </div>
 
             {selectedCustomer && (
               <div
@@ -1934,6 +2252,11 @@ function SalesPage({ title }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontWeight: 700, color: "#1e293b" }}>
                     ⭐ {selectedCustomer.HoTen} · {customerPts} điểm
+                    {appliedPromo && Number(appliedPromo.DiemYeuCau || 0) > 0 && (
+                      <span style={{ color: "var(--danger, #ef4444)", marginLeft: 8, fontSize: 11, fontWeight: 600 }}>
+                        (Đổi mã {appliedPromo.MaKM}: Trừ {appliedPromo.DiemYeuCau} điểm → Còn {Math.max(0, customerPts - Number(appliedPromo.DiemYeuCau))} điểm)
+                      </span>
+                    )}
                   </span>
                   <span
                     style={{
@@ -1959,64 +2282,154 @@ function SalesPage({ title }) {
                 {/* Quick Voucher recommendation based on tier */}
                 <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: "var(--text-soft)" }}>Voucher hợp lệ:</span>
-                  {customerPts >= 100 && (
-                    <button
-                      type="button"
-                      onClick={() => applyPromo("BAC50K")}
-                      style={{
-                        padding: "2px 8px",
-                        fontSize: 11,
-                        borderRadius: 6,
-                        border: "1px solid #94a3b8",
-                        background: appliedPromo?.MaKM === "BAC50K" ? "#475569" : "#fff",
-                        color: appliedPromo?.MaKM === "BAC50K" ? "#fff" : "#334155",
-                        cursor: "pointer",
-                        fontWeight: 600,
-                      }}
-                    >
-                      Bạc 50K
-                    </button>
-                  )}
-                  {customerPts >= 500 && (
-                    <button
-                      type="button"
-                      onClick={() => applyPromo("VANG100K")}
-                      style={{
-                        padding: "2px 8px",
-                        fontSize: 11,
-                        borderRadius: 6,
-                        border: "1px solid #d97706",
-                        background: appliedPromo?.MaKM === "VANG100K" ? "#d97706" : "#fff",
-                        color: appliedPromo?.MaKM === "VANG100K" ? "#fff" : "#b45309",
-                        cursor: "pointer",
-                        fontWeight: 600,
-                      }}
-                    >
-                      Vàng 100K
-                    </button>
-                  )}
-                  {customerPts >= 1000 && (
-                    <button
-                      type="button"
-                      onClick={() => applyPromo("KC200K")}
-                      style={{
-                        padding: "2px 8px",
-                        fontSize: 11,
-                        borderRadius: 6,
-                        border: "1px solid #0284c7",
-                        background: appliedPromo?.MaKM === "KC200K" ? "#0284c7" : "#fff",
-                        color: appliedPromo?.MaKM === "KC200K" ? "#fff" : "#0369a1",
-                        cursor: "pointer",
-                        fontWeight: 600,
-                      }}
-                    >
-                      Kim Cương 200K
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => applyPromo("BAC50K")}
+                    disabled={customerPts < 100}
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: 11,
+                      borderRadius: 6,
+                      border: "1px solid #94a3b8",
+                      background: appliedPromo?.MaKM === "BAC50K" ? "#475569" : "#fff",
+                      color: appliedPromo?.MaKM === "BAC50K" ? "#fff" : "#334155",
+                      cursor: customerPts < 100 ? "not-allowed" : "pointer",
+                      fontWeight: 600,
+                      opacity: customerPts < 100 ? 0.5 : 1
+                    }}
+                  >
+                    Đổi 100 điểm → BAC50K
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPromo("VANG100K")}
+                    disabled={customerPts < 500}
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: 11,
+                      borderRadius: 6,
+                      border: "1px solid #d97706",
+                      background: appliedPromo?.MaKM === "VANG100K" ? "#d97706" : "#fff",
+                      color: appliedPromo?.MaKM === "VANG100K" ? "#fff" : "#b45309",
+                      cursor: customerPts < 500 ? "not-allowed" : "pointer",
+                      fontWeight: 600,
+                      opacity: customerPts < 500 ? 0.5 : 1
+                    }}
+                  >
+                    Đổi 500 điểm → VANG100K
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPromo("KC200K")}
+                    disabled={customerPts < 1000}
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: 11,
+                      borderRadius: 6,
+                      border: "1px solid #0284c7",
+                      background: appliedPromo?.MaKM === "KC200K" ? "#0284c7" : "#fff",
+                      color: appliedPromo?.MaKM === "KC200K" ? "#fff" : "#0369a1",
+                      cursor: customerPts < 1000 ? "not-allowed" : "pointer",
+                      fontWeight: 600,
+                      opacity: customerPts < 1000 ? 0.5 : 1
+                    }}
+                  >
+                    Đổi 1000 điểm → KC200K
+                  </button>
                   {customerPts < 100 && (
                     <span style={{ fontSize: 11, color: "var(--text-faint)", fontStyle: "italic" }}>
                       Chưa đủ 100 điểm đổi voucher
                     </span>
+                  )}
+                </div>
+
+                {/* PHẦN CHỌN VOUCHER ĐÃ ĐỔI CỦA KHÁCH HÀNG */}
+                <div style={{ marginTop: 10, padding: "10px 12px", background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <label style={{ fontWeight: 700, fontSize: 12.5, color: "#166534", margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                      🎟️ Voucher đã đổi của khách:
+                      <span style={{ fontSize: 10.5, background: "#dcfce7", color: "#15803d", padding: "1px 6px", borderRadius: 100, fontWeight: 700 }}>
+                        {customerRedeemedVouchers.length} khả dụng
+                      </span>
+                    </label>
+                    {customerPts >= 100 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowRedeemModalSales(true)}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--primary-dark)",
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          textDecoration: "underline",
+                          padding: 0
+                        }}
+                      >
+                        + Đổi thêm voucher
+                      </button>
+                    )}
+                  </div>
+
+                  {customerRedeemedVouchers.length > 0 ? (
+                    <div>
+                      <select
+                        value={appliedRedeemedVoucher?.id || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (!val) {
+                            applyRedeemedVoucher(null);
+                          } else {
+                            const foundV = customerRedeemedVouchers.find((x) => x.id === val);
+                            if (foundV) applyRedeemedVoucher(foundV);
+                          }
+                        }}
+                        style={{
+                          width: "100%",
+                          padding: "7px 10px",
+                          borderRadius: 6,
+                          border: appliedRedeemedVoucher ? "2px solid #16a34a" : "1px solid var(--border)",
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          background: "#fff",
+                          color: "var(--text)"
+                        }}
+                      >
+                        <option value="">-- Nhấp vào đây để chọn voucher đã đổi --</option>
+                        {customerRedeemedVouchers.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            🎟️ {v.code} · {v.name} (Giảm {money.format(v.discountAmount || 50000)})
+                          </option>
+                        ))}
+                      </select>
+                      {appliedRedeemedVoucher && (
+                        <div style={{ marginTop: 5, fontSize: 11.5, color: "#15803d", fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span>✅ Đang dùng: <strong>{appliedRedeemedVoucher.code}</strong> (-{money.format(discountAmount)}) · Đã đổi trước đó</span>
+                          <button
+                            type="button"
+                            onClick={() => applyRedeemedVoucher(null)}
+                            style={{ background: "none", border: "none", color: "#dc2626", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}
+                          >
+                            Hủy dùng
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11.5, color: "#64748b" }}>
+                      Khách hàng chưa có voucher nào đổi sẵn.{" "}
+                      {customerPts >= 100 ? (
+                        <span
+                          style={{ color: "var(--primary-dark)", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
+                          onClick={() => setShowRedeemModalSales(true)}
+                        >
+                          Đổi ngay bằng {customerPts} điểm tích lũy
+                        </span>
+                      ) : (
+                        <span>(Cần tối thiểu 100 điểm để đổi voucher)</span>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -2145,6 +2558,140 @@ function SalesPage({ title }) {
           </button>
         </aside>
       </div>
+
+      <ConfirmDialog
+        open={showClearCartConfirm}
+        title="Xóa giỏ hàng"
+        message="Bạn có chắc muốn xóa tất cả sản phẩm trong giỏ hàng?"
+        confirmLabel="Xóa tất cả"
+        variant="warning"
+        onConfirm={executeClearCart}
+        onCancel={() => setShowClearCartConfirm(false)}
+      />
+
+      <Modal
+        open={showAddCustomerModal}
+        title="Thêm khách hàng mới"
+        onClose={() => setShowAddCustomerModal(false)}
+        onSubmit={async () => {
+          if (!newCustForm.HoTen.trim()) return toast("Họ và tên là bắt buộc");
+          if (!newCustForm.SDT.trim()) return toast("Số điện thoại là bắt buộc");
+          if (!/^0\d{9,10}$/.test(newCustForm.SDT.trim())) return toast("Số điện thoại phải gồm 10-11 chữ số");
+          if (newCustForm.Email && !/^\S+@\S+\.\S+$/.test(newCustForm.Email.trim())) return toast("Email không hợp lệ");
+          try {
+            const saved = await saveRecord("customers", { ...newCustForm, TrangThai: "Đang hoạt động", DiemTichLuy: 0 });
+            setCustomers(prev => [...prev, saved]);
+            setCustomerId(saved.id);
+            setSelectedCustomer(saved);
+            setCustSearchQuery(saved.HoTen || "");
+            setShowAddCustomerModal(false);
+            setNewCustForm({ HoTen: "", SDT: "", Email: "", DiaChi: "" });
+            toast("Đã thêm khách hàng mới thành công");
+          } catch (err) {
+            toast(err?.message || "Lỗi khi thêm khách hàng");
+          }
+        }}
+        submitLabel="Thêm khách hàng"
+      >
+        <fieldset className="form-grid" style={{ border: "none", padding: 0, margin: 0 }}>
+          <div className="field">
+            <label>Họ và tên <span className="required-star">*</span></label>
+            <input value={newCustForm.HoTen} onChange={e => setNewCustForm(f => ({ ...f, HoTen: e.target.value }))} required />
+          </div>
+          <div className="field">
+            <label>Số điện thoại <span className="required-star">*</span></label>
+            <input value={newCustForm.SDT} onChange={e => setNewCustForm(f => ({ ...f, SDT: e.target.value }))} required />
+          </div>
+          <div className="field">
+            <label>Email</label>
+            <input type="email" value={newCustForm.Email} onChange={e => setNewCustForm(f => ({ ...f, Email: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>Địa chỉ</label>
+            <input value={newCustForm.DiaChi} onChange={e => setNewCustForm(f => ({ ...f, DiaChi: e.target.value }))} />
+          </div>
+        </fieldset>
+      </Modal>
+
+      {/* Modal Đổi điểm lấy voucher ngay tại quầy thu ngân */}
+      <Modal
+        open={showRedeemModalSales}
+        title={`Đổi điểm lấy Voucher — ${selectedCustomer?.HoTen || ""}`}
+        onClose={() => setShowRedeemModalSales(false)}
+        onSubmit={handleRedeemInSales}
+        submitLabel="Xác nhận đổi & Dùng ngay"
+      >
+        {selectedCustomer && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ padding: "12px 14px", background: "var(--primary-light, #f0fdfa)", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 13, color: "var(--text-soft)" }}>
+                Khách hàng: <strong>{selectedCustomer.HoTen}</strong> ({selectedCustomer.MaKH || selectedCustomer.id})
+              </div>
+              <div style={{ fontSize: 14, color: "var(--primary-dark)", fontWeight: 700, marginTop: 4 }}>
+                ⭐ Điểm tích lũy hiện có: <strong>{customerPts}</strong> điểm
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
+                Chọn voucher muốn đổi <span className="required-star">*</span>
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[
+                  { code: "BAC50K", name: "Voucher giảm 50.000đ", points: 100 },
+                  { code: "VANG100K", name: "Voucher giảm 100.000đ", points: 500 },
+                  { code: "KC200K", name: "Voucher VIP giảm 200.000đ", points: 1000 },
+                ].map((v) => {
+                  const isEligible = customerPts >= v.points;
+                  const isSelected = salesRedeemCode === v.code;
+                  return (
+                    <label
+                      key={v.code}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "10px 14px",
+                        borderRadius: 8,
+                        border: isSelected ? "2px solid var(--primary)" : "1px solid var(--border)",
+                        background: isSelected ? "var(--primary-light)" : isEligible ? "#fff" : "#f8fafc",
+                        cursor: isEligible ? "pointer" : "not-allowed",
+                        opacity: isEligible ? 1 : 0.6,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <input
+                          type="radio"
+                          name="sales_voucher_redeem"
+                          value={v.code}
+                          checked={isSelected}
+                          disabled={!isEligible}
+                          onChange={() => setSalesRedeemCode(v.code)}
+                        />
+                        <div>
+                          <strong style={{ fontSize: 13.5, color: isEligible ? "var(--text)" : "var(--text-faint)" }}>
+                            🎟️ {v.name} (Mã: {v.code})
+                          </strong>
+                          <div style={{ fontSize: 11.5, color: "var(--text-soft)" }}>
+                            Cần đổi: <strong>{v.points} điểm</strong>
+                          </div>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: isEligible ? "var(--danger)" : "var(--text-faint)" }}>
+                        {isEligible ? `- ${v.points} điểm` : "Không đủ điểm"}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ padding: "8px 12px", background: "#fefce8", border: "1px solid #fef08a", borderRadius: 8, fontSize: 12, color: "#854d0e" }}>
+              💡 Voucher sau khi đổi sẽ được trừ điểm ngay và tự động chọn áp dụng vào giỏ hàng thu ngân.
+            </div>
+          </div>
+        )}
+      </Modal>
     </section>
   );
 }
@@ -2428,12 +2975,25 @@ function ReportPage({ title }) {
   const [debts, setDebts] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [salesOrders, setSalesOrders] = useState([]);
+  const [cashFlow, setCashFlow] = useState(null);
   const [printing, setPrinting] = useState(null); // which report is printing
   const [printMenuOpen, setPrintMenuOpen] = useState(false);
+  const [loadErrors, setLoadErrors] = useState([]);
+  // Bộ lọc ngày — để trống = lấy toàn bộ
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [filterKey, setFilterKey] = useState(0); // tăng để trigger re-fetch
 
   useEffect(() => {
-    Promise.all([
-      getReport("revenue"),
+    // Dùng allSettled: hiển thị phần dữ liệu được phép xem,
+    // phần bị 403 trả về rỗng thay vì crash toàn trang
+    const params = new URLSearchParams();
+    if (dateFrom) params.set("from", dateFrom);
+    if (dateTo)   params.set("to",   dateTo);
+    const qs = params.toString() ? `?${params}` : "";
+
+    Promise.allSettled([
+      getReport(`revenue${qs}`),
       getReport("debts"),
       getReport("inventory"),
       listRecords("products"),
@@ -2442,18 +3002,34 @@ function ReportPage({ title }) {
       listRecords("debts"),
       listRecords("invoices"),
       listRecords("sales-orders"),
-    ]).then(([revenue, debtsReport, inventory, prods, recs, iss, debtsList, invList, soList]) => {
-      setData({ revenue, debts: debtsReport, inventory });
-      setProducts(prods);
-      setReceipts(recs);
-      setIssues(iss);
-      setDebts(debtsList);
-      setInvoices(invList);
-      setSalesOrders(soList);
+      getReport(`cash-flow${qs}`),
+    ]).then(([revenue, debtsReport, inventory, prods, recs, iss, debtsList, invList, soList, cf]) => {
+      // Thu thập lỗi thực sự (không phải 403 vì đó là do phân quyền, không phải lỗi)
+      const errors = [];
+      const isRealError = (r) => r.status === "rejected" && r.reason?.status !== 403;
+      if (isRealError(revenue)) errors.push("Báo cáo doanh thu");
+      if (isRealError(debtsReport)) errors.push("Báo cáo công nợ");
+      if (isRealError(inventory)) errors.push("Báo cáo tồn kho");
+      if (isRealError(cf)) errors.push("Báo cáo thu chi");
+      setLoadErrors(errors);
+
+      setData({
+        revenue: revenue.status === "fulfilled" ? revenue.value : { total: 0, orders: 0, weekly: [] },
+        debts: debtsReport.status === "fulfilled" ? debtsReport.value : { total: 0, data: [] },
+        inventory: inventory.status === "fulfilled" ? inventory.value : { data: [] },
+      });
+      setProducts(prods.status === "fulfilled" ? prods.value : []);
+      setReceipts(recs.status === "fulfilled" ? recs.value : []);
+      setIssues(iss.status === "fulfilled" ? iss.value : []);
+      setDebts(debtsList.status === "fulfilled" ? debtsList.value : []);
+      setInvoices(invList.status === "fulfilled" ? invList.value : []);
+      setSalesOrders(soList.status === "fulfilled" ? soList.value : []);
+      setCashFlow(cf.status === "fulfilled" ? cf.value : null);
     });
-  }, []);
+  }, [filterKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handlePrint(type) {
+    if (!data) return;
     setPrinting(type);
     setPrintMenuOpen(false);
     try {
@@ -2471,6 +3047,9 @@ function ReportPage({ title }) {
         case "debts":
           printReport("debts", { debts });
           break;
+        case "cash-flow":
+          printReport("cash-flow", { cashFlow, dateFrom, dateTo });
+          break;
       }
     } catch (err) {
       toast("Không mở được cửa sổ in. Kiểm tra pop-up blocker.");
@@ -2486,44 +3065,101 @@ function ReportPage({ title }) {
     </section>
   );
 
-  const categories = [
-    { name: "Sữa", value: 2815000 },
-    { name: "Bỉm/tã", value: 916000 },
-    { name: "Đồ dùng cho bé", value: 370000 },
-    { name: "Quần áo trẻ em", value: 198000 },
-    { name: "Đồ chơi", value: 188000 },
-    { name: "Chăm sóc mẹ và bé", value: 228000 },
-  ];
+
+  // Doanh thu theo danh mục tính từ hóa đơn ĐÃ THANH TOÁN, nhóm theo Loại hàng của sản phẩm.
+  const categories = useMemo(() => {
+    const productMap = new Map(products.map((product) => [String(product.id), product]));
+    const byCategory = new Map();
+    for (const invoice of invoices) {
+      if (invoice.TrangThai !== "Đã thanh toán") continue;
+      for (const line of invoice.details || []) {
+        const product = productMap.get(String(line.MaSP || line.productId || ""));
+        const name = product?.LoaiHang || line.LoaiHang || "Không phân loại";
+        const amount = Number(line.ThanhTien) || (Number(line.SoLuong || line.quantity || 0) * Number(line.DonGia || line.price || 0));
+        byCategory.set(name, (byCategory.get(name) || 0) + amount);
+      }
+    }
+    return [...byCategory.entries()]
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [invoices, products]);
   const maxCatValue = Math.max(1, ...categories.map((c) => c.value));
+
+  // Không render cho đến khi data sẵn sàng (sau tất cả hooks)
+  if (!data) return (
+    <section aria-labelledby="report-heading" style={{ padding: 40, textAlign: "center" }}>
+      <p style={{ color: "var(--text-soft)" }}>⏳ Đang tải báo cáo...</p>
+    </section>
+  );
 
   const printReports = [
     { type: "revenue",   label: "Báo cáo doanh thu",     icon: "📊" },
     { type: "inventory", label: "Báo cáo tồn kho",        icon: "📦" },
     { type: "warehouse", label: "Báo cáo nhập – xuất kho", icon: "🏭" },
     { type: "debts",     label: "Báo cáo công nợ",         icon: "💳" },
+    { type: "cash-flow", label: "Báo cáo thu chi",          icon: "💰" },
   ];
+
+  const money2 = (v) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 }).format(v);
 
   return (
     <section aria-labelledby="report-heading">
       <header className="page-header">
         <hgroup>
           <h1 id="report-heading">{title}</h1>
-          <p>Tổng hợp doanh thu, nhập xuất kho và công nợ.</p>
+          <p>Tổng hợp doanh thu, nhập xuất kho, công nợ và thu chi tiền mặt.</p>
         </hgroup>
-        {/* Print dropdown */}
-        <div style={{ position: "relative" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {/* Bộ lọc ngày */}
+          <label style={{ fontSize: 12, color: "var(--text-soft)", display: "flex", alignItems: "center", gap: 4 }}>
+            Từ
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              style={{ fontSize: 12, padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-card)" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: "var(--text-soft)", display: "flex", alignItems: "center", gap: 4 }}>
+            đến
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              style={{ fontSize: 12, padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-card)" }}
+            />
+          </label>
           <button
-            className="btn btn-primary"
+            className="btn btn-sm btn-outline"
             type="button"
-            onClick={() => setPrintMenuOpen((o) => !o)}
-            style={{ display: "flex", alignItems: "center", gap: 8 }}
+            onClick={() => setFilterKey((k) => k + 1)}
           >
-            <PrinterIcon className="btn-icon" aria-hidden="true" />
-            In báo cáo
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 2 }}>
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
+            Lọc
           </button>
+          {(dateFrom || dateTo) && (
+            <button
+              className="btn btn-sm"
+              type="button"
+              onClick={() => { setDateFrom(""); setDateTo(""); setFilterKey((k) => k + 1); }}
+              style={{ color: "var(--text-faint)" }}
+            >
+              Xóa lọc
+            </button>
+          )}
+          {/* Print dropdown */}
+          <div style={{ position: "relative" }}>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={() => setPrintMenuOpen((o) => !o)}
+              style={{ display: "flex", alignItems: "center", gap: 8 }}
+            >
+              <PrinterIcon className="btn-icon" aria-hidden="true" />
+              In báo cáo
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 2 }}>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
           {printMenuOpen && (
             <>
               <div
@@ -2583,8 +3219,15 @@ function ReportPage({ title }) {
               </div>
             </>
           )}
+          </div>
         </div>
       </header>
+
+      {loadErrors.length > 0 && (
+        <div className="alert danger" role="alert" style={{ marginBottom: 16 }}>
+          ⚠️ Không tải được dữ liệu: {loadErrors.join(", ")}. Một số số liệu có thể không chính xác.
+        </div>
+      )}
 
       <div className="stats-grid">
         <StatCard
@@ -2605,6 +3248,14 @@ function ReportPage({ title }) {
           value={money.format(data.debts?.total || 0)}
           valueClass="danger"
         />
+        {cashFlow && (
+          <StatCard
+            label="Tồn quỹ tiền mặt"
+            value={money2(cashFlow.balance)}
+            valueClass={cashFlow.balance >= 0 ? "accent" : "danger"}
+            delta={`Thu: ${money2(cashFlow.totalThu)} / Chi: ${money2(cashFlow.totalChi)}`}
+          />
+        )}
       </div>
 
       <article className="card" style={{ marginBottom: 20 }}>
@@ -2630,6 +3281,11 @@ function ReportPage({ title }) {
             amount={money.format(cat.value)}
           />
         ))}
+        {!categories.length && (
+          <p style={{ color: "var(--text-faint)", textAlign: "center", padding: 18 }}>
+            Chưa có doanh thu theo danh mục — số liệu sẽ hiển thị sau khi có hóa đơn đã thanh toán.
+          </p>
+        )}
       </article>
 
       <article className="card" style={{ marginBottom: 20 }}>
@@ -2733,7 +3389,7 @@ function InventoryPage({ title }) {
     return matchesQuery && (category === "Tất cả" || product.LoaiHang === category);
   });
   const totalUnits = products.reduce((sum, product) => sum + Number(product.stock || 0), 0);
-  const lowStock = products.filter((product) => Number(product.stock || 0) <= 10).length;
+  const lowStock = products.filter((product) => Number(product.stock || 0) <= LOW_STOCK_THRESHOLD).length;
   const now = new Date();
 
   return (
@@ -2746,7 +3402,14 @@ function InventoryPage({ title }) {
         <time className="inventory-now" dateTime={now.toISOString()}>Cập nhật lúc {now.toLocaleString("vi-VN")}</time>
       </header>
 
-      <div className="inventory-overview"><article><span>Tổng mặt hàng</span><strong>{products.length}</strong><small>SKU đang quản lý</small></article><article><span>Tổng số lượng tồn</span><strong>{totalUnits.toLocaleString("vi-VN")}</strong><small>Đơn vị sản phẩm</small></article><article><span>Sắp hết hàng</span><strong className="warning">{lowStock}</strong><small>Tồn kho không quá 10</small></article></div>
+      <div className="inventory-overview"><article><span>Tổng mặt hàng</span><strong>{products.length}</strong><small>SKU đang quản lý</small></article><article><span>Tổng số lượng tồn</span><strong>{totalUnits.toLocaleString("vi-VN")}</strong><small>Đơn vị sản phẩm</small></article><article><span>Sắp hết hàng</span><strong className="warning">{lowStock}</strong><small>Tồn kho không quá {LOW_STOCK_THRESHOLD}</small></article></div>
+
+      {lowStock > 0 && (
+        <div className="stock-alert-banner">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span>⚠️ Cảnh báo: Có <strong>{lowStock}</strong> sản phẩm sắp hết hoặc đã hết hàng (tồn kho ≤ {LOW_STOCK_THRESHOLD}). Vui lòng kiểm tra và đặt hàng bổ sung.</span>
+        </div>
+      )}
 
       <div className="inventory-toolbar"><label className="invoice-search"><MagnifyingGlassIcon aria-hidden="true" /><input type="search" placeholder="Tìm mã hoặc tên sản phẩm..." value={query} onChange={(event) => setQuery(event.target.value)} /></label><div className="filter-chips">{categories.map((item) => <button type="button" className={`filter-chip ${category === item ? "active" : ""}`} key={item} onClick={() => setCategory(item)}>{item}</button>)}</div></div>
 
@@ -2764,7 +3427,9 @@ function InventoryPage({ title }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((p) => (
+            {visible.map((p) => {
+              const stock = Number(p.stock || 0);
+              return (
               <tr key={p.id}>
                 <td>{p.MaSP}</td>
                 <td>
@@ -2776,14 +3441,18 @@ function InventoryPage({ title }) {
                 <td>{p.LoaiHang || "—"}</td>
                 <td>{p.DonViTinh}</td>
                 <td>
-                  <Badge variant={Number(p.stock) <= 10 ? "red" : Number(p.stock) <= 30 ? "amber" : "green"}>
-                    {p.stock} {p.DonViTinh}
-                  </Badge>
+                  {stock <= 0 ? (
+                    <span className="stock-status-out">⛔ Hết hàng</span>
+                  ) : stock <= 10 ? (
+                    <span className="stock-status-low">⚠️ Sắp hết ({stock})</span>
+                  ) : (
+                    <span className="stock-status-ok">✅ Còn hàng ({stock})</span>
+                  )}
                 </td>
                 <td>{p.stockUpdatedAt ? new Date(p.stockUpdatedAt).toLocaleString("vi-VN") : "Chưa có mốc thời gian"}</td>
                 <td><StatusBadge status={p.TrangThai} /></td>
               </tr>
-            ))}
+            )})}
             {!visible.length && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)", padding: 32 }}>Không có sản phẩm phù hợp</td></tr>}
           </tbody>
         </table>
@@ -2822,6 +3491,10 @@ export function ModulePage({ title, description }) {
     return <StocktakePage title={title} />;
   if (pathname === "/returns")
     return <ReturnPage title={title} />;
+  if (pathname === "/cash-receipts")
+    return <CashVouchersPage type="thu" title={title} description={description} />;
+  if (pathname === "/cash-payments")
+    return <CashVouchersPage type="chi" title={title} description={description} />;
   if (pathname === "/debts")
     return <DebtsPage title={title} description={description} />;
   if (pathname === "/promotions")

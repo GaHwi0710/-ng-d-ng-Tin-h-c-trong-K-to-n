@@ -243,6 +243,61 @@ function buildDebtsHtml({ debts }) {
   `);
 }
 
+/* ── 5. Thu chi quỹ tiền mặt ─────────────────────────────── */
+function buildCashFlowHtml({ cashFlow, dateFrom, dateTo }) {
+  const totalThu = cashFlow?.totalThu || 0;
+  const totalChi = cashFlow?.totalChi || 0;
+  const balance = cashFlow?.balance || 0;
+  const receiptCount = cashFlow?.receiptCount || 0;
+  const paymentCount = cashFlow?.paymentCount || 0;
+  const monthly = cashFlow?.monthly || [];
+
+  const dateRange = (dateFrom || dateTo)
+    ? `${dateFrom ? `Từ ${dateFrom}` : ""} ${dateTo ? `Đến ${dateTo}` : ""}`.trim()
+    : "Toàn bộ thời gian";
+
+  const rows = monthly.map((m, i) => `
+    <tr>
+      <td class="center">${i + 1}</td>
+      <td><strong>Tháng ${esc(m.month)}</strong></td>
+      <td class="right" style="color:#2E7D50">${moneyFmt.format(m.thu)}</td>
+      <td class="right" style="color:#C0524B">${moneyFmt.format(m.chi)}</td>
+      <td class="right"><strong style="color:${m.balance >= 0 ? '#2E7D50' : '#C0524B'}">${moneyFmt.format(m.balance)}</strong></td>
+    </tr>
+  `).join("");
+
+  return buildPage(`
+    ${shopHeader(dateRange)}
+    <div class="rpt-title">Báo cáo tổng hợp thu chi quỹ tiền mặt</div>
+    <div class="rpt-subtitle">Tổng hợp phiếu thu (mẫu 01-TT) và phiếu chi (mẫu 02-TT)</div>
+    <div class="stat-row">
+      <div class="stat-box"><div class="val" style="color:#2E7D50">${moneyFmt.format(totalThu)}</div><div class="lbl">Tổng thu (${receiptCount} phiếu)</div></div>
+      <div class="stat-box danger"><div class="val">${moneyFmt.format(totalChi)}</div><div class="lbl">Tổng chi (${paymentCount} phiếu)</div></div>
+      <div class="stat-box ${balance >= 0 ? 'accent' : 'danger'}"><div class="val">${moneyFmt.format(balance)}</div><div class="lbl">Tồn quỹ hiện tại</div></div>
+      <div class="stat-box"><div class="val">${monthly.length}</div><div class="lbl">Số kỳ / tháng</div></div>
+    </div>
+    <div class="section-title">Chi tiết thu chi theo tháng</div>
+    <table>
+      <thead>
+        <tr>
+          <th class="center">#</th>
+          <th>Tháng</th>
+          <th class="right">Tổng thu</th>
+          <th class="right">Tổng chi</th>
+          <th class="right">Chênh lệch (Tồn)</th>
+        </tr>
+      </thead>
+      <tbody>${rows || '<tr><td colspan="5" style="text-align:center;padding:16px;color:#9AA3AB">Chưa có dữ liệu</td></tr>'}</tbody>
+    </table>
+    <div class="summary-box">
+      <span>Tổng thu: <strong style="color:#2E7D50">${moneyFmt.format(totalThu)}</strong></span>
+      <span>Tổng chi: <strong style="color:#C0524B">${moneyFmt.format(totalChi)}</strong></span>
+      <span>Tồn quỹ ròng: <strong style="color:${balance >= 0 ? '#2E7D50' : '#C0524B'}">${moneyFmt.format(balance)}</strong></span>
+    </div>
+    ${sigRow()}${footer()}
+  `);
+}
+
 /* ── Main export ─────────────────────────────────────────── */
 export function printReport(type, payload) {
   let html;
@@ -251,6 +306,7 @@ export function printReport(type, payload) {
     case "inventory": html = buildInventoryHtml(payload); break;
     case "warehouse": html = buildWarehouseHtml(payload); break;
     case "debts":     html = buildDebtsHtml(payload); break;
+    case "cash-flow": html = buildCashFlowHtml(payload); break;
     default: console.warn("Unknown report type:", type); return;
   }
 
@@ -264,3 +320,4 @@ export function printReport(type, payload) {
   win.focus();
   win.onload = () => { setTimeout(() => win.print(), 500); };
 }
+

@@ -18,6 +18,8 @@ export const moduleRoutes = [
   { path: "/inventory", title: "Tồn kho", description: "Theo dõi số lượng tồn kho từng sản phẩm.", allowedRoles: warehouse },
   { path: "/stocktakes", title: "Kiểm kê kho", description: "Đối chiếu tồn kho hệ thống với thực tế.", allowedRoles: warehouse },
   { path: "/returns", title: "Trả hàng", description: "Ghi nhận và xử lý hàng trả lại từ khách.", allowedRoles: sales },
+  { path: "/cash-receipts", title: "Phiếu thu", description: "Ghi nhận thu tiền mặt theo mẫu số 01-TT.", allowedRoles: ["QuanLy", "KeToan", "NhanVienBanHang"] },
+  { path: "/cash-payments", title: "Phiếu chi", description: "Ghi nhận chi tiền mặt theo mẫu số 02-TT.", allowedRoles: accounting },
   { path: "/debts", title: "Công nợ", description: "Theo dõi và quản lý công nợ nhà cung cấp.", allowedRoles: accounting },
   { path: "/promotions", title: "Khuyến mãi", description: "Tạo và quản lý chương trình khuyến mãi.", allowedRoles: ["QuanLy", "NhanVienBanHang"] },
   { path: "/reports", title: "Báo cáo", description: "Thống kê doanh thu, nhập xuất kho và công nợ.", allowedRoles: accounting },
