@@ -15,6 +15,8 @@ import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import { Pagination } from "../../components/Pagination.jsx";
+import { EmptyState } from "../../components/EmptyState.jsx";
 
 export function PromotionsPage({ title, description }) {
   const [promotions, setPromotions] = useState([]);
@@ -86,6 +88,18 @@ export function PromotionsPage({ title, description }) {
       return true;
     });
   }, [promotions, query, statusFilter, scopeFilter]);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, statusFilter, scopeFilter]);
+
+  const pagedPromos = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return visible.slice(start, start + pageSize);
+  }, [visible, page, pageSize]);
 
   function openCreate() {
     setEditing(null);
@@ -328,133 +342,148 @@ export function PromotionsPage({ title, description }) {
       </div>
 
       {/* Promotions Cards Grid */}
-      <div className="promo-grid" style={{ marginTop: 18 }}>
-        {visible.map((promo) => {
-          const now = new Date().toISOString().slice(0, 10);
-          const isCurrent = promo.NgayBatDau <= now && promo.NgayKetThuc >= now;
-          const isUp = promo.NgayBatDau > now;
-          const statusBadge = isCurrent
-            ? { text: "Đang diễn ra", cls: "promo-badge-active" }
-            : isUp
-            ? { text: "Sắp diễn ra", cls: "promo-badge-up" }
-            : { text: "Đã kết thúc", cls: "promo-badge-exp" };
+      {visible.length === 0 ? (
+        <EmptyState
+          icon={GiftIcon}
+          title="Không tìm thấy khuyến mãi"
+          description="Không có chương trình khuyến mãi nào phù hợp với bộ lọc tìm kiếm hiện tại."
+          actionLabel="Tạo khuyến mãi mới"
+          onAction={openCreate}
+        />
+      ) : (
+        <>
+          <div className="promo-grid" style={{ marginTop: 18 }}>
+            {pagedPromos.map((promo) => {
+              const now = new Date().toISOString().slice(0, 10);
+              const isCurrent = promo.NgayBatDau <= now && promo.NgayKetThuc >= now;
+              const isUp = promo.NgayBatDau > now;
+              const statusBadge = isCurrent
+                ? { text: "Đang diễn ra", cls: "promo-badge-active" }
+                : isUp
+                ? { text: "Sắp diễn ra", cls: "promo-badge-up" }
+                : { text: "Đã kết thúc", cls: "promo-badge-exp" };
 
-          const isFixed = Boolean(promo.GiaTriGiam && Number(promo.GiaTriGiam) > 0);
-          const discountDisplay = isFixed
-            ? `${(Number(promo.GiaTriGiam) / 1000).toLocaleString("vi-VN")}K`
-            : `${promo.PhanTramGiam || 0}%`;
+              const isFixed = Boolean(promo.GiaTriGiam && Number(promo.GiaTriGiam) > 0);
+              const discountDisplay = isFixed
+                ? `${(Number(promo.GiaTriGiam) / 1000).toLocaleString("vi-VN")}K`
+                : `${promo.PhanTramGiam || 0}%`;
 
-          return (
-            <article key={promo.id} className="promo-card">
-              <div className="promo-left-stub" style={{ background: isFixed ? "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)" : undefined }}>
-                <span className="promo-discount-num">{discountDisplay}</span>
-                <span className="promo-discount-lbl">{isFixed ? "VOUCHER TIỀN" : "GIẢM GIÁ"}</span>
-              </div>
+              return (
+                <article key={promo.id} className="promo-card">
+                  <div className="promo-left-stub" style={{ background: isFixed ? "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)" : undefined }}>
+                    <span className="promo-discount-num">{discountDisplay}</span>
+                    <span className="promo-discount-lbl">{isFixed ? "VOUCHER TIỀN" : "GIẢM GIÁ"}</span>
+                  </div>
 
-              <div className="promo-main-body">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                  <div>
-                    <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
-                      <span className={`promo-status-pill ${statusBadge.cls}`}>{statusBadge.text}</span>
+                  <div className="promo-main-body">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                      <div>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                          <span className={`promo-status-pill ${statusBadge.cls}`}>{statusBadge.text}</span>
+                          <span
+                            style={{
+                              background: "#e0f2fe",
+                              color: "#0369a1",
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: "2px 7px",
+                              borderRadius: 6,
+                              letterSpacing: "0.5px",
+                            }}
+                          >
+                            MÃ: {promo.MaKM || promo.id}
+                          </span>
+                        </div>
+                        <h3 className="promo-title">{promo.TenKM}</h3>
+                      </div>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="icon-sm-btn"
+                          title="Chỉnh sửa"
+                          onClick={() => openEdit(promo)}
+                        >
+                          <PencilSquareIcon className="ic" />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-sm-btn del"
+                          title="Xóa"
+                          onClick={() => handleDelete(promo.id, promo.TenKM)}
+                        >
+                          <TrashIcon className="ic" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "6px 0" }}>
                       <span
                         style={{
-                          background: "#e0f2fe",
-                          color: "#0369a1",
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: "2px 7px",
+                          fontSize: 11.5,
+                          padding: "2px 8px",
                           borderRadius: 6,
-                          letterSpacing: "0.5px",
+                          background: promo.PhamVi === "Theo đối tượng" ? "#fef3c7" : "#f1f5f9",
+                          color: promo.PhamVi === "Theo đối tượng" ? "#92400e" : "#475569",
+                          fontWeight: 600,
                         }}
                       >
-                        MÃ: {promo.MaKM || promo.id}
+                        Phạm vi: {promo.PhamVi || "Toàn bộ"}
+                      </span>
+                      {promo.DoiTuong && promo.DoiTuong !== "Tất cả" && (
+                        <span
+                          style={{
+                            fontSize: 11.5,
+                            padding: "2px 8px",
+                            borderRadius: 6,
+                            background: "#ecfdf5",
+                            color: "#065f46",
+                            fontWeight: 600,
+                          }}
+                        >
+                          Đối tượng: {promo.DoiTuong}
+                        </span>
+                      )}
+                      {Number(promo.DiemYeuCau) > 0 && (
+                        <span
+                          style={{
+                            fontSize: 11.5,
+                            padding: "2px 8px",
+                            borderRadius: 6,
+                            background: "#ede9fe",
+                            color: "#5b21b6",
+                            fontWeight: 600,
+                          }}
+                        >
+                          Đổi: {promo.DiemYeuCau} điểm
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="promo-cond">
+                      <strong>Điều kiện:</strong> {promo.DieuKienApDung || "Áp dụng cho mọi đơn hàng"}
+                    </p>
+
+                    <div className="promo-dates">
+                      <CalendarDaysIcon width={15} height={15} style={{ flexShrink: 0 }} />
+                      <span>
+                        {promo.NgayBatDau} → {promo.NgayKetThuc}
                       </span>
                     </div>
-                    <h3 className="promo-title">{promo.TenKM}</h3>
                   </div>
-                  <div className="row-actions">
-                    <button
-                      type="button"
-                      className="icon-sm-btn"
-                      title="Chỉnh sửa"
-                      onClick={() => openEdit(promo)}
-                    >
-                      <PencilSquareIcon className="ic" />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-sm-btn del"
-                      title="Xóa"
-                      onClick={() => handleDelete(promo.id, promo.TenKM)}
-                    >
-                      <TrashIcon className="ic" />
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "6px 0" }}>
-                  <span
-                    style={{
-                      fontSize: 11.5,
-                      padding: "2px 8px",
-                      borderRadius: 6,
-                      background: promo.PhamVi === "Theo đối tượng" ? "#fef3c7" : "#f1f5f9",
-                      color: promo.PhamVi === "Theo đối tượng" ? "#92400e" : "#475569",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Phạm vi: {promo.PhamVi || "Toàn bộ"}
-                  </span>
-                  {promo.DoiTuong && promo.DoiTuong !== "Tất cả" && (
-                    <span
-                      style={{
-                        fontSize: 11.5,
-                        padding: "2px 8px",
-                        borderRadius: 6,
-                        background: "#ecfdf5",
-                        color: "#065f46",
-                        fontWeight: 600,
-                      }}
-                    >
-                      Đối tượng: {promo.DoiTuong}
-                    </span>
-                  )}
-                  {Number(promo.DiemYeuCau) > 0 && (
-                    <span
-                      style={{
-                        fontSize: 11.5,
-                        padding: "2px 8px",
-                        borderRadius: 6,
-                        background: "#ede9fe",
-                        color: "#5b21b6",
-                        fontWeight: 600,
-                      }}
-                    >
-                      Đổi: {promo.DiemYeuCau} điểm
-                    </span>
-                  )}
-                </div>
-
-                <p className="promo-cond">
-                  <strong>Điều kiện:</strong> {promo.DieuKienApDung || "Áp dụng cho mọi đơn hàng"}
-                </p>
-
-                <div className="promo-dates">
-                  <CalendarDaysIcon width={15} height={15} style={{ flexShrink: 0 }} />
-                  <span>
-                    {promo.NgayBatDau} → {promo.NgayKetThuc}
-                  </span>
-                </div>
-              </div>
-            </article>
-          );
-        })}
-        {!visible.length && (
-          <div className="cat-empty-wrap" style={{ gridColumn: "1 / -1" }}>
-            <p>Không có chương trình khuyến mãi nào phù hợp</p>
+                </article>
+              );
+            })}
           </div>
-        )}
-      </div>
+
+          <Pagination
+            currentPage={page}
+            totalItems={visible.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        </>
+      )}
 
       {/* Modal */}
       <Modal

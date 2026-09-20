@@ -19,6 +19,8 @@ import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import { Badge } from "../../components/Badge.jsx";
+import { Pagination } from "../../components/Pagination.jsx";
+import { EmptyState } from "../../components/EmptyState.jsx";
 
 const roleLabels = {
   QuanLy: "Quản lý",
@@ -308,6 +310,23 @@ export function AdminPage({ title, description, path }) {
   const filteredAccounts = accounts.filter((a) => !query || (a.username || "").toLowerCase().includes(query.toLowerCase()) || (a.fullName || "").toLowerCase().includes(query.toLowerCase()));
   const filteredRoles = roles.filter((r) => !query || (r.TenVaiTro || "").toLowerCase().includes(query.toLowerCase()) || (r.MoTa || "").toLowerCase().includes(query.toLowerCase()));
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  useEffect(() => {
+    setPage(1);
+  }, [currentTab, query]);
+
+  const pagedEmployees = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredEmployees.slice(start, start + pageSize);
+  }, [filteredEmployees, page, pageSize]);
+
+  const pagedAccounts = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredAccounts.slice(start, start + pageSize);
+  }, [filteredAccounts, page, pageSize]);
+
   return (
     <section aria-labelledby="admin-heading" className="module-specialized admin-page">
       <header className="page-header">
@@ -383,270 +402,309 @@ export function AdminPage({ title, description, path }) {
 
       {/* TAB 1: EMPLOYEES */}
       {currentTab === "employees" && (
-        <div className="table-shell" style={{ marginTop: 14 }}>
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: 50 }}>STT</th>
-                <th>Nhân viên</th>
-                <th>Mã NV</th>
-                <th>Số CCCD</th>
-                <th>Số điện thoại</th>
-                <th>Địa chỉ</th>
-                <th>Vị trí công việc</th>
-                <th style={{ width: 130, textAlign: "center" }}>Trạng thái</th>
-                <th style={{ width: 90, textAlign: "center" }}>Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEmployees.map((emp, idx) => (
-                <tr key={emp.id} className="admin-row">
-                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
-                  <td>
-                    <div className="cust-profile-cell">
-                      <div className="cust-avatar" style={{ background: "linear-gradient(135deg, #3D7068 0%, #2A4F49 100%)", color: "#fff" }}>
-                        {getInitials(emp.HoTen)}
-                      </div>
-                      <div>
-                        <strong className="cust-name">{emp.HoTen}</strong>
-                        <small className="cell-note">{emp.VaiTro || "Nhân sự"}</small>
-                      </div>
-                    </div>
-                  </td>
-                  <td><span className="prod-code-badge">{emp.MaNV || emp.id}</span></td>
-                  <td>
-                    <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 600, color: "var(--text-dark, #1e293b)" }}>
-                      {emp.CCCD || "—"}
-                    </span>
-                  </td>
-                  <td>
-                    {emp.SDT ? (
-                      <span className="cust-contact-item">
-                        <PhoneIcon className="cust-mini-ic" />
-                        <a href={`tel:${emp.SDT}`}>{emp.SDT}</a>
-                      </span>
-                    ) : (
-                      <span className="cell-note">—</span>
-                    )}
-                  </td>
-                  <td>
-                    <span style={{ fontSize: 12.5, color: "var(--text-soft)", maxWidth: 180, display: "inline-block" }}>
-                      {emp.DiaChi || "—"}
-                    </span>
-                  </td>
-                  <td><span className="admin-role-badge">{emp.VaiTro || "Nhân viên"}</span></td>
-                  <td style={{ textAlign: "center" }}>
-                    <Badge variant={emp.TrangThai === "Đang làm việc" ? "green" : "gray"}>
-                      {emp.TrangThai || "Đang làm việc"}
-                    </Badge>
-                  </td>
-                  <td style={{ textAlign: "center" }}>
-                    <div className="row-actions" style={{ justifyContent: "center" }}>
-                      <button type="button" className="icon-sm-btn" title="Chỉnh sửa" onClick={() => openEdit(emp)}>
-                        <PencilSquareIcon className="ic" />
-                      </button>
-                      <button type="button" className="icon-sm-btn del" title="Xóa" onClick={() => handleDelete(emp.id, emp.HoTen)}>
-                        <TrashIcon className="ic" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {!filteredEmployees.length && (
-                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)", padding: 32 }}>Không tìm thấy nhân viên nào</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        filteredEmployees.length === 0 ? (
+          <EmptyState
+            icon={UsersIcon}
+            title="Không tìm thấy nhân viên"
+            description="Không có nhân sự nào phù hợp với bộ lọc tìm kiếm hiện tại."
+            actionLabel="Thêm nhân viên mới"
+            onAction={openCreate}
+          />
+        ) : (
+          <>
+            <div className="table-shell" style={{ marginTop: 14 }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ width: 50 }}>STT</th>
+                    <th>Nhân viên</th>
+                    <th>Mã NV</th>
+                    <th>Số CCCD</th>
+                    <th>Số điện thoại</th>
+                    <th>Địa chỉ</th>
+                    <th>Vị trí công việc</th>
+                    <th style={{ width: 130, textAlign: "center" }}>Trạng thái</th>
+                    <th style={{ width: 90, textAlign: "center" }}>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedEmployees.map((emp, idx) => (
+                    <tr key={emp.id} className="admin-row">
+                      <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{(page - 1) * pageSize + idx + 1}</td>
+                      <td>
+                        <div className="cust-profile-cell">
+                          <div className="cust-avatar" style={{ background: "linear-gradient(135deg, #3D7068 0%, #2A4F49 100%)", color: "#fff" }}>
+                            {getInitials(emp.HoTen)}
+                          </div>
+                          <div>
+                            <strong className="cust-name">{emp.HoTen}</strong>
+                            <small className="cell-note">{emp.VaiTro || "Nhân sự"}</small>
+                          </div>
+                        </div>
+                      </td>
+                      <td><span className="prod-code-badge">{emp.MaNV || emp.id}</span></td>
+                      <td>
+                        <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 600, color: "var(--text-dark, #1e293b)" }}>
+                          {emp.CCCD || "—"}
+                        </span>
+                      </td>
+                      <td>
+                        {emp.SDT ? (
+                          <span className="cust-contact-item">
+                            <PhoneIcon className="cust-mini-ic" />
+                            <a href={`tel:${emp.SDT}`}>{emp.SDT}</a>
+                          </span>
+                        ) : (
+                          <span className="cell-note">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <span style={{ fontSize: 12.5, color: "var(--text-soft)", maxWidth: 180, display: "inline-block" }}>
+                          {emp.DiaChi || "—"}
+                        </span>
+                      </td>
+                      <td><span className="admin-role-badge">{emp.VaiTro || "Nhân viên"}</span></td>
+                      <td style={{ textAlign: "center" }}>
+                        <Badge variant={emp.TrangThai === "Đang làm việc" ? "green" : "gray"}>
+                          {emp.TrangThai || "Đang làm việc"}
+                        </Badge>
+                      </td>
+                      <td style={{ textAlign: "center" }}>
+                        <div className="row-actions" style={{ justifyContent: "center" }}>
+                          <button type="button" className="icon-sm-btn" title="Chỉnh sửa" onClick={() => openEdit(emp)}>
+                            <PencilSquareIcon className="ic" />
+                          </button>
+                          <button type="button" className="icon-sm-btn del" title="Xóa" onClick={() => handleDelete(emp.id, emp.HoTen)}>
+                            <TrashIcon className="ic" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <Pagination
+              currentPage={page}
+              totalItems={filteredEmployees.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          </>
+        )
       )}
 
       {/* TAB 2: ACCOUNTS */}
       {currentTab === "accounts" && (
-        <div className="table-shell" style={{ marginTop: 14 }}>
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: 50 }}>STT</th>
-                <th>Người dùng / Nhân sự</th>
-                <th>Mã NV</th>
-                <th>Số CCCD</th>
-                <th>Số điện thoại</th>
-                <th>Vai trò phân quyền</th>
-                <th style={{ width: 130, textAlign: "center" }}>Trạng thái</th>
-                <th style={{ width: 130, textAlign: "center" }}>Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredAccounts.map((acc, idx) => {
-                const roleName = roleLabels[acc.role] || roles.find((r) => r.MaKey === acc.role)?.TenVaiTro || acc.role;
-                const isLocked = acc.status === "Đã khóa";
-                return (
-                  <tr key={acc.id} className="admin-row">
-                    <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
-                    <td>
-                      <div className="cust-profile-cell">
-                        <div
-                          className="cust-avatar"
-                          style={{
-                            background: isLocked
-                              ? "#ef4444"
-                              : "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                            color: "#fff",
-                          }}
-                        >
-                          {getInitials(acc.fullName || acc.username)}
-                        </div>
-                        <div>
-                          <strong className="cust-name">{acc.fullName}</strong>
-                          <small className="cell-note">
-                            <span className="admin-acc-badge">@{acc.username}</span>
-                          </small>
-                        </div>
-                      </div>
-                    </td>
-                    <td><span className="prod-code-badge">{acc.MaNV || "—"}</span></td>
-                    <td>
-                      <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 600, color: "var(--text-dark, #1e293b)" }}>
-                        {acc.CCCD || "—"}
-                      </span>
-                    </td>
-                    <td>
-                      {acc.SDT ? (
-                        <span className="cust-contact-item">
-                          <PhoneIcon className="cust-mini-ic" />
-                          <a href={`tel:${acc.SDT}`}>{acc.SDT}</a>
-                        </span>
-                      ) : (
-                        <span className="cell-note">—</span>
-                      )}
-                    </td>
-                    <td>
-                      <span className="admin-role-badge" style={{ background: "var(--primary-light)", color: "var(--primary-dark)" }}>
-                        {roleName}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: "center" }}>
-                      <Badge variant={isLocked ? "red" : "green"}>
-                        {isLocked ? "Đã khóa" : "Hoạt động"}
-                      </Badge>
-                    </td>
-                    <td style={{ textAlign: "center" }}>
-                      <div className="row-actions" style={{ justifyContent: "center", gap: 6 }}>
-                        <button
-                          type="button"
-                          className={`icon-sm-btn ${isLocked ? "positive" : "del"}`}
-                          title={isLocked ? "Mở khóa tài khoản (Cho phép đăng nhập)" : "Khóa tài khoản (Chặn đăng nhập ngay)"}
-                          onClick={() => handleToggleLock(acc)}
-                        >
-                          <LockClosedIcon className="ic" />
-                        </button>
-                        <button type="button" className="icon-sm-btn" title="Chỉnh sửa thông tin" onClick={() => openEdit(acc)}>
-                          <PencilSquareIcon className="ic" />
-                        </button>
-                        <button type="button" className="icon-sm-btn del" title="Xóa tài khoản" onClick={() => handleDelete(acc.id, acc.username)}>
-                          <TrashIcon className="ic" />
-                        </button>
-                      </div>
-                    </td>
+        filteredAccounts.length === 0 ? (
+          <EmptyState
+            icon={KeyIcon}
+            title="Không tìm thấy tài khoản"
+            description="Không có tài khoản người dùng nào khớp với từ khóa tìm kiếm."
+            actionLabel="Cấp tài khoản mới"
+            onAction={openCreate}
+          />
+        ) : (
+          <>
+            <div className="table-shell" style={{ marginTop: 14 }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ width: 50 }}>STT</th>
+                    <th>Người dùng / Nhân sự</th>
+                    <th>Mã NV</th>
+                    <th>Số CCCD</th>
+                    <th>Số điện thoại</th>
+                    <th>Vai trò phân quyền</th>
+                    <th style={{ width: 130, textAlign: "center" }}>Trạng thái</th>
+                    <th style={{ width: 130, textAlign: "center" }}>Thao tác</th>
                   </tr>
-                );
-              })}
-              {!filteredAccounts.length && (
-                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--text-faint)", padding: 32 }}>Không tìm thấy người dùng nào</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {pagedAccounts.map((acc, idx) => {
+                    const roleName = roleLabels[acc.role] || roles.find((r) => r.MaKey === acc.role)?.TenVaiTro || acc.role;
+                    const isLocked = acc.status === "Đã khóa";
+                    return (
+                      <tr key={acc.id} className="admin-row">
+                        <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{(page - 1) * pageSize + idx + 1}</td>
+                        <td>
+                          <div className="cust-profile-cell">
+                            <div
+                              className="cust-avatar"
+                              style={{
+                                background: isLocked
+                                  ? "#ef4444"
+                                  : "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                                color: "#fff",
+                              }}
+                            >
+                              {getInitials(acc.fullName || acc.username)}
+                            </div>
+                            <div>
+                              <strong className="cust-name">{acc.fullName}</strong>
+                              <small className="cell-note">
+                                <span className="admin-acc-badge">@{acc.username}</span>
+                              </small>
+                            </div>
+                          </div>
+                        </td>
+                        <td><span className="prod-code-badge">{acc.MaNV || "—"}</span></td>
+                        <td>
+                          <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 600, color: "var(--text-dark, #1e293b)" }}>
+                            {acc.CCCD || "—"}
+                          </span>
+                        </td>
+                        <td>
+                          {acc.SDT ? (
+                            <span className="cust-contact-item">
+                              <PhoneIcon className="cust-mini-ic" />
+                              <a href={`tel:${acc.SDT}`}>{acc.SDT}</a>
+                            </span>
+                          ) : (
+                            <span className="cell-note">—</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="admin-role-badge" style={{ background: "var(--primary-light)", color: "var(--primary-dark)" }}>
+                            {roleName}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <Badge variant={isLocked ? "red" : "green"}>
+                            {isLocked ? "Đã khóa" : "Hoạt động"}
+                          </Badge>
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <div className="row-actions" style={{ justifyContent: "center", gap: 6 }}>
+                            <button
+                              type="button"
+                              className={`icon-sm-btn ${isLocked ? "positive" : "del"}`}
+                              title={isLocked ? "Mở khóa tài khoản (Cho phép đăng nhập)" : "Khóa tài khoản (Chặn đăng nhập ngay)"}
+                              onClick={() => handleToggleLock(acc)}
+                            >
+                              <LockClosedIcon className="ic" />
+                            </button>
+                            <button type="button" className="icon-sm-btn" title="Chỉnh sửa thông tin" onClick={() => openEdit(acc)}>
+                              <PencilSquareIcon className="ic" />
+                            </button>
+                            <button type="button" className="icon-sm-btn del" title="Xóa tài khoản" onClick={() => handleDelete(acc.id, acc.username)}>
+                              <TrashIcon className="ic" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <Pagination
+              currentPage={page}
+              totalItems={filteredAccounts.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          </>
+        )
       )}
 
       {/* TAB 3: ROLES */}
       {currentTab === "roles" && (
-        <div className="admin-roles-grid" style={{ marginTop: 18 }}>
-          {filteredRoles.map((role) => {
-            const isManager = role.MaKey === "QuanLy";
-            const isSystem = role.LaVaiTroHeThong;
-            const granted = isManager ? PERMISSION_GROUPS.reduce((s, g) => s + g.modules.length, 0) : countGranted(role.QuyenHan);
-            const totalModules = PERMISSION_GROUPS.reduce((s, g) => s + g.modules.length, 0);
-            return (
-              <article key={role.id} className="cat-card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div className="cat-card-header">
-                  <div className="cat-card-icon">{ROLE_ICON_BY_KEY[role.MaKey] || "🛡️"}</div>
-                  <div className="cat-card-info">
-                    <h3 className="cat-card-title">{role.TenVaiTro}</h3>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <span
-                        className="cat-card-badge"
-                        style={
-                          isSystem
-                            ? { background: "#ede9fe", color: "#6d28d9" }
-                            : { background: "#e0f2fe", color: "#0369a1" }
-                        }
-                      >
-                        {isSystem ? "⚙ Vai trò hệ thống" : "✎ Vai trò tùy chỉnh"}
-                      </span>
-                      <span className="cat-card-badge" style={{ background: "var(--surface-sunken, #f1f5f9)", color: "var(--text-soft)" }}>
-                        👤 {role.SoNguoiDung || 0} tài khoản
-                      </span>
-                    </div>
-                  </div>
-                  <div className="row-actions">
-                    {!isManager && (
-                      <button type="button" className="icon-sm-btn" title="Chỉnh sửa vai trò & quyền hạn" onClick={() => openEdit(role)}>
-                        <PencilSquareIcon className="ic" />
-                      </button>
-                    )}
-                    {!isSystem && (
-                      <button type="button" className="icon-sm-btn del" title="Xóa vai trò" onClick={() => handleDelete(role.id, role.TenVaiTro)}>
-                        <TrashIcon className="ic" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <p className="cat-card-desc">{role.MoTa || "Chưa có mô tả quyền hạn."}</p>
-                {isManager ? (
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 8, padding: "8px 12px" }}>
-                    👑 Toàn quyền hệ thống — mọi chức năng, mọi thao tác
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                      {PERMISSION_GROUPS.map(({ group, modules }) => {
-                        const grantedInGroup = modules.filter((m) => (role.QuyenHan?.[m.key] || []).length > 0).length;
-                        if (!grantedInGroup) return null;
-                        return (
-                          <span key={group} style={{ fontSize: 11.5, fontWeight: 600, background: "var(--surface-sunken, #f1f5f9)", color: "var(--text-soft)", padding: "3px 8px", borderRadius: 6 }}>
-                            {group}: {grantedInGroup}/{modules.length}
-                          </span>
-                        );
-                      })}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: "auto" }}>
-                      <div style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--surface-sunken, #e2e8f0)", overflow: "hidden" }}>
-                        <div
-                          style={{
-                            width: `${Math.round((countActions(role.QuyenHan) / (totalModules * 4)) * 100)}%`,
-                            height: "100%",
-                            borderRadius: 3,
-                            background: "linear-gradient(90deg, #3d7068, #10b981)",
-                            transition: "width .3s",
-                          }}
-                        />
+        filteredRoles.length === 0 ? (
+          <EmptyState
+            icon={ShieldCheckIcon}
+            title="Không tìm thấy vai trò"
+            description="Không có vai trò nào khớp với từ khóa tìm kiếm."
+            actionLabel="Thêm vai trò mới"
+            onAction={openCreate}
+          />
+        ) : (
+          <div className="admin-roles-grid" style={{ marginTop: 18 }}>
+            {filteredRoles.map((role) => {
+              const isManager = role.MaKey === "QuanLy";
+              const isSystem = role.LaVaiTroHeThong;
+              const granted = isManager ? PERMISSION_GROUPS.reduce((s, g) => s + g.modules.length, 0) : countGranted(role.QuyenHan);
+              const totalModules = PERMISSION_GROUPS.reduce((s, g) => s + g.modules.length, 0);
+              return (
+                <article key={role.id} className="cat-card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div className="cat-card-header">
+                    <div className="cat-card-icon">{ROLE_ICON_BY_KEY[role.MaKey] || "🛡️"}</div>
+                    <div className="cat-card-info">
+                      <h3 className="cat-card-title">{role.TenVaiTro}</h3>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <span
+                          className="cat-card-badge"
+                          style={
+                            isSystem
+                              ? { background: "#ede9fe", color: "#6d28d9" }
+                              : { background: "#e0f2fe", color: "#0369a1" }
+                          }
+                        >
+                          {isSystem ? "⚙ Vai trò hệ thống" : "✎ Vai trò tùy chỉnh"}
+                        </span>
+                        <span className="cat-card-badge" style={{ background: "var(--surface-sunken, #f1f5f9)", color: "var(--text-soft)" }}>
+                          👤 {role.SoNguoiDung || 0} tài khoản
+                        </span>
                       </div>
-                      <small style={{ fontSize: 11.5, color: "var(--text-soft)", fontWeight: 600, whiteSpace: "nowrap" }}>
-                        {granted}/{totalModules} chức năng
-                      </small>
                     </div>
-                  </>
-                )}
-              </article>
-            );
-          })}
-          {!filteredRoles.length && (
-            <div className="cat-empty-wrap" style={{ gridColumn: "1 / -1" }}>
-              <p>Không có vai trò nào phù hợp</p>
-            </div>
-          )}
-        </div>
+                    <div className="row-actions">
+                      {!isManager && (
+                        <button type="button" className="icon-sm-btn" title="Chỉnh sửa vai trò & quyền hạn" onClick={() => openEdit(role)}>
+                          <PencilSquareIcon className="ic" />
+                        </button>
+                      )}
+                      {!isSystem && (
+                        <button type="button" className="icon-sm-btn del" title="Xóa vai trò" onClick={() => handleDelete(role.id, role.TenVaiTro)}>
+                          <TrashIcon className="ic" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="cat-card-desc">{role.MoTa || "Chưa có mô tả quyền hạn."}</p>
+                  {isManager ? (
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 8, padding: "8px 12px" }}>
+                      👑 Toàn quyền hệ thống — mọi chức năng, mọi thao tác
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                        {PERMISSION_GROUPS.map(({ group, modules }) => {
+                          const grantedInGroup = modules.filter((m) => (role.QuyenHan?.[m.key] || []).length > 0).length;
+                          if (!grantedInGroup) return null;
+                          return (
+                            <span key={group} style={{ fontSize: 11.5, fontWeight: 600, background: "var(--surface-sunken, #f1f5f9)", color: "var(--text-soft)", padding: "3px 8px", borderRadius: 6 }}>
+                              {group}: {grantedInGroup}/{modules.length}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: "auto" }}>
+                        <div style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--surface-sunken, #e2e8f0)", overflow: "hidden" }}>
+                          <div
+                            style={{
+                              width: `${Math.round((countActions(role.QuyenHan) / (totalModules * 4)) * 100)}%`,
+                              height: "100%",
+                              borderRadius: 3,
+                              background: "linear-gradient(90deg, #3d7068, #10b981)",
+                              transition: "width .3s",
+                            }}
+                          />
+                        </div>
+                        <small style={{ fontSize: 11.5, color: "var(--text-soft)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                          {granted}/{totalModules} chức năng
+                        </small>
+                      </div>
+                    </>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )
       )}
 
       {/* Modal dynamic based on tab */}

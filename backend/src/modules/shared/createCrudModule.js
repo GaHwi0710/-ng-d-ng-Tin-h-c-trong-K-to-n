@@ -131,7 +131,30 @@ async function serializeRecord(tableName, document) {
     if (linked?.[reference.code]) record[reference.output] = linked[reference.code];
     if (linked?.[reference.name]) record[reference.nameOutput] = linked[reference.name];
   }
-  const detailProp = Array.isArray(record.details) ? "details" : Array.isArray(record.items) ? "items" : null;
+  let detailProp = Array.isArray(record.details) && record.details.length ? "details" : Array.isArray(record.items) && record.items.length ? "items" : null;
+  if (!detailProp && ["DonDatHang", "DonHang", "HoaDon", "PhieuNhap", "PhieuXuat"].includes(tableName)) {
+    const detailMap = {
+      DonDatHang: { col: "CT_DonDatHang", fk: "MaDDH" },
+      DonHang: { col: "CT_DonHang", fk: "MaDH" },
+      HoaDon: { col: "CT_HoaDon", fk: "MaHD" },
+      PhieuNhap: { col: "CT_PhieuNhap", fk: "MaPN" },
+      PhieuXuat: { col: "CT_PhieuXuat", fk: "MaPX" },
+    };
+    const def = detailMap[tableName];
+    if (def) {
+      const objId = record._id || (ObjectId.isValid(record.id) ? new ObjectId(record.id) : null);
+      const queries = [];
+      if (objId) queries.push({ [def.fk]: objId });
+      if (record.id) queries.push({ [def.fk]: record.id });
+      if (record[def.fk]) queries.push({ [def.fk]: record[def.fk] });
+      const ctDocs = queries.length ? await getDatabase().collection(def.col).find({ $or: queries }).toArray() : [];
+      if (ctDocs.length) {
+        const propName = tableName === "DonDatHang" ? "items" : "details";
+        record[propName] = ctDocs;
+        detailProp = propName;
+      }
+    }
+  }
   if (detailProp) {
     record[detailProp] = await Promise.all(record[detailProp].map(async (line) => {
       const rawId = line.productId || line.MaSP || line.id;

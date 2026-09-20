@@ -15,6 +15,8 @@ import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import { Badge } from "../../components/Badge.jsx";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import { Pagination } from "../../components/Pagination.jsx";
+import { EmptyState } from "../../components/EmptyState.jsx";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -89,6 +91,18 @@ export function DebtsPage({ title, description }) {
       );
     });
   }, [debts, activeTab, query, suppliers, customers]);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, query]);
+
+  const pagedDebts = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return visible.slice(start, start + pageSize);
+  }, [visible, page, pageSize]);
 
   function openCreate() {
     setFormData({
@@ -275,7 +289,7 @@ export function DebtsPage({ title, description }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((d, idx) => {
+            {pagedDebts.map((d, idx) => {
               const total = Number(d.SoTien) || 0;
               const paid = Number(d.SoTienDaTra) || 0;
               const rem = Number(d.SoTienConLai ?? (total - paid));
@@ -289,7 +303,7 @@ export function DebtsPage({ title, description }) {
 
               return (
                 <tr key={d.id} className="debt-row">
-                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
+                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{(page - 1) * pageSize + idx + 1}</td>
                   <td><span className="prod-code-badge">{d.MaCN || d.id}</span></td>
                   <td>
                     <div>
@@ -354,14 +368,30 @@ export function DebtsPage({ title, description }) {
               </tr>
             ) : !visible.length ? (
               <tr>
-                <td colSpan={10} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
-                  Không có khoản công nợ nào trong danh mục này
+                <td colSpan={10} style={{ padding: 0 }}>
+                  <EmptyState
+                    icon={CreditCardIcon}
+                    title="Không có khoản công nợ nào"
+                    description={`Chưa có công nợ ${activeTab === "suppliers" ? "nhà cung cấp" : "khách hàng"} phù hợp với tìm kiếm.`}
+                    actionText="Ghi nhận công nợ mới"
+                    onAction={openCreate}
+                  />
                 </td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </div>
+
+      {visible.length > 0 && (
+        <Pagination
+          currentPage={page}
+          totalItems={visible.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+      )}
 
       {/* Modal Add Debt */}
       <Modal

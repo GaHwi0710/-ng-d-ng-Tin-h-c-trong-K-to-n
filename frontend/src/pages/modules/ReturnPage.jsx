@@ -10,6 +10,8 @@ import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import { ProductImage } from "../../components/ProductImage.jsx";
 import { StatusBadge } from "../../components/Badge.jsx";
+import { Pagination } from "../../components/Pagination.jsx";
+import { EmptyState } from "../../components/EmptyState.jsx";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -122,6 +124,18 @@ export function ReturnPage({ title }) {
       return true;
     });
   }, [returns, query, filterCustomer, fromDate, toDate]);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, filterCustomer, fromDate, toDate]);
+
+  const pagedReturns = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return visibleReturns.slice(start, start + pageSize);
+  }, [visibleReturns, page, pageSize]);
 
   function resetForm() {
     setOrderId("");
@@ -280,7 +294,7 @@ export function ReturnPage({ title }) {
             </tr>
           </thead>
           <tbody>
-            {visibleReturns.map((r, idx) => {
+            {pagedReturns.map((r, idx) => {
               const custName =
                 r.MaKHCode ||
                 customers.find((c) => String(c.id) === String(r.MaKH))?.HoTen ||
@@ -304,7 +318,7 @@ export function ReturnPage({ title }) {
 
               return (
                 <tr key={r.id}>
-                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
+                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{(page - 1) * pageSize + idx + 1}</td>
                   <td>
                     <span className="prod-code-badge">{r.MaPTH || r.id}</span>
                   </td>
@@ -352,14 +366,30 @@ export function ReturnPage({ title }) {
             })}
             {!visibleReturns.length && (
               <tr>
-                <td colSpan={9} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
-                  Chưa có phiếu trả hàng nào phù hợp
+                <td colSpan={9} style={{ padding: 0 }}>
+                  <EmptyState
+                    icon={CubeIcon}
+                    title="Chưa có phiếu trả hàng"
+                    description="Không tìm thấy phiếu trả hàng nào phù hợp với bộ lọc."
+                    actionText="Tạo phiếu trả hàng"
+                    onAction={() => { resetForm(); setModalOpen(true); }}
+                  />
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {visibleReturns.length > 0 && (
+        <Pagination
+          currentPage={page}
+          totalItems={visibleReturns.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+      )}
 
       <Modal
         open={modalOpen}

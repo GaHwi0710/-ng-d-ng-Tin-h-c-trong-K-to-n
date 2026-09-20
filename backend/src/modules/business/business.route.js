@@ -58,13 +58,29 @@ async function adjustStock(lines, direction, allowShortage = false, session) {
 router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async (req, res, next) => {
   try {
     const lines = await productsByLines(req.body.details || req.body.items);
-    const supplier = await getDatabase().collection("NhaCungCap").findOne({ _id: id(req.body.supplierId || req.body.MaNCC) });
+    const supplier = await getDatabase().collection("NhaCungCap").findOne({
+      $or: [
+        { _id: id(req.body.supplierId || req.body.MaNCC) },
+        { MaNCC: String(req.body.supplierId || req.body.MaNCC) }
+      ]
+    });
     if (!supplier) throw fail("Nhà cung cấp không hợp lệ", 404);
-    const purchaseOrderId = id(req.body.purchaseOrderId || req.body.MaDDH);
+    const rawPO = req.body.purchaseOrderId || req.body.MaDDH;
     let purchaseOrder = null;
-    if (purchaseOrderId) {
-      purchaseOrder = await getDatabase().collection("DonDatHang").findOne({ _id: purchaseOrderId });
-      if (!purchaseOrder || String(purchaseOrder.MaNCC) !== String(supplier._id)) throw fail("Đơn đặt hàng NCC không hợp lệ", 404);
+    let purchaseOrderId = null;
+    if (rawPO) {
+      const pId = id(rawPO);
+      purchaseOrder = await getDatabase().collection("DonDatHang").findOne(
+        pId ? { _id: pId } : { MaDDH: String(rawPO) }
+      );
+      if (purchaseOrder) {
+        purchaseOrderId = purchaseOrder._id;
+        const matchesSupplier =
+          String(purchaseOrder.MaNCC) === String(supplier._id) ||
+          String(purchaseOrder.MaNCC) === String(supplier.MaNCC) ||
+          String(purchaseOrder.MaNCCCode) === String(supplier.MaNCC);
+        if (!matchesSupplier) throw fail("Đơn đặt hàng không khớp với nhà cung cấp đã chọn", 400);
+      }
     }
     if (req.body.NgayNhap && !/^\d{4}-\d{2}-\d{2}$/.test(req.body.NgayNhap)) throw fail("Ngày nhập không hợp lệ");
     const total = lines.reduce((sum, line) => sum + line.quantity * line.price, 0);
@@ -339,12 +355,17 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
 
 router.post("/payments", requirePermission("payments", "tao"), async (req, res, next) => {
   try {
-    const invoiceId = id(req.body.invoiceId || req.body.MaHD);
+    const rawInv = req.body.invoiceId || req.body.MaHD;
+    const invId = id(rawInv);
     const amount = Number(req.body.amount || req.body.SoTien);
     if (!Number.isFinite(amount) || amount <= 0) throw fail("Số tiền thanh toán không hợp lệ");
     const payment = await withTransaction(async (session) => {
-      const invoice = await getDatabase().collection("HoaDon").findOne({ _id: invoiceId }, { session });
+      const invoice = await getDatabase().collection("HoaDon").findOne(
+        invId ? { _id: invId } : { MaHD: String(rawInv) },
+        { session }
+      );
       if (!invoice) throw fail("Không tìm thấy hóa đơn", 404);
+      const invoiceId = invoice._id;
       const currentPaid = Number(invoice.SoTienDaTra || 0);
       const remaining = Math.max(0, Number(invoice.TongTien || 0) - currentPaid);
       if (amount > remaining) throw fail(`Số tiền thanh toán vượt số còn nợ (${remaining})`, 409);

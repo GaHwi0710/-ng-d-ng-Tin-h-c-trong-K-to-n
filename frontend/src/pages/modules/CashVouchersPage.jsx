@@ -14,6 +14,8 @@ import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import { Pagination } from "../../components/Pagination.jsx";
+import { EmptyState } from "../../components/EmptyState.jsx";
 import { amountToWords } from "../../lib/amountToWords.js";
 import { buildCashVoucherModel, printCashVoucher } from "../../lib/cashVoucher.js";
 
@@ -107,6 +109,18 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
       })
       .sort((a, b) => String(b.NgayLap || "").localeCompare(String(a.NgayLap || "")) || String(b.id).localeCompare(String(a.id)));
   }, [records, query, monthFilter]);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, monthFilter]);
+
+  const pagedRecords = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return visible.slice(start, start + pageSize);
+  }, [visible, page, pageSize]);
 
   function openCreate() {
     setEditing(null);
@@ -274,9 +288,9 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((record, idx) => (
+            {pagedRecords.map((record, idx) => (
               <tr key={record.id}>
-                <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
+                <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{(page - 1) * pageSize + idx + 1}</td>
                 <td><span className="po-product-code" style={{ color: "var(--primary)" }}>{codeOf(record)}</span></td>
                 <td>{String(record.NgayLap || "").slice(0, 10)}</td>
                 <td>
@@ -323,14 +337,30 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
             ))}
             {!visible.length && (
               <tr>
-                <td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
-                  {records.length ? "Không có phiếu phù hợp với tìm kiếm" : `Chưa có ${isThu ? "phiếu thu" : "phiếu chi"} nào — bấm "Lập ${isThu ? "phiếu thu" : "phiếu chi"}" để tạo.`}
+                <td colSpan={7} style={{ padding: 0 }}>
+                  <EmptyState
+                    icon={isThu ? WalletIcon : DocumentCurrencyDollarIcon}
+                    title={isThu ? "Chưa có phiếu thu phù hợp" : "Chưa có phiếu chi phù hợp"}
+                    description={records.length ? "Không tìm thấy phiếu nào khớp với điều kiện lọc." : `Bấm "Lập ${isThu ? "phiếu thu" : "phiếu chi"}" để bắt đầu ghi nhận giao dịch.`}
+                    actionText={`Lập ${isThu ? "phiếu thu" : "phiếu chi"} (0${isThu ? "1" : "2"}-TT)`}
+                    onAction={openCreate}
+                  />
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {visible.length > 0 && (
+        <Pagination
+          currentPage={page}
+          totalItems={visible.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+      )}
 
       <Modal
         open={modalOpen}

@@ -14,6 +14,7 @@ import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import { EmptyState } from "../../components/EmptyState.jsx";
 
 const AVAILABLE_ICONS = ["🍼", "👶", "👕", "🥣", "🧸", "🧴", "🚲", "🚼", "🛴", "🍎", "👟", "🛏️", "📚", "🏷️"];
 
@@ -268,8 +269,14 @@ export function CategoriesPage({ title, description }) {
           );
         })}
         {!visible.length && (
-          <div className="cat-empty-wrap" style={{ gridColumn: "1 / -1" }}>
-            <p>Không tìm thấy loại hàng nào</p>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <EmptyState
+              icon={TagIcon}
+              title="Không tìm thấy loại hàng"
+              description={`Không có loại hàng nào khớp với từ khóa "${query}".`}
+              actionText="Thêm loại hàng mới"
+              onAction={openCreate}
+            />
           </div>
         )}
       </div>

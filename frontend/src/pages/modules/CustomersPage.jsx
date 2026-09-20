@@ -16,6 +16,8 @@ import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import { Pagination } from "../../components/Pagination.jsx";
+import { EmptyState } from "../../components/EmptyState.jsx";
 
 export function getMemberTier(points = 0) {
   const pts = Number(points) || 0;
@@ -86,6 +88,18 @@ export function CustomersPage({ title, description }) {
       return tier.name.toLowerCase().includes(tierFilter.toLowerCase());
     });
   }, [customers, query, tierFilter, statusFilter]);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, tierFilter, statusFilter]);
+
+  const pagedCustomers = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return visible.slice(start, start + pageSize);
+  }, [visible, page, pageSize]);
 
   function openCreate() {
     setEditing(null);
@@ -307,12 +321,12 @@ export function CustomersPage({ title, description }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((cust, idx) => {
+            {pagedCustomers.map((cust, idx) => {
               const tier = getMemberTier(cust.DiemTichLuy);
               const isInactive = cust.TrangThai === "Ngưng hoạt động";
               return (
                 <tr key={cust.id} className="cust-row" style={{ opacity: isInactive ? 0.65 : 1 }}>
-                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
+                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{(page - 1) * pageSize + idx + 1}</td>
                   <td>
                     <div className="cust-profile-cell">
                       <div className="cust-avatar" style={{ filter: isInactive ? "grayscale(100%)" : "none" }}>{getInitials(cust.HoTen)}</div>
@@ -430,14 +444,30 @@ export function CustomersPage({ title, description }) {
             })}
             {!visible.length && (
               <tr>
-                <td colSpan={8} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
-                  Không tìm thấy khách hàng nào phù hợp
+                <td colSpan={8} style={{ padding: 0 }}>
+                  <EmptyState
+                    icon={UserGroupIcon}
+                    title="Không tìm thấy khách hàng"
+                    description={`Không có khách hàng nào khớp với tìm kiếm "${query}".`}
+                    actionText="Thêm khách hàng mới"
+                    onAction={openCreate}
+                  />
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {visible.length > 0 && (
+        <Pagination
+          currentPage={page}
+          totalItems={visible.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+      )}
 
       <Modal
         open={modalOpen}

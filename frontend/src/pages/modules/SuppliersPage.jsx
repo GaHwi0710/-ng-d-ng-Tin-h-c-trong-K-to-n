@@ -16,6 +16,8 @@ import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import { Pagination } from "../../components/Pagination.jsx";
+import { EmptyState } from "../../components/EmptyState.jsx";
 
 export function SuppliersPage({ title, description }) {
   const navigate = useNavigate();
@@ -73,6 +75,18 @@ export function SuppliersPage({ title, description }) {
       );
     });
   }, [suppliers, query, statusFilter]);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, statusFilter]);
+
+  const pagedSuppliers = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return visible.slice(start, start + pageSize);
+  }, [visible, page, pageSize]);
 
   function openCreate() {
     setEditing(null);
@@ -216,11 +230,11 @@ export function SuppliersPage({ title, description }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((supp, idx) => {
+            {pagedSuppliers.map((supp, idx) => {
               const isInactive = supp.TrangThai === "Ngưng hoạt động";
               return (
                 <tr key={supp.id} className="supp-row" style={{ opacity: isInactive ? 0.65 : 1 }}>
-                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
+                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{(page - 1) * pageSize + idx + 1}</td>
                   <td>
                     <span className="po-product-code" style={{ color: "var(--primary)" }}>
                       {supp.MaNCC || supp.id}
@@ -302,14 +316,30 @@ export function SuppliersPage({ title, description }) {
             })}
             {!visible.length && (
               <tr>
-                <td colSpan={8} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
-                  Không tìm thấy nhà cung cấp nào phù hợp
+                <td colSpan={8} style={{ padding: 0 }}>
+                  <EmptyState
+                    icon={BuildingStorefrontIcon}
+                    title="Không tìm thấy nhà cung cấp"
+                    description={`Không có nhà cung cấp nào khớp với tìm kiếm "${query}".`}
+                    actionText="Thêm nhà cung cấp mới"
+                    onAction={openCreate}
+                  />
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {visible.length > 0 && (
+        <Pagination
+          currentPage={page}
+          totalItems={visible.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+      )}
 
       {/* Modal */}
       <Modal

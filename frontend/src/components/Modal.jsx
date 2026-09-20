@@ -1,7 +1,21 @@
 import { useEffect, useRef } from "react";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 
-export function Modal({ open, title, onClose, onSubmit, submitLabel = "Lưu", wide = false, children }) {
+export function Modal({
+  open,
+  title,
+  subtitle,
+  onClose,
+  onSubmit,
+  submitLabel = "Lưu",
+  cancelLabel = "Hủy",
+  wide = false,
+  extraWide = false,
+  loading = false,
+  submitDisabled = false,
+  submitVariant = "primary",
+  children,
+}) {
   const overlayRef = useRef(null);
 
   useEffect(() => {
@@ -12,7 +26,20 @@ export function Modal({ open, title, onClose, onSubmit, submitLabel = "Lưu", wi
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
+  // Khóa cuộn trang nền khi mở modal
+  useEffect(() => {
+    if (open) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [open]);
+
   if (!open) return null;
+
+  const widthClass = extraWide ? " modal-extrawide" : wide ? " modal-wide" : "";
 
   return (
     <div
@@ -21,20 +48,41 @@ export function Modal({ open, title, onClose, onSubmit, submitLabel = "Lưu", wi
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
-      onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
+      onClick={(e) => {
+        if (e.target === overlayRef.current) onClose();
+      }}
     >
-      <article className={`modal${wide ? " modal-wide" : ""}`}>
+      <article className={`modal${widthClass} erp-modal`}>
         <header className="modal-head">
-          <h3 id="modal-title">{title}</h3>
-          <button className="close-x" type="button" onClick={onClose} aria-label="Đóng">
+          <div>
+            <h3 id="modal-title" className="modal-title">{title}</h3>
+            {subtitle && <p className="modal-subtitle">{subtitle}</p>}
+          </div>
+          <button
+            className="close-x"
+            type="button"
+            onClick={onClose}
+            aria-label="Đóng cửa sổ"
+          >
             <XMarkIcon className="ic" aria-hidden="true" />
           </button>
         </header>
+
         <section className="modal-body">{children}</section>
+
         <footer className="modal-foot">
-          <button className="btn btn-outline" type="button" onClick={onClose}>Hủy</button>
+          <button className="btn btn-outline" type="button" onClick={onClose}>
+            {cancelLabel}
+          </button>
           {onSubmit && (
-            <button className="btn btn-primary" type="button" onClick={onSubmit}>{submitLabel}</button>
+            <button
+              className={`btn btn-${submitVariant}`}
+              type="button"
+              onClick={onSubmit}
+              disabled={loading || submitDisabled}
+            >
+              {loading ? "Đang xử lý..." : submitLabel}
+            </button>
           )}
         </footer>
       </article>

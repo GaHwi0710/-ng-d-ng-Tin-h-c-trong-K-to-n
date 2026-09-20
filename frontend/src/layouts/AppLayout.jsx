@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowRightStartOnRectangleIcon,
   BellIcon,
@@ -25,6 +25,9 @@ import {
   KeyIcon,
   WalletIcon,
   DocumentCurrencyDollarIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronDownIcon,
 } from "@heroicons/react/24/outline";
 import { moduleRoutes } from "../routes/moduleRoutes.js";
 import { getUserPermissions, userCanAccessPath } from "../lib/permissions.js";
@@ -86,6 +89,7 @@ function getPageTitle(pathname) {
 }
 
 export function AppLayout() {
+  const navigate = useNavigate();
   const storedUser = JSON.parse(localStorage.getItem("baby-shop-user") || "{}");
   const user = {
     ...storedUser,
@@ -99,6 +103,40 @@ export function AppLayout() {
   };
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("erp_sidebar_collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef(null);
+
+  // Close user dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setUserMenuOpen(false);
+      }
+    }
+    if (userMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [userMenuOpen]);
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("erp_sidebar_collapsed", String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   const visiblePaths = new Set([
     "/dashboard",
@@ -119,6 +157,7 @@ export function AppLayout() {
   }
 
   const pageTitle = getPageTitle(location.pathname);
+  const currentGroup = navGroups.find(([_, paths]) => paths.includes(location.pathname))?.[0];
 
   const sidebarContent = (
     <>
@@ -126,9 +165,25 @@ export function AppLayout() {
         <span className="brand-mark" aria-hidden="true">MB</span>
         <hgroup>
           <strong>Mẹ &amp; Bé</strong>
-          <small>Hệ thống quản lý</small>
+          <small>Hệ thống ERP</small>
         </hgroup>
       </header>
+
+      <button
+        type="button"
+        className="sidebar-collapse-btn"
+        onClick={toggleCollapsed}
+        title={collapsed ? "Mở rộng thanh điều hướng" : "Thu gọn thanh điều hướng"}
+      >
+        {collapsed ? (
+          <ChevronRightIcon style={{ width: 16, height: 16 }} aria-hidden="true" />
+        ) : (
+          <>
+            <ChevronLeftIcon style={{ width: 16, height: 16 }} aria-hidden="true" />
+            <span>Thu gọn menu</span>
+          </>
+        )}
+      </button>
 
       <nav className="main-nav" aria-label="Điều hướng chính">
         {navGroups.map(([group, paths]) => {
@@ -149,6 +204,7 @@ export function AppLayout() {
                   to={path}
                   end
                   className="nav-item"
+                  title={collapsed ? title : undefined}
                   onClick={() => setMobileOpen(false)}
                 >
                   <Icon className="nav-icon" aria-hidden="true" />
@@ -170,16 +226,21 @@ export function AppLayout() {
             <small>{user.roleName || ROLE_LABELS[user.role] || user.role || "Thành viên"}</small>
           </hgroup>
         </div>
-        <button className="logout-button" type="button" onClick={logout}>
+        <button
+          className="logout-button"
+          type="button"
+          onClick={logout}
+          title={collapsed ? "Đăng xuất" : undefined}
+        >
           <ArrowRightStartOnRectangleIcon className="nav-icon" aria-hidden="true" />
-          Đăng xuất
+          <span>Đăng xuất</span>
         </button>
       </footer>
     </>
   );
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${collapsed ? "sidebar-collapsed" : ""}`}>
       {/* Desktop sidebar */}
       <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} aria-label="Thanh điều hướng">
         {mobileOpen && (
@@ -224,16 +285,77 @@ export function AppLayout() {
                     <span>Trang chủ</span>
                   </NavLink>
                 </li>
+                {currentGroup && currentGroup !== "Tổng quan" && (
+                  <li style={{ color: "var(--text-faint)" }}>{currentGroup}</li>
+                )}
                 {location.pathname !== "/dashboard" && (
                   <li className="breadcrumb-current">{pageTitle}</li>
                 )}
               </ol>
             </nav>
           </div>
-          <div className="topbar-right">
+
+          <div className="topbar-right" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span className="system-status-pill" title="Hệ thống cơ sở dữ liệu và API hoạt động bình thường">
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
+              Sẵn sàng
+            </span>
+
             <NotificationPopover />
+
+            {/* User Profile Popover */}
+            <div style={{ position: "relative" }} ref={userMenuRef}>
+              <div
+                className="topbar-user-badge"
+                onClick={() => setUserMenuOpen((prev) => !prev)}
+                role="button"
+                tabIndex={0}
+                aria-expanded={userMenuOpen}
+              >
+                <div className="topbar-user-avatar">
+                  {(user.fullName || user.username || "A").slice(0, 1).toUpperCase()}
+                </div>
+                <span className="topbar-user-name">{user.fullName || user.username || "Admin"}</span>
+                <span className="topbar-user-role-badge">
+                  {ROLE_LABELS[user.role] || user.role || "Nhân viên"}
+                </span>
+                <ChevronDownIcon style={{ width: 13, height: 13, color: "var(--text-faint)" }} />
+              </div>
+
+              {userMenuOpen && (
+                <div className="topbar-user-dropdown" role="menu">
+                  <div className="topbar-user-dropdown-header">
+                    <strong>{user.fullName || user.username || "Quản trị viên"}</strong>
+                    <small>@{user.username} · {ROLE_LABELS[user.role] || user.role || "Nhân viên"}</small>
+                  </div>
+                  <button
+                    type="button"
+                    className="topbar-dropdown-item"
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      navigate("/admin/accounts");
+                    }}
+                  >
+                    <KeyIcon style={{ width: 16, height: 16 }} />
+                    Quản lý tài khoản
+                  </button>
+                  <button
+                    type="button"
+                    className="topbar-dropdown-item danger"
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      logout();
+                    }}
+                  >
+                    <ArrowRightStartOnRectangleIcon style={{ width: 16, height: 16 }} />
+                    Đăng xuất
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
+
         <div className="content">
           <Outlet />
         </div>

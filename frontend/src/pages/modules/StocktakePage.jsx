@@ -11,6 +11,8 @@ import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import { ProductImage } from "../../components/ProductImage.jsx";
 import { LOW_STOCK_THRESHOLD } from "../../lib/constants.js";
+import { Pagination } from "../../components/Pagination.jsx";
+import { EmptyState } from "../../components/EmptyState.jsx";
 
 function currentUserInfo() {
   try {
@@ -70,6 +72,18 @@ export function StocktakePage({ title }) {
     const q = query.toLowerCase();
     return products.filter((p) => !q || p.TenSP.toLowerCase().includes(q) || (p.MaSP || "").toLowerCase().includes(q));
   }, [products, query]);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
+
+  const pagedProducts = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, page, pageSize]);
 
   async function submit() {
     try {
@@ -180,13 +194,13 @@ export function StocktakePage({ title }) {
             </tr>
           </thead>
           <tbody>
-            {filteredProducts.map((product, idx) => {
+            {pagedProducts.map((product, idx) => {
               const sys = Number(product.stock || 0);
               const real = Number(actual[product.id] ?? sys);
               const diff = real - sys;
               return (
                 <tr key={product.id} className="stocktake-row">
-                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
+                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{(page - 1) * pageSize + idx + 1}</td>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <ProductImage src={product.HinhAnh} alt={product.TenSP} category={product.LoaiHang} size={36} />
@@ -262,14 +276,28 @@ export function StocktakePage({ title }) {
               </tr>
             ) : !filteredProducts.length ? (
               <tr>
-                <td colSpan={6} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
-                  Không tìm thấy sản phẩm phù hợp
+                <td colSpan={6} style={{ padding: 0 }}>
+                  <EmptyState
+                    icon={CubeIcon}
+                    title="Không tìm thấy sản phẩm"
+                    description={`Không có mặt hàng nào khớp với tìm kiếm "${query}".`}
+                  />
                 </td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </div>
+
+      {filteredProducts.length > 0 && (
+        <Pagination
+          currentPage={page}
+          totalItems={filteredProducts.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+      )}
 
       <section className="panel" style={{ marginTop: 24 }}>
         <h2 style={{ fontSize: 13, textTransform: "uppercase", color: "var(--text-soft)", margin: "0 0 14px" }}>

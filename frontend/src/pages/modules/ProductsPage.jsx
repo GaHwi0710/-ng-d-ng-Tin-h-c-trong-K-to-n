@@ -20,6 +20,8 @@ import { StatCard } from "../../components/StatCard.jsx";
 import { StatusBadge } from "../../components/Badge.jsx";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { LOW_STOCK_THRESHOLD } from "../../lib/constants.js";
+import { Pagination } from "../../components/Pagination.jsx";
+import { EmptyState } from "../../components/EmptyState.jsx";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -194,6 +196,18 @@ export function ProductsPage({ title, description }) {
       return true;
     });
   }, [products, query, selectedCat, stockStatus, prodStatus, categories]);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, selectedCat, stockStatus, prodStatus]);
+
+  const pagedProducts = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return visible.slice(start, start + pageSize);
+  }, [visible, page, pageSize]);
 
   function handleSelectCat(cat) {
     setSelectedCat(cat);
@@ -460,7 +474,7 @@ export function ProductsPage({ title, description }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((p, idx) => {
+            {pagedProducts.map((p, idx) => {
               const st = Number(p.stock || 0);
               const margin =
                 p.GiaBan > 0
@@ -469,7 +483,7 @@ export function ProductsPage({ title, description }) {
 
               return (
                 <tr key={p.id} className="prod-row">
-                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{idx + 1}</td>
+                  <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{(page - 1) * pageSize + idx + 1}</td>
                   <td>
                     <span className="prod-code-badge">{p.MaSP || p.id}</span>
                   </td>
@@ -603,14 +617,30 @@ export function ProductsPage({ title, description }) {
             })}
             {!visible.length && (
               <tr>
-                <td colSpan={10} style={{ textAlign: "center", color: "var(--text-faint)", padding: 36 }}>
-                  Không tìm thấy sản phẩm nào thuộc phân loại "{selectedCat === "all" ? "Tất cả" : selectedCat}"
+                <td colSpan={10} style={{ padding: 0 }}>
+                  <EmptyState
+                    icon={CubeIcon}
+                    title="Không tìm thấy sản phẩm phù hợp"
+                    description={`Không có mặt hàng nào khớp với tìm kiếm "${query || selectedCat}".`}
+                    actionText="Thêm sản phẩm mới"
+                    onAction={openCreate}
+                  />
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {visible.length > 0 && (
+        <Pagination
+          currentPage={page}
+          totalItems={visible.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+      )}
 
       {/* Modal */}
       <Modal

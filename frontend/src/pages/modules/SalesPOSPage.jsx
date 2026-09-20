@@ -1,0 +1,1125 @@
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  MagnifyingGlassIcon,
+  TrashIcon,
+  PlusIcon,
+  MinusIcon,
+  TicketIcon,
+  CheckCircleIcon,
+  XMarkIcon,
+  ShoppingBagIcon,
+  UserPlusIcon,
+  PrinterIcon,
+} from "@heroicons/react/24/outline";
+import { listRecords, saveRecord } from "../../lib/api.js";
+import { ProductImage } from "../../components/ProductImage.jsx";
+import { Badge, StatusBadge } from "../../components/Badge.jsx";
+import { FilterChips } from "../../components/FilterChips.jsx";
+import ConfirmDialog from "../../components/ConfirmDialog.jsx";
+import { Modal } from "../../components/Modal.jsx";
+import { toast } from "../../components/Toast.jsx";
+import { getMemberTier } from "./CustomersPage.jsx";
+import { getCategoryIcon } from "./ProductsPage.jsx";
+import { LOW_STOCK_THRESHOLD } from "../../lib/constants.js";
+import { currentUserInfo } from "../../lib/permissions.js";
+
+const money = new Intl.NumberFormat("vi-VN", {
+  style: "currency",
+  currency: "VND",
+  maximumFractionDigits: 0,
+});
+
+export function SalesPOSPage({ title }) {
+  const navigate = useNavigate();
+  const [products, setProducts] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [promotions, setPromotions] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [customerId, setCustomerId] = useState("");
+  const [customerError, setCustomerError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCat, setSelectedCat] = useState("all");
+  const [createdInvoice, setCreatedInvoice] = useState(null);
+
+  // Voucher / Promotion state
+  const [promoInput, setPromoInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState(null);
+  const [discountAmount, setDiscountAmount] = useState(0);
+
+  const [showClearCartConfirm, setShowClearCartConfirm] = useState(false);
+  const [custSearchQuery, setCustSearchQuery] = useState("");
+  const [custDropdownOpen, setCustDropdownOpen] = useState(false);
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
+  const [newCustForm, setNewCustForm] = useState({ HoTen: "", SDT: "", Email: "", DiaChi: "" });
+  const [appliedRedeemedVoucher, setAppliedRedeemedVoucher] = useState(null);
+  const [showRedeemModalSales, setShowRedeemModalSales] = useState(false);
+  const [salesRedeemCode, setSalesRedeemCode] = useState("BAC50K");
+
+  useEffect(() => {
+    const loadCustomers = () => {
+      listRecords("customers")
+        .then(setCustomers)
+        .catch((error) => setCustomerError(error.message || "Không tải được danh sách khách hàng"));
+    };
+
+    listRecords("products").then(setProducts);
+    listRecords("promotions").then(setPromotions).catch(() => []);
+    loadCustomers();
+    window.addEventListener("focus", loadCustomers);
+    document.addEventListener("visibilitychange", loadCustomers);
+
+    return () => {
+      window.removeEventListener("focus", loadCustomers);
+      document.removeEventListener("visibilitychange", loadCustomers);
+    };
+  }, []);
+
+  const selectedCustomer = useMemo(() => {
+    return customers.find((c) => c.id === customerId);
+  }, [customers, customerId]);
+
+  const activeCustomers = useMemo(
+    () => customers.filter((customer) => customer.TrangThai !== "Ngưng hoạt động" && customer.status !== "inactive"),
+    [customers]
+  );
+
+  const filteredCustSearch = useMemo(() => {
+    if (!custSearchQuery) return activeCustomers;
+    const q = custSearchQuery.toLowerCase();
+    return activeCustomers.filter(c =>
+      (c.HoTen || "").toLowerCase().includes(q) ||
+      (c.SDT || "").includes(q) ||
+      (c.MaKH || c.id || "").toLowerCase().includes(q)
+    );
+  }, [activeCustomers, custSearchQuery]);
+
+  const customerRedeemedVouchers = useMemo(() => {
+    if (!selectedCustomer || !Array.isArray(selectedCustomer.VouchersDaDoi)) return [];
+    return selectedCustomer.VouchersDaDoi.filter((v) => v.status === "Chưa sử dụng" || !v.status);
+  }, [selectedCustomer]);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (!e.target.closest(".sales-cust-search")) setCustDropdownOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const customerPts = Number(selectedCustomer?.DiemTichLuy || 0);
+  const customerTier = !selectedCustomer
+    ? null
+    : customerPts >= 1000
+    ? "Kim Cương"
+    : customerPts >= 500
+    ? "Vàng"
+    : customerPts >= 100
+    ? "Bạc"
+    : "Đồng";
+
+  const subtotal = cart.reduce(
+    (sum, item) => sum + item.quantity * item.GiaBan,
+    0
+  );
+  const totalItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Auto recalculate discount when cart or applied promo changes
+  useEffect(() => {
+    if (appliedPromo) {
+      let disc = 0;
+      if (appliedPromo.GiaTriGiam && Number(appliedPromo.GiaTriGiam) > 0) {
+        disc = Math.min(subtotal, Number(appliedPromo.GiaTriGiam));
+      } else if (appliedPromo.PhanTramGiam && Number(appliedPromo.PhanTramGiam) > 0) {
+        disc = Math.min(subtotal, Math.round((subtotal * Number(appliedPromo.PhanTramGiam)) / 100));
+      }
+      setDiscountAmount(disc);
+    } else {
+      setDiscountAmount(0);
+    }
+  }, [subtotal, appliedPromo]);
+
+  const finalTotal = Math.max(0, subtotal - discountAmount);
+
+  const categories = useMemo(() => {
+    return ["all", ...new Set(products.map((p) => p.LoaiHang).filter(Boolean))];
+  }, [products]);
+
+  const filteredProducts = useMemo(
+    () =>
+      products.filter((p) => {
+        const matchSearch =
+          !searchQuery ||
+          p.TenSP.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (p.MaSP || "").toLowerCase().includes(searchQuery.toLowerCase());
+        const matchCat = selectedCat === "all" || p.LoaiHang === selectedCat;
+        return matchSearch && matchCat;
+      }),
+    [products, searchQuery, selectedCat]
+  );
+
+  function applyPromo(code) {
+    const cleanCode = (code || promoInput).trim().toUpperCase();
+    if (!cleanCode) return toast("Vui lòng nhập mã khuyến mãi hoặc voucher");
+
+    const found = promotions.find(
+      (p) => (p.MaKM && p.MaKM.toUpperCase() === cleanCode) || p.id === cleanCode
+    );
+    if (!found) {
+      return toast(`Mã giảm giá "${cleanCode}" không hợp lệ hoặc đã hết hạn`);
+    }
+    if (found.TrangThai === "Đã kết thúc") {
+      return toast(`Chương trình "${found.TenKM}" đã kết thúc`);
+    }
+
+    if (found.PhamVi === "Theo đối tượng" && found.DoiTuong && found.DoiTuong !== "Tất cả") {
+      if (!selectedCustomer) {
+        return toast(`Mã "${cleanCode}" chỉ dành cho thành viên ${found.DoiTuong}. Vui lòng chọn khách hàng!`);
+      }
+      if (!found.DoiTuong.toLowerCase().includes(customerTier.toLowerCase())) {
+        return toast(`Mã "${cleanCode}" áp dụng cho ${found.DoiTuong}. Khách hàng hiện tại đang là Hạng ${customerTier}.`);
+      }
+    }
+
+    // Check if customer has enough points to redeem
+    const requiredPoints = Number(found.DiemYeuCau || 0) || (
+      cleanCode === "BAC50K" ? 100 :
+      cleanCode === "VANG100K" ? 500 :
+      cleanCode === "KC200K" ? 1000 : 0
+    );
+    if (requiredPoints > 0) {
+      if (!selectedCustomer) return toast("Cần chọn khách hàng để đổi điểm lấy voucher");
+      const currentPoints = Number(selectedCustomer.DiemTichLuy || 0);
+      if (currentPoints < requiredPoints) {
+        return toast(`Khách hàng không đủ điểm (cần ${requiredPoints} điểm, hiện có ${currentPoints} điểm)`);
+      }
+    }
+
+    let disc = 0;
+    if (found.GiaTriGiam && Number(found.GiaTriGiam) > 0) {
+      disc = Math.min(subtotal, Number(found.GiaTriGiam));
+    } else if (found.PhanTramGiam && Number(found.PhanTramGiam) > 0) {
+      disc = Math.min(subtotal, Math.round((subtotal * Number(found.PhanTramGiam)) / 100));
+    }
+
+    setAppliedPromo({ ...found, DiemYeuCau: requiredPoints });
+    setDiscountAmount(disc);
+    setPromoInput(cleanCode);
+    toast(`Đã áp dụng mã "${cleanCode}": Giảm ${money.format(disc)}${requiredPoints > 0 ? ` (Trừ ${requiredPoints} điểm khi thanh toán)` : ""}`);
+  }
+
+  function removePromo() {
+    setAppliedPromo(null);
+    setAppliedRedeemedVoucher(null);
+    setDiscountAmount(0);
+    setPromoInput("");
+    toast("Đã gỡ bỏ mã khuyến mãi");
+  }
+
+  function applyRedeemedVoucher(v) {
+    if (!v) {
+      setAppliedRedeemedVoucher(null);
+      setAppliedPromo(null);
+      setDiscountAmount(0);
+      setPromoInput("");
+      return;
+    }
+    setAppliedRedeemedVoucher(v);
+    const disc = Number(v.discountAmount || (v.code === "BAC50K" ? 50000 : v.code === "VANG100K" ? 100000 : 200000));
+    setAppliedPromo({
+      MaKM: v.code,
+      TenKM: v.name,
+      GiaTriGiam: disc,
+      DiemYeuCau: 0,
+      isRedeemedVoucher: true,
+      voucherId: v.id,
+    });
+    setDiscountAmount(disc);
+    setPromoInput(v.code);
+    toast(`Đã áp dụng voucher đã đổi: "${v.code}" (Giảm ${money.format(disc)}). Không trừ thêm điểm.`);
+  }
+
+  async function handleRedeemInSales() {
+    if (!selectedCustomer) return;
+    const vOpt = [
+      { code: "BAC50K", name: "Voucher giảm 50.000đ", points: 100, discount: 50000 },
+      { code: "VANG100K", name: "Voucher giảm 100.000đ", points: 500, discount: 100000 },
+      { code: "KC200K", name: "Voucher VIP giảm 200.000đ", points: 1000, discount: 200000 },
+    ].find((x) => x.code === salesRedeemCode);
+    if (!vOpt) return;
+    const currentPts = Number(selectedCustomer.DiemTichLuy || 0);
+    if (currentPts < vOpt.points) {
+      return toast(`Khách hàng không đủ điểm (cần ${vOpt.points} điểm, hiện có ${currentPts} điểm)`);
+    }
+    try {
+      const newPoints = currentPts - vOpt.points;
+      const newVoucher = {
+        id: "VCH-" + Date.now().toString(36).toUpperCase(),
+        code: vOpt.code,
+        name: vOpt.name,
+        discountAmount: vOpt.discount,
+        points: vOpt.points,
+        redeemedAt: new Date().toISOString().slice(0, 10),
+        status: "Chưa sử dụng",
+      };
+      const updatedVouchers = [...(selectedCustomer.VouchersDaDoi || []), newVoucher];
+      await saveRecord("customers", {
+        ...selectedCustomer,
+        DiemTichLuy: newPoints,
+        VouchersDaDoi: updatedVouchers,
+      });
+      const updatedCusts = await listRecords("customers");
+      setCustomers(updatedCusts);
+      applyRedeemedVoucher(newVoucher);
+      setShowRedeemModalSales(false);
+      toast(`Đã đổi thành công voucher "${vOpt.code}" (-${vOpt.points} điểm) và áp dụng ngay vào đơn hàng!`);
+    } catch (err) {
+      toast(err?.message || "Lỗi khi đổi voucher");
+    }
+  }
+
+  function add(product) {
+    if (Number(product.stock ?? 0) <= 0) {
+      toast("Sản phẩm này đã hết tồn kho");
+      return;
+    }
+    const existing = cart.find((item) => item.id === product.id);
+    if (existing && existing.quantity >= Number(product.stock || 0)) {
+      toast("Số lượng bán không được vượt quá số tồn kho hiện có");
+      return;
+    }
+    setCart((current) =>
+      current.some((item) => item.id === product.id)
+        ? current.map((item) =>
+            item.id === product.id
+              ? { ...item, quantity: item.quantity + 1 }
+              : item
+          )
+        : [...current, { ...product, quantity: 1 }]
+    );
+    toast(`Đã thêm "${product.TenSP}" vào giỏ`);
+  }
+
+  function changeQty(id, delta) {
+    setCart((current) => {
+      const updated = current.map((item) =>
+        item.id === id
+          ? { ...item, quantity: Math.min(item.stock === undefined ? Infinity : Number(item.stock), item.quantity + delta) }
+          : item
+      );
+      if (delta > 0 && updated.some((item) => item.id === id && item.quantity >= (item.stock === undefined ? Infinity : Number(item.stock)))) {
+        const currentItem = current.find((item) => item.id === id);
+        if (currentItem && currentItem.quantity >= (currentItem.stock === undefined ? Infinity : Number(currentItem.stock))) {
+          toast("Số lượng bán không được vượt tồn kho");
+        }
+      }
+      return updated.filter((item) => item.quantity > 0);
+    });
+  }
+
+  function clearCart() {
+    if (!cart.length) return;
+    setShowClearCartConfirm(true);
+  }
+  function executeClearCart() {
+    setCart([]);
+    setAppliedPromo(null);
+    setAppliedRedeemedVoucher(null);
+    setDiscountAmount(0);
+    setPromoInput("");
+    setShowClearCartConfirm(false);
+    toast("Đã xóa giỏ hàng");
+  }
+
+  async function submitSale() {
+    if (!cart.length) return toast("Giỏ hàng đang trống");
+    if (selectedCustomer?.TrangThai === "Ngưng hoạt động" || selectedCustomer?.status === "inactive") {
+      return toast("Không thể lập hóa đơn cho khách hàng đã ngưng hoạt động");
+    }
+    if (cart.some((item) => !Number.isInteger(Number(item.quantity)) || Number(item.quantity) <= 0)) return toast("Số lượng sản phẩm không hợp lệ");
+    if (cart.some((item) => !Number.isFinite(Number(item.GiaBan)) || Number(item.GiaBan) < 0)) return toast("Giá bán sản phẩm không hợp lệ");
+    const pointsToRedeem = appliedPromo?.DiemYeuCau ? Number(appliedPromo.DiemYeuCau) : (
+      appliedPromo?.MaKM === "BAC50K" ? 100 :
+      appliedPromo?.MaKM === "VANG100K" ? 500 :
+      appliedPromo?.MaKM === "KC200K" ? 1000 : 0
+    );
+    try {
+      const result = await saveRecord("sales-orders", {
+        customerId: customerId || null,
+        usedVoucherId: appliedRedeemedVoucher?.id || null,
+        redeemPoints: appliedRedeemedVoucher ? 0 : pointsToRedeem,
+        items: cart.map((item) => ({
+          productId: item.id,
+          quantity: item.quantity,
+          price: item.GiaBan,
+        })),
+        TongTien: finalTotal,
+        discount: discountAmount,
+        promoCode: appliedPromo?.MaKM || (discountAmount > 0 ? promoInput : null),
+        NguoiLap: currentUserInfo().name,
+        NgayDat: new Date().toISOString().slice(0, 10),
+        TrangThai: "Chờ xuất kho",
+      });
+      setCart([]);
+      setAppliedPromo(null);
+      setAppliedRedeemedVoucher(null);
+      setDiscountAmount(0);
+      setPromoInput("");
+      setCreatedInvoice(result.invoice || result);
+      // Cập nhật lại danh sách khách hàng từ CSDL để điểm tích lũy và voucher mới nhất hiển thị ngay lập tức
+      listRecords("customers").then((custs) => {
+        setCustomers(custs);
+      }).catch(() => {});
+      toast(`Đã lập đơn hàng và xuất hóa đơn thành công!${appliedRedeemedVoucher ? ` (Đã áp dụng voucher ${appliedRedeemedVoucher.code})` : pointsToRedeem > 0 ? ` (Đã trừ ${pointsToRedeem} điểm đổi voucher)` : ""}`);
+    } catch (error) {
+      toast(error.message);
+    }
+  }
+
+  function printPOSReceipt(inv) {
+    if (!inv) return;
+    const escapeHtml = (val) => String(val ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c]));
+    const printWindow = window.open("", "_blank", "width=420,height=620");
+    if (!printWindow) return;
+    const lines = inv.details || [];
+    const custName = selectedCustomer?.HoTen || "Khách lẻ";
+    const custPhone = selectedCustomer?.SDT || "";
+    const totalQty = lines.reduce((s, i) => s + Number(i.SoLuong || i.quantity || 1), 0);
+    const subtotalVal = inv.TienHang || (inv.TongTien + (inv.GiamGia || 0));
+    const discountVal = inv.GiamGia || 0;
+    const totalVal = inv.TongTien || 0;
+
+    printWindow.document.write(`<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Phiếu thu tiền - ${escapeHtml(inv.MaHD || inv.id)}</title>
+<style>
+  @page { size: 80mm auto; margin: 4mm; }
+  body { font-family: 'Courier New', monospace, Arial; width: 72mm; margin: 0 auto; color: #000; font-size: 12px; line-height: 1.35; }
+  .text-center { text-align: center; }
+  .text-right { text-align: right; }
+  .bold { font-weight: bold; }
+  .border-b { border-bottom: 1px dashed #444; padding-bottom: 6px; margin-bottom: 6px; }
+  .border-t { border-top: 1px dashed #444; padding-top: 6px; margin-top: 6px; }
+  .header h2 { font-size: 15px; margin: 2px 0; text-transform: uppercase; }
+  .header p { margin: 2px 0; font-size: 11px; color: #333; }
+  .meta-row { display: flex; justify-content: space-between; font-size: 11px; margin: 2px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 11px; }
+  th { border-bottom: 1px solid #000; padding: 3px 0; }
+  td { padding: 3px 0; vertical-align: top; }
+  .sum-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 12px; }
+  .grand-total { font-size: 13.5px; font-weight: bold; border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 5px 0; margin: 5px 0; }
+  .footer { text-align: center; font-size: 10.5px; margin-top: 12px; color: #444; }
+  @media print { body { width: 100%; } }
+</style>
+</head>
+<body>
+  <div class="header text-center border-b">
+    <h2 class="bold">HỆ THỐNG MẸ &amp; BÉ</h2>
+    <p>Đ/c: Số 123 Đường Bán Lẻ, Q.1, TP.HCM</p>
+    <p>Hotline: 1900 6868 - 0901 234 567</p>
+    <p class="bold" style="font-size: 13px; margin-top: 6px;">PHIẾU TÍNH TIỀN (POS)</p>
+  </div>
+  <div class="meta border-b">
+    <div class="meta-row"><span>Số HĐ:</span><strong class="bold">${escapeHtml(inv.MaHD || inv.id)}</strong></div>
+    <div class="meta-row"><span>Ngày:</span><span>${escapeHtml(inv.NgayLap || new Date().toISOString().slice(0, 10))} ${new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}</span></div>
+    <div class="meta-row"><span>Thu ngân:</span><span>${escapeHtml(inv.NguoiLap || currentUserInfo().name)}</span></div>
+    <div class="meta-row"><span>Khách hàng:</span><strong>${escapeHtml(custName)}${custPhone ? ` (${escapeHtml(custPhone)})` : ""}</strong></div>
+    ${selectedCustomer ? `<div class="meta-row"><span>Hạng TV:</span><span>${customerTier || "Đồng"} · Điểm: ${customerPts}</span></div>` : ""}
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="text-align: left; width: 45%;">Tên SP</th>
+        <th style="text-align: center; width: 15%;">SL</th>
+        <th style="text-align: right; width: 20%;">Đơn giá</th>
+        <th style="text-align: right; width: 20%;">T.Tiền</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${lines.map((l) => `
+        <tr>
+          <td>${escapeHtml(l.TenSP || l.MaSPCode || "Sản phẩm")}</td>
+          <td class="text-center">${Number(l.SoLuong || l.quantity || 1)}</td>
+          <td class="text-right">${Number(l.DonGia || l.price || 0).toLocaleString("vi-VN")}</td>
+          <td class="text-right bold">${Number(l.ThanhTien || (Number(l.SoLuong || l.quantity || 1) * Number(l.DonGia || l.price || 0))).toLocaleString("vi-VN")}</td>
+        </tr>
+      `).join("")}
+    </tbody>
+  </table>
+  <div class="border-t">
+    <div class="sum-row"><span>Tổng số lượng:</span><span>${totalQty} món</span></div>
+    <div class="sum-row"><span>Cộng tiền hàng:</span><span>${money.format(subtotalVal)}</span></div>
+    ${Number(discountVal) > 0 ? `<div class="sum-row"><span>Chiết khấu/Voucher:</span><span>-${money.format(discountVal)}</span></div>` : ""}
+    <div class="sum-row grand-total"><span class="bold">TỔNG THANH TOÁN:</span><span class="bold">${money.format(totalVal)}</span></div>
+  </div>
+  <div class="footer">
+    <p>Cảm ơn Quý Khách! Hẹn gặp lại quý khách!</p>
+    <p style="font-style: italic;">(Kiểm tra lại hàng và hóa đơn trước khi rời quầy)</p>
+  </div>
+</body>
+</html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  }
+
+  return (
+    <section aria-labelledby="pos-heading" className="pos-workspace">
+      <header className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+        <hgroup>
+          <h1 id="pos-heading">{title}</h1>
+          <p>Màn hình bán lẻ POS: Chọn món nhanh, áp dụng voucher thành viên và in hóa đơn tức thời.</p>
+        </hgroup>
+        <div
+          style={{
+            background: "var(--surface-sunken, #f1f5f9)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            padding: "8px 14px",
+            fontSize: 13,
+            color: "var(--text-soft)",
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+          }}
+        >
+          <span>👤 Thu ngân:</span>
+          <strong style={{ color: "var(--primary-dark)" }}>{currentUserInfo().display}</strong>
+        </div>
+      </header>
+
+      {createdInvoice && (
+        <div className="alert success" role="status" style={{ marginBottom: 18, display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+          <span>
+            Đã lập hóa đơn <strong>{createdInvoice.MaHD || createdInvoice.id}</strong> với tổng thanh toán {money.format(createdInvoice.TongTien || finalTotal)}.
+          </span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button className="btn btn-sm btn-primary" type="button" onClick={() => printPOSReceipt(createdInvoice)}>
+              <PrinterIcon className="btn-icon" aria-hidden="true" style={{ width: 15, height: 15 }} /> In bill K80
+            </button>
+            <button className="btn btn-sm" type="button" onClick={() => navigate("/invoices")}>Xem chi tiết</button>
+          </div>
+        </div>
+      )}
+
+      <div className="pos-grid">
+        {/* Product selection Catalog */}
+        <div className="pos-catalog-panel">
+          <div className="pos-catalog-header">
+            <div className="invoice-search" style={{ flex: 1 }}>
+              <MagnifyingGlassIcon aria-hidden="true" />
+              <input
+                className="search-input"
+                type="search"
+                placeholder="Tìm nhanh mặt hàng theo tên hoặc mã SP..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Category tabs */}
+          <div className="filter-chips" style={{ margin: "12px 0 16px" }}>
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                className={`filter-chip ${selectedCat === cat ? "active" : ""}`}
+                onClick={() => setSelectedCat(cat)}
+              >
+                {cat === "all" ? "Tất cả" : cat}
+              </button>
+            ))}
+          </div>
+
+          <div className="prod-grid">
+            {filteredProducts.map((product) => {
+              const st = Number(product.stock || 0);
+              const isOutOfStock = st <= 0;
+
+              return (
+                <button
+                  className={`prod-tile ${isOutOfStock ? "tile-disabled" : ""}`}
+                  type="button"
+                  key={product.id}
+                  disabled={isOutOfStock}
+                  onClick={() => add(product)}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", width: "100%" }}>
+                    <span className="tile-cat">{product.LoaiHang || "Sản phẩm"}</span>
+                    <span className={`tile-stock-badge ${st <= 0 ? "badge-out" : st <= 10 ? "badge-low" : "badge-ok"}`}>
+                      {st <= 0 ? "Hết hàng" : `Tồn ${st}`}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", margin: "6px 0" }}>
+                    {product.HinhAnh ? (
+                      <img
+                        src={product.HinhAnh}
+                        alt={product.TenSP}
+                        onError={(e) => { e.target.style.display = "none"; }}
+                        style={{ width: 38, height: 38, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", flexShrink: 0 }}
+                      />
+                    ) : (
+                      <div style={{ width: 38, height: 38, borderRadius: 6, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
+                        {getCategoryIcon(product.LoaiHang || "")}
+                      </div>
+                    )}
+                    <strong className="tile-name" style={{ margin: 0, textAlign: "left", flex: 1, fontSize: 13, lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                      {product.TenSP}
+                    </strong>
+                  </div>
+                  <span className="tile-price">{money.format(product.GiaBan)}</span>
+                </button>
+              );
+            })}
+            {!filteredProducts.length && (
+              <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: 36, color: "var(--text-faint)" }}>
+                Không tìm thấy sản phẩm phù hợp
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Cart panel */}
+        <aside className="cart-panel" aria-label="Giỏ hàng bán lẻ">
+          <div className="cart-header-row">
+            <div>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--primary-dark)" }}>Giỏ hàng thu ngân</h3>
+              <small style={{ color: "var(--text-soft)" }}>{totalItemCount} sản phẩm đã chọn</small>
+            </div>
+            {cart.length > 0 && (
+              <button type="button" className="cart-clear-link" onClick={clearCart}>
+                Xóa tất cả
+              </button>
+            )}
+          </div>
+
+          {/* Customer Selection & Membership Badge */}
+          <div style={{ margin: "14px 0 10px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <label style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap" }}>Khách hàng:</label>
+              <div className="sales-cust-search" style={{ flex: 1 }}>
+                <div className="sales-cust-input-wrap">
+                  <MagnifyingGlassIcon style={{ width: 16, height: 16, color: "var(--text-faint)" }} />
+                  <input
+                    className="sales-cust-input"
+                    type="text"
+                    placeholder="Tìm theo tên, SĐT, mã KH..."
+                    value={custSearchQuery}
+                    onChange={e => { setCustSearchQuery(e.target.value); setCustDropdownOpen(true); }}
+                    onFocus={() => setCustDropdownOpen(true)}
+                  />
+                  {customerId && (
+                    <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-faint)", padding: 2 }} onClick={() => { setCustomerId(""); setSelectedCustomer(null); setCustSearchQuery(""); setAppliedPromo(null); setDiscountAmount(0); setPromoInput(""); }}>
+                      ✕
+                    </button>
+                  )}
+                </div>
+                {custDropdownOpen && (
+                  <div className="sales-cust-dropdown">
+                    {filteredCustSearch.length === 0 ? (
+                      <div style={{ padding: "12px", color: "var(--text-faint)", fontSize: 13 }}>Không tìm thấy khách hàng</div>
+                    ) : filteredCustSearch.slice(0, 8).map(c => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="sales-cust-option"
+                        onClick={() => {
+                          setCustomerId(c.id);
+                          setSelectedCustomer(c);
+                          setCustSearchQuery(c.HoTen || "");
+                          setCustDropdownOpen(false);
+                          setAppliedPromo(null); setDiscountAmount(0); setPromoInput("");
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{c.HoTen}</span>
+                        <span style={{ color: "var(--text-faint)", fontSize: 12 }}>{c.SDT || ""}</span>
+                        <span style={{ color: "var(--primary)", fontSize: 11, fontWeight: 700 }}>{c.MaKH || c.id}</span>
+                      </button>
+                    ))}
+                    <div style={{ borderTop: "1px solid var(--border)", padding: "4px" }}>
+                      <button type="button" className="sales-cust-option" style={{ color: "var(--primary)", fontWeight: 600 }} onClick={() => { setCustDropdownOpen(false); }}>
+                        Khách vãng lai (không tích điểm)
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button type="button" className="sales-cust-add-btn" onClick={() => setShowAddCustomerModal(true)}>
+                <PlusIcon style={{ width: 14, height: 14 }} /> Thêm KH mới
+              </button>
+            </div>
+
+            {selectedCustomer && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  background:
+                    customerTier === "Kim Cương"
+                      ? "#f0f9ff"
+                      : customerTier === "Vàng"
+                      ? "#fefce8"
+                      : customerTier === "Bạc"
+                      ? "#f8fafc"
+                      : "#f9fafb",
+                  border:
+                    customerTier === "Kim Cương"
+                      ? "1px solid #7dd3fc"
+                      : customerTier === "Vàng"
+                      ? "1px solid #fde047"
+                      : customerTier === "Bạc"
+                      ? "1px solid #cbd5e1"
+                      : "1px solid #e5e7eb",
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontWeight: 700, color: "#1e293b" }}>
+                    ⭐ {selectedCustomer.HoTen} · {customerPts} điểm
+                    {appliedPromo && Number(appliedPromo.DiemYeuCau || 0) > 0 && (
+                      <span style={{ color: "var(--danger, #ef4444)", marginLeft: 8, fontSize: 11, fontWeight: 600 }}>
+                        (Đổi mã {appliedPromo.MaKM}: Trừ {appliedPromo.DiemYeuCau} điểm → Còn {Math.max(0, customerPts - Number(appliedPromo.DiemYeuCau))} điểm)
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      background:
+                        customerTier === "Kim Cương"
+                          ? "#0284c7"
+                          : customerTier === "Vàng"
+                          ? "#d97706"
+                          : customerTier === "Bạc"
+                          ? "#475569"
+                          : "#94a3b8",
+                      color: "#fff",
+                      fontSize: 11,
+                    }}
+                  >
+                    Hạng {customerTier}
+                  </span>
+                </div>
+
+                {/* Quick Voucher recommendation based on tier */}
+                <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "var(--text-soft)" }}>Voucher hợp lệ:</span>
+                  <button
+                    type="button"
+                    onClick={() => applyPromo("BAC50K")}
+                    disabled={customerPts < 100}
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: 11,
+                      borderRadius: 6,
+                      border: "1px solid #94a3b8",
+                      background: appliedPromo?.MaKM === "BAC50K" ? "#475569" : "#fff",
+                      color: appliedPromo?.MaKM === "BAC50K" ? "#fff" : "#334155",
+                      cursor: customerPts < 100 ? "not-allowed" : "pointer",
+                      fontWeight: 600,
+                      opacity: customerPts < 100 ? 0.5 : 1
+                    }}
+                  >
+                    Đổi 100 điểm → BAC50K
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPromo("VANG100K")}
+                    disabled={customerPts < 500}
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: 11,
+                      borderRadius: 6,
+                      border: "1px solid #d97706",
+                      background: appliedPromo?.MaKM === "VANG100K" ? "#d97706" : "#fff",
+                      color: appliedPromo?.MaKM === "VANG100K" ? "#fff" : "#b45309",
+                      cursor: customerPts < 500 ? "not-allowed" : "pointer",
+                      fontWeight: 600,
+                      opacity: customerPts < 500 ? 0.5 : 1
+                    }}
+                  >
+                    Đổi 500 điểm → VANG100K
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPromo("KC200K")}
+                    disabled={customerPts < 1000}
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: 11,
+                      borderRadius: 6,
+                      border: "1px solid #0284c7",
+                      background: appliedPromo?.MaKM === "KC200K" ? "#0284c7" : "#fff",
+                      color: appliedPromo?.MaKM === "KC200K" ? "#fff" : "#0369a1",
+                      cursor: customerPts < 1000 ? "not-allowed" : "pointer",
+                      fontWeight: 600,
+                      opacity: customerPts < 1000 ? 0.5 : 1
+                    }}
+                  >
+                    Đổi 1000 điểm → KC200K
+                  </button>
+                  {customerPts < 100 && (
+                    <span style={{ fontSize: 11, color: "var(--text-faint)", fontStyle: "italic" }}>
+                      Chưa đủ 100 điểm đổi voucher
+                    </span>
+                  )}
+                </div>
+
+                {/* PHẦN CHỌN VOUCHER ĐÃ ĐỔI CỦA KHÁCH HÀNG */}
+                <div style={{ marginTop: 10, padding: "10px 12px", background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <label style={{ fontWeight: 700, fontSize: 12.5, color: "#166534", margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                      🎟️ Voucher đã đổi của khách:
+                      <span style={{ fontSize: 10.5, background: "#dcfce7", color: "#15803d", padding: "1px 6px", borderRadius: 100, fontWeight: 700 }}>
+                        {customerRedeemedVouchers.length} khả dụng
+                      </span>
+                    </label>
+                    {customerPts >= 100 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowRedeemModalSales(true)}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--primary-dark)",
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          textDecoration: "underline",
+                          padding: 0
+                        }}
+                      >
+                        + Đổi thêm voucher
+                      </button>
+                    )}
+                  </div>
+
+                  {customerRedeemedVouchers.length > 0 ? (
+                    <div>
+                      <select
+                        value={appliedRedeemedVoucher?.id || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (!val) {
+                            applyRedeemedVoucher(null);
+                          } else {
+                            const foundV = customerRedeemedVouchers.find((x) => x.id === val);
+                            if (foundV) applyRedeemedVoucher(foundV);
+                          }
+                        }}
+                        style={{
+                          width: "100%",
+                          padding: "7px 10px",
+                          borderRadius: 6,
+                          border: appliedRedeemedVoucher ? "2px solid #16a34a" : "1px solid var(--border)",
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          background: "#fff",
+                          color: "var(--text)"
+                        }}
+                      >
+                        <option value="">-- Nhấp vào đây để chọn voucher đã đổi --</option>
+                        {customerRedeemedVouchers.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            🎟️ {v.code} · {v.name} (Giảm {money.format(v.discountAmount || 50000)})
+                          </option>
+                        ))}
+                      </select>
+                      {appliedRedeemedVoucher && (
+                        <div style={{ marginTop: 5, fontSize: 11.5, color: "#15803d", fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span>✅ Đang dùng: <strong>{appliedRedeemedVoucher.code}</strong> (-{money.format(discountAmount)}) · Đã đổi trước đó</span>
+                          <button
+                            type="button"
+                            onClick={() => applyRedeemedVoucher(null)}
+                            style={{ background: "none", border: "none", color: "#dc2626", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}
+                          >
+                            Hủy dùng
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11.5, color: "#64748b" }}>
+                      Khách hàng chưa có voucher nào đổi sẵn.{" "}
+                      {customerPts >= 100 ? (
+                        <span
+                          style={{ color: "var(--primary-dark)", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
+                          onClick={() => setShowRedeemModalSales(true)}
+                        >
+                          Đổi ngay bằng {customerPts} điểm tích lũy
+                        </span>
+                      ) : (
+                        <span>(Cần tối thiểu 100 điểm để đổi voucher)</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Cart items list */}
+          <div className="cart-list-scroll">
+            {cart.length > 0 ? (
+              cart.map((item) => (
+                <article className="cart-item" key={item.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {item.HinhAnh ? (
+                    <img
+                      src={item.HinhAnh}
+                      alt={item.TenSP}
+                      onError={(e) => { e.target.style.display = "none"; }}
+                      style={{ width: 34, height: 34, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", flexShrink: 0 }}
+                    />
+                  ) : (
+                    <div style={{ width: 34, height: 34, borderRadius: 6, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>
+                      {getCategoryIcon(item.LoaiHang || "")}
+                    </div>
+                  )}
+                  <div className="nm" style={{ flex: 1, minWidth: 0 }}>
+                    <strong style={{ display: "block", fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.TenSP}</strong>
+                    <small style={{ color: "var(--text-soft)" }}>{money.format(item.GiaBan)} / {item.DonViTinh || "cái"}</small>
+                  </div>
+                  <div className="qty-ctrl">
+                    <button type="button" onClick={() => changeQty(item.id, -1)} aria-label="Giảm">−</button>
+                    <span>{item.quantity}</span>
+                    <button type="button" onClick={() => changeQty(item.id, 1)} aria-label="Tăng">+</button>
+                  </div>
+                  <strong style={{ minWidth: 70, textAlign: "right", color: "var(--primary-dark)" }}>
+                    {money.format(item.quantity * item.GiaBan)}
+                  </strong>
+                </article>
+              ))
+            ) : (
+              <div className="empty-state" style={{ padding: "40px 10px" }}>
+                <ShoppingBagIcon className="empty-icon" aria-hidden="true" style={{ width: 44, height: 44, margin: "0 auto 10px", color: "var(--text-faint)", strokeWidth: 1.5 }} />
+                <p>Chưa có sản phẩm nào trong giỏ</p>
+                <small style={{ color: "var(--text-faint)" }}>Nhấn vào sản phẩm bên trái để thêm</small>
+              </div>
+            )}
+          </div>
+
+          {/* Promo code input */}
+          <div style={{ margin: "10px 0", padding: "10px", background: "var(--surface-sunken, #f8fafc)", borderRadius: 8, border: "1px solid var(--border)" }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-soft)", display: "block", marginBottom: 6 }}>
+              🏷️ Mã khuyến mãi / Voucher giảm giá:
+            </span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                type="text"
+                placeholder="Nhập mã (VD: KMALL10, BAC50K)"
+                value={promoInput}
+                onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                style={{
+                  flex: 1,
+                  padding: "6px 10px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                }}
+              />
+              {appliedPromo ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={removePromo}
+                  style={{ background: "#fee2e2", color: "#b91c1c", border: "none" }}
+                >
+                  Gỡ bỏ
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => applyPromo(promoInput)}
+                  disabled={!cart.length}
+                >
+                  Áp dụng
+                </button>
+              )}
+            </div>
+            {appliedPromo && (
+              <div style={{ marginTop: 6, fontSize: 11.5, color: "#059669", fontWeight: 600 }}>
+                ✓ Đang áp dụng: {appliedPromo.TenKM} ({appliedPromo.MaKM})
+              </div>
+            )}
+          </div>
+
+          {cart.length > 0 && (
+            <div className="cart-summary-box">
+              <div className="cart-total-row">
+                <span>Số lượng món</span>
+                <strong>{totalItemCount}</strong>
+              </div>
+              <div className="cart-total-row">
+                <span>Tạm tính</span>
+                <span>{money.format(subtotal)}</span>
+              </div>
+              {discountAmount > 0 && (
+                <div className="cart-total-row" style={{ color: "#059669" }}>
+                  <span>Chiết khấu / Ưu đãi</span>
+                  <strong>-{money.format(discountAmount)}</strong>
+                </div>
+              )}
+              <div className="cart-total-row grand">
+                <span>TỔNG THANH TOÁN</span>
+                <strong style={{ color: "var(--primary)", fontSize: 18 }}>{money.format(finalTotal)}</strong>
+              </div>
+            </div>
+          )}
+
+          <button
+            className="btn btn-primary btn-block"
+            type="button"
+            disabled={!cart.length}
+            style={{ marginTop: 14, padding: "12px", fontSize: 15 }}
+            onClick={submitSale}
+          >
+            Lập đơn &amp; Xuất hóa đơn
+          </button>
+        </aside>
+      </div>
+
+      <ConfirmDialog
+        open={showClearCartConfirm}
+        title="Xóa giỏ hàng"
+        message="Bạn có chắc muốn xóa tất cả sản phẩm trong giỏ hàng?"
+        confirmLabel="Xóa tất cả"
+        variant="warning"
+        onConfirm={executeClearCart}
+        onCancel={() => setShowClearCartConfirm(false)}
+      />
+
+      <Modal
+        open={showAddCustomerModal}
+        title="Thêm khách hàng mới"
+        onClose={() => setShowAddCustomerModal(false)}
+        onSubmit={async () => {
+          if (!newCustForm.HoTen.trim()) return toast("Họ và tên là bắt buộc");
+          if (!newCustForm.SDT.trim()) return toast("Số điện thoại là bắt buộc");
+          if (!/^0\d{9,10}$/.test(newCustForm.SDT.trim())) return toast("Số điện thoại phải gồm 10-11 chữ số");
+          if (newCustForm.Email && !/^\S+@\S+\.\S+$/.test(newCustForm.Email.trim())) return toast("Email không hợp lệ");
+          try {
+            const saved = await saveRecord("customers", { ...newCustForm, TrangThai: "Đang hoạt động", DiemTichLuy: 0 });
+            setCustomers(prev => [...prev, saved]);
+            setCustomerId(saved.id);
+            setSelectedCustomer(saved);
+            setCustSearchQuery(saved.HoTen || "");
+            setShowAddCustomerModal(false);
+            setNewCustForm({ HoTen: "", SDT: "", Email: "", DiaChi: "" });
+            toast("Đã thêm khách hàng mới thành công");
+          } catch (err) {
+            toast(err?.message || "Lỗi khi thêm khách hàng");
+          }
+        }}
+        submitLabel="Thêm khách hàng"
+      >
+        <fieldset className="form-grid" style={{ border: "none", padding: 0, margin: 0 }}>
+          <div className="field">
+            <label>Họ và tên <span className="required-star">*</span></label>
+            <input value={newCustForm.HoTen} onChange={e => setNewCustForm(f => ({ ...f, HoTen: e.target.value }))} required />
+          </div>
+          <div className="field">
+            <label>Số điện thoại <span className="required-star">*</span></label>
+            <input value={newCustForm.SDT} onChange={e => setNewCustForm(f => ({ ...f, SDT: e.target.value }))} required />
+          </div>
+          <div className="field">
+            <label>Email</label>
+            <input type="email" value={newCustForm.Email} onChange={e => setNewCustForm(f => ({ ...f, Email: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>Địa chỉ</label>
+            <input value={newCustForm.DiaChi} onChange={e => setNewCustForm(f => ({ ...f, DiaChi: e.target.value }))} />
+          </div>
+        </fieldset>
+      </Modal>
+
+      {/* Modal Đổi điểm lấy voucher ngay tại quầy thu ngân */}
+      <Modal
+        open={showRedeemModalSales}
+        title={`Đổi điểm lấy Voucher — ${selectedCustomer?.HoTen || ""}`}
+        onClose={() => setShowRedeemModalSales(false)}
+        onSubmit={handleRedeemInSales}
+        submitLabel="Xác nhận đổi & Dùng ngay"
+      >
+        {selectedCustomer && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ padding: "12px 14px", background: "var(--primary-light, #f0fdfa)", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 13, color: "var(--text-soft)" }}>
+                Khách hàng: <strong>{selectedCustomer.HoTen}</strong> ({selectedCustomer.MaKH || selectedCustomer.id})
+              </div>
+              <div style={{ fontSize: 14, color: "var(--primary-dark)", fontWeight: 700, marginTop: 4 }}>
+                ⭐ Điểm tích lũy hiện có: <strong>{customerPts}</strong> điểm
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
+                Chọn voucher muốn đổi <span className="required-star">*</span>
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[
+                  { code: "BAC50K", name: "Voucher giảm 50.000đ", points: 100 },
+                  { code: "VANG100K", name: "Voucher giảm 100.000đ", points: 500 },
+                  { code: "KC200K", name: "Voucher VIP giảm 200.000đ", points: 1000 },
+                ].map((v) => {
+                  const isEligible = customerPts >= v.points;
+                  const isSelected = salesRedeemCode === v.code;
+                  return (
+                    <label
+                      key={v.code}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "10px 14px",
+                        borderRadius: 8,
+                        border: isSelected ? "2px solid var(--primary)" : "1px solid var(--border)",
+                        background: isSelected ? "var(--primary-light)" : isEligible ? "#fff" : "#f8fafc",
+                        cursor: isEligible ? "pointer" : "not-allowed",
+                        opacity: isEligible ? 1 : 0.6,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <input
+                          type="radio"
+                          name="sales_voucher_redeem"
+                          value={v.code}
+                          checked={isSelected}
+                          disabled={!isEligible}
+                          onChange={() => setSalesRedeemCode(v.code)}
+                        />
+                        <div>
+                          <strong style={{ fontSize: 13.5, color: isEligible ? "var(--text)" : "var(--text-faint)" }}>
+                            🎟️ {v.name} (Mã: {v.code})
+                          </strong>
+                          <div style={{ fontSize: 11.5, color: "var(--text-soft)" }}>
+                            Cần đổi: <strong>{v.points} điểm</strong>
+                          </div>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: isEligible ? "var(--danger)" : "var(--text-faint)" }}>
+                        {isEligible ? `- ${v.points} điểm` : "Không đủ điểm"}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ padding: "8px 12px", background: "#fefce8", border: "1px solid #fef08a", borderRadius: 8, fontSize: 12, color: "#854d0e" }}>
+              💡 Voucher sau khi đổi sẽ được trừ điểm ngay và tự động chọn áp dụng vào giỏ hàng thu ngân.
+            </div>
+          </div>
+        )}
+      </Modal>
+    </section>
+  );
+}

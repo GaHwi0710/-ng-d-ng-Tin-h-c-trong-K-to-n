@@ -119,3 +119,28 @@ export function userCanAccessPath(path) {
   if (!perms) return true;
   return (perms[moduleKey] || []).length > 0;
 }
+
+export const ROLE_LABELS = {
+  QuanLy: "Quản lý",
+  KeToan: "Kế toán",
+  NhanVienBanHang: "Nhân viên bán hàng",
+  NhanVienKho: "Nhân viên kho",
+  NhanVienMuaHang: "Nhân viên mua hàng",
+};
+
+export function currentUserInfo() {
+  try {
+    const user = JSON.parse(localStorage.getItem("baby-shop-user") || "{}");
+    const roleName = ROLE_LABELS[user.role] || user.role || "Nhân viên";
+    return {
+      name: user.fullName || user.username || "Nhân viên",
+      role: user.role || "",
+      roleName,
+      username: user.username || "",
+      display: `${user.fullName || user.username || "Nhân viên"} · ${roleName}`,
+    };
+  } catch {
+    return { name: "Nhân viên", roleName: "Nhân viên", display: "Nhân viên" };
+  }
+}
+
