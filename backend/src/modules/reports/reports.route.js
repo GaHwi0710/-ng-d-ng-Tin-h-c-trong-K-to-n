@@ -1,13 +1,20 @@
 import { Router } from "express";
+<<<<<<< HEAD
 import { ObjectId } from "mongodb";
 import { getDatabase } from "../../config/mongodb.js";
 
 const router = Router();
 const parseId = (val) => (ObjectId.isValid(val) ? new ObjectId(val) : null);
+=======
+import { getDatabase } from "../../config/mongodb.js";
+
+const router = Router();
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 
 router.get("/revenue", async (req, res, next) => {
   try {
     const db = getDatabase();
+<<<<<<< HEAD
     const { from, to, customerId, productId, categoryId, status } = req.query;
 
     const filter = {};
@@ -68,6 +75,35 @@ router.get("/revenue", async (req, res, next) => {
     const todayStr = new Date().toISOString().slice(0, 10);
     let dates = makeDates(to || todayStr);
 
+=======
+    const { from, to } = req.query;
+
+    // Lọc chỉ hóa đơn đã thanh toán, hỗ trợ khoảng ngày tùy chọn
+    const filter = { TrangThai: "Đã thanh toán" };
+    if (from || to) {
+      filter.NgayLap = {};
+      if (from) filter.NgayLap.$gte = from;
+      if (to)   filter.NgayLap.$lte = to;
+    }
+
+    const invoices = await db.collection("HoaDon").find(filter).toArray();
+    const total = invoices.reduce((sum, i) => sum + Number(i.TongTien || 0), 0);
+    // Đếm đơn hàng thực (DonHang), không phải số hóa đơn (HoaDon)
+    const totalOrders = await db.collection("DonHang").countDocuments();
+
+    // Helper tạo mảng 7 ngày kết thúc tại anchor
+    const makeDates = (anchor) => Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(`${anchor}T00:00:00`);
+      d.setDate(d.getDate() - (6 - i));
+      return d.toISOString().slice(0, 10);
+    });
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let dates = makeDates(todayStr);
+
+    // Nếu 7 ngày gần nhất không có giao dịch nào nhưng DB có data,
+    // dịch cửa sổ về quanh ngày có giao dịch mới nhất
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     if (
       invoices.length > 0 &&
       !dates.some((d) => invoices.some((inv) => String(inv.NgayLap || "").slice(0, 10) === d))
@@ -87,12 +123,17 @@ router.get("/revenue", async (req, res, next) => {
         .reduce((sum, inv) => sum + Number(inv.TongTien || 0), 0),
     }));
 
+<<<<<<< HEAD
     res.json({ report: "revenue", total, orders: invoices.length, allOrdersCount: totalOrders, weekly, data: invoices });
+=======
+    res.json({ report: "revenue", total, orders: totalOrders, weekly });
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   } catch (err) {
     next(err);
   }
 });
 
+<<<<<<< HEAD
 router.get("/inventory", async (req, res, next) => {
   try {
     const db = getDatabase();
@@ -147,11 +188,36 @@ router.get("/inventory", async (req, res, next) => {
     }
 
     res.json({ report: "inventory", data, totalProducts: data.length });
+=======
+router.get("/inventory", async (_req, res, next) => {
+  try {
+    const db = getDatabase();
+    const products = await db.collection("SanPham").find({}).toArray();
+    const stocks = await db.collection("TonKho").find({}).toArray();
+    const stockMap = new Map(stocks.map((s) => [s.MaSP?.toString(), s.SoLuongTon]));
+
+    const data = products.map((p) => ({
+      id: p._id.toString(),
+      MaSP: p.MaSP,
+      TenSP: p.TenSP,
+      LoaiHang: p.LoaiHang,
+      DonViTinh: p.DonViTinh,
+      GiaNhap: p.GiaNhap,
+      GiaBan: p.GiaBan,
+      stock: stockMap.has(p._id.toString()) ? stockMap.get(p._id.toString()) : (p.stock || 0),
+      TrangThai: p.TrangThai,
+      HanSuDung: p.HanSuDung,
+      HinhAnh: p.HinhAnh,
+    }));
+
+    res.json({ report: "inventory", data });
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   } catch (err) {
     next(err);
   }
 });
 
+<<<<<<< HEAD
 router.get("/debts", async (req, res, next) => {
   try {
     const db = getDatabase();
@@ -200,6 +266,14 @@ router.get("/debts", async (req, res, next) => {
       data: supplierDebtsMapped,
       unpaidInvoices: unpaidInvoices.map((i) => ({ id: i._id.toString(), ...i })),
     });
+=======
+router.get("/debts", async (_req, res, next) => {
+  try {
+    const db = getDatabase();
+    const debts = await db.collection("CongNo").find({}).toArray();
+    const total = debts.reduce((sum, d) => sum + Number(d.SoTienConLai || 0), 0);
+    res.json({ report: "debts", total, data: debts.map((d) => ({ id: d._id.toString(), ...d })) });
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   } catch (err) {
     next(err);
   }
@@ -211,8 +285,13 @@ router.get("/cash-flow", async (req, res, next) => {
     const { from, to } = req.query;
 
     const dateFilter = {};
+<<<<<<< HEAD
     if (from) dateFilter.$gte = String(from).slice(0, 10);
     if (to) dateFilter.$lte = String(to).slice(0, 10);
+=======
+    if (from) dateFilter.$gte = from;
+    if (to)   dateFilter.$lte = to;
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     const hasDateFilter = from || to;
 
     const [receipts, payments] = await Promise.all([
@@ -223,6 +302,10 @@ router.get("/cash-flow", async (req, res, next) => {
     const totalThu = receipts.reduce((s, r) => s + Number(r.SoTien || 0), 0);
     const totalChi = payments.reduce((s, p) => s + Number(p.SoTien || 0), 0);
 
+<<<<<<< HEAD
+=======
+    // Nhóm theo tháng
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     const byMonth = new Map();
     for (const r of receipts) {
       const month = String(r.NgayLap || "").slice(0, 7);

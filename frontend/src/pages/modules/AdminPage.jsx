@@ -14,7 +14,11 @@ import {
   CheckCircleIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, saveRecord, deleteRecord } from "../../lib/api.js";
+<<<<<<< HEAD
 import { PERMISSION_GROUPS, ACTIONS, currentUserInfo } from "../../lib/permissions.js";
+=======
+import { PERMISSION_GROUPS, ACTIONS } from "../../lib/permissions.js";
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
@@ -76,12 +80,15 @@ export function AdminPage({ title, description, path }) {
   const [roles, setRoles] = useState([]);
   const [query, setQuery] = useState("");
 
+<<<<<<< HEAD
   const currentAdmin = currentUserInfo();
   const myUsername = currentAdmin.username || "";
   const activeAdminCount = useMemo(() => {
     return accounts.filter((a) => (a.role === "QuanLy" || a.VaiTro === "QuanLy") && a.status !== "Đã khóa").length;
   }, [accounts]);
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null, name: "", resource: "" });
@@ -229,11 +236,14 @@ export function AdminPage({ title, description, path }) {
   }
 
   async function handleToggleLock(acc) {
+<<<<<<< HEAD
     const isSelf = Boolean(myUsername && acc.username && acc.username.toLowerCase() === myUsername.toLowerCase());
     if (isSelf) return toast("Bạn không thể tự khóa tài khoản của chính mình");
     const isOnlyAdmin = (acc.role === "QuanLy" || acc.VaiTro === "QuanLy") && activeAdminCount <= 1 && acc.status !== "Đã khóa";
     if (isOnlyAdmin) return toast("Không thể khóa Quản trị viên duy nhất còn lại của hệ thống");
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     try {
       const isLocked = acc.status === "Đã khóa";
       const newStatus = isLocked ? "Hoạt động" : "Đã khóa";
@@ -267,6 +277,7 @@ export function AdminPage({ title, description, path }) {
         if (accForm.CCCD && !/^[0-9]{12}$/.test(accForm.CCCD.trim())) {
           return toast("Số CCCD phải gồm đúng 12 chữ số hợp lệ");
         }
+<<<<<<< HEAD
         if (editing && myUsername && editing.username?.toLowerCase() === myUsername.toLowerCase()) {
           if (accForm.status === "Đã khóa") {
             return toast("Bạn không thể tự khóa tài khoản của chính mình");
@@ -275,6 +286,8 @@ export function AdminPage({ title, description, path }) {
             return toast("Không thể hạ quyền Quản trị viên duy nhất của hệ thống");
           }
         }
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         await saveRecord("admin/accounts", accForm);
         const [upAccs, upEmps] = await Promise.all([listRecords("admin/accounts"), listRecords("admin/employees")]);
         setAccounts(upAccs);
@@ -299,6 +312,7 @@ export function AdminPage({ title, description, path }) {
   }
 
   async function handleDelete(id, name) {
+<<<<<<< HEAD
     if (currentTab === "accounts") {
       const target = accounts.find((a) => a.id === id || a.username === name);
       if (target && myUsername && target.username?.toLowerCase() === myUsername.toLowerCase()) {
@@ -308,6 +322,8 @@ export function AdminPage({ title, description, path }) {
         return toast("Không thể xóa Quản trị viên duy nhất của hệ thống");
       }
     }
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     const resource = currentTab === "employees" ? "admin/employees" : currentTab === "accounts" ? "admin/accounts" : "admin/roles";
     setConfirmDialog({ open: true, id, name, resource });
   }
@@ -554,11 +570,14 @@ export function AdminPage({ title, description, path }) {
                   {pagedAccounts.map((acc, idx) => {
                     const roleName = roleLabels[acc.role] || roles.find((r) => r.MaKey === acc.role)?.TenVaiTro || acc.role;
                     const isLocked = acc.status === "Đã khóa";
+<<<<<<< HEAD
                     const isSelf = Boolean(myUsername && acc.username && acc.username.toLowerCase() === myUsername.toLowerCase());
                     const isOnlyAdmin = (acc.role === "QuanLy" || acc.VaiTro === "QuanLy") && activeAdminCount <= 1 && !isLocked;
                     const cannotLock = isSelf || isOnlyAdmin;
                     const cannotDelete = isSelf || isOnlyAdmin;
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                     return (
                       <tr key={acc.id} className="admin-row">
                         <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{(page - 1) * pageSize + idx + 1}</td>
@@ -576,9 +595,13 @@ export function AdminPage({ title, description, path }) {
                               {getInitials(acc.fullName || acc.username)}
                             </div>
                             <div>
+<<<<<<< HEAD
                               <strong className="cust-name">
                                 {acc.fullName} {isSelf && <small style={{ color: "var(--primary-dark)", fontWeight: 700 }}>(Bạn)</small>}
                               </strong>
+=======
+                              <strong className="cust-name">{acc.fullName}</strong>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                               <small className="cell-note">
                                 <span className="admin-acc-badge">@{acc.username}</span>
                               </small>
@@ -616,6 +639,7 @@ export function AdminPage({ title, description, path }) {
                             <button
                               type="button"
                               className={`icon-sm-btn ${isLocked ? "positive" : "del"}`}
+<<<<<<< HEAD
                               title={
                                 isSelf
                                   ? "Bạn không thể tự khóa tài khoản của chính mình"
@@ -627,6 +651,9 @@ export function AdminPage({ title, description, path }) {
                               }
                               disabled={cannotLock}
                               style={cannotLock ? { opacity: 0.35, cursor: "not-allowed" } : {}}
+=======
+                              title={isLocked ? "Mở khóa tài khoản (Cho phép đăng nhập)" : "Khóa tài khoản (Chặn đăng nhập ngay)"}
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                               onClick={() => handleToggleLock(acc)}
                             >
                               <LockClosedIcon className="ic" />
@@ -634,6 +661,7 @@ export function AdminPage({ title, description, path }) {
                             <button type="button" className="icon-sm-btn" title="Chỉnh sửa thông tin" onClick={() => openEdit(acc)}>
                               <PencilSquareIcon className="ic" />
                             </button>
+<<<<<<< HEAD
                             <button
                               type="button"
                               className="icon-sm-btn del"
@@ -648,6 +676,9 @@ export function AdminPage({ title, description, path }) {
                               style={cannotDelete ? { opacity: 0.35, cursor: "not-allowed" } : {}}
                               onClick={() => handleDelete(acc.id, acc.username)}
                             >
+=======
+                            <button type="button" className="icon-sm-btn del" title="Xóa tài khoản" onClick={() => handleDelete(acc.id, acc.username)}>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                               <TrashIcon className="ic" />
                             </button>
                           </div>
@@ -863,7 +894,11 @@ export function AdminPage({ title, description, path }) {
               💡 <strong>Đồng bộ nhân sự &amp; tài khoản</strong>: Khi thêm mới, hệ thống tự động sinh <strong>Mã NV</strong> và đồng bộ cả hồ sơ nhân sự (CCCD, SĐT, Địa chỉ) lẫn tài khoản đăng nhập vào CSDL.
             </div>
 
+<<<<<<< HEAD
             <h4 style={{ fontSize: 12.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--primary-dark, #2A4F49)", marginBottom: 10 }}>
+=======
+            <h4 style={{ fontSize: 12.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--primary-dark, #1e3a8a)", marginBottom: 10 }}>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
               1. Thông tin nhân sự
             </h4>
             <div className="field">
@@ -913,7 +948,11 @@ export function AdminPage({ title, description, path }) {
               />
             </div>
 
+<<<<<<< HEAD
             <h4 style={{ fontSize: 12.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--primary-dark, #2A4F49)", marginTop: 16, marginBottom: 10 }}>
+=======
+            <h4 style={{ fontSize: 12.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--primary-dark, #1e3a8a)", marginTop: 16, marginBottom: 10 }}>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
               2. Tài khoản &amp; Phân quyền đăng nhập
             </h4>
             <div className="form-grid">
@@ -961,6 +1000,7 @@ export function AdminPage({ title, description, path }) {
                 </select>
               </div>
               <div className="field">
+<<<<<<< HEAD
                 <label htmlFor="acc-status">
                   Trạng thái hoạt động
                   {editing && myUsername && editing.username?.toLowerCase() === myUsername.toLowerCase() && (
@@ -971,6 +1011,12 @@ export function AdminPage({ title, description, path }) {
                   id="acc-status"
                   value={accForm.status}
                   disabled={Boolean(editing && myUsername && editing.username?.toLowerCase() === myUsername.toLowerCase())}
+=======
+                <label htmlFor="acc-status">Trạng thái hoạt động</label>
+                <select
+                  id="acc-status"
+                  value={accForm.status}
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                   onChange={(e) => setAccForm({ ...accForm, status: e.target.value })}
                 >
                   <option value="Hoạt động">🟢 Hoạt động (Cho phép đăng nhập)</option>
@@ -1045,7 +1091,11 @@ export function AdminPage({ title, description, path }) {
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+<<<<<<< HEAD
                     <h4 style={{ margin: 0, fontSize: 12.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--primary-dark, #2A4F49)" }}>
+=======
+                    <h4 style={{ margin: 0, fontSize: 12.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--primary-dark, #1e3a8a)" }}>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                       Ma trận quyền hạn chi tiết
                     </h4>
                     <button

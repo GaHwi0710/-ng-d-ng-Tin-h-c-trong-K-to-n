@@ -20,12 +20,16 @@ const money = new Intl.NumberFormat("vi-VN", {
 
 export function InventoryPage({ title }) {
   const [products, setProducts] = useState([]);
+<<<<<<< HEAD
   const [dbCategories, setDbCategories] = useState([]);
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Tất cả");
 
   useEffect(() => {
     listRecords("inventory").then(setProducts);
+<<<<<<< HEAD
     listRecords("product-categories").then(setDbCategories).catch(() => []);
   }, []);
 
@@ -41,6 +45,13 @@ export function InventoryPage({ title }) {
       (product.TenSP || "").toLowerCase().includes(query.toLowerCase()) ||
       (product.MaSP || product.id || "").toLowerCase().includes(query.toLowerCase()) ||
       (product.LoaiHang || "").toLowerCase().includes(query.toLowerCase());
+=======
+  }, []);
+
+  const categories = ["Tất cả", ...new Set(products.map((product) => product.LoaiHang).filter(Boolean))];
+  const visible = products.filter((product) => {
+    const matchesQuery = JSON.stringify(product).toLowerCase().includes(query.toLowerCase());
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     return matchesQuery && (category === "Tất cả" || product.LoaiHang === category);
   });
 

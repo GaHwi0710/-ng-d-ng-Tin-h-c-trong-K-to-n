@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { useState, useEffect, useMemo, useRef } from "react";
+=======
+import { useState, useEffect, useMemo } from "react";
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 import {
   PlusIcon,
   TrashIcon,
@@ -8,10 +12,15 @@ import {
   CheckCircleIcon,
   ClockIcon,
   ShoppingCartIcon,
+<<<<<<< HEAD
   ArrowDownTrayIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, saveRecord, deleteRecord, postRequest, getRequest } from "../../lib/api.js";
+=======
+} from "@heroicons/react/24/outline";
+import { listRecords, saveRecord, deleteRecord } from "../../lib/api.js";
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatusBadge } from "../../components/Badge.jsx";
@@ -20,7 +29,10 @@ import ConfirmDialog from "../../components/ConfirmDialog.jsx";
 import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
 import { currentUserInfo } from "../../lib/permissions.js";
+<<<<<<< HEAD
 import { LOW_STOCK_THRESHOLD } from "../../lib/constants.js";
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -28,6 +40,7 @@ const money = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 0,
 });
 
+<<<<<<< HEAD
 // Trạng thái PO và màu tương ứng
 const PO_STATUSES = [
   "Đang chờ nhập",
@@ -54,12 +67,15 @@ function PoProgressBar({ ordered, received }) {
   );
 }
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 export function PurchaseOrderPage({ title }) {
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [supplierId, setSupplierId] = useState("");
   const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
+<<<<<<< HEAD
   const [status, setStatus] = useState("Đang chờ nhập");
   const [selected, setSelected] = useState([]);
   const [poDetailModal, setPoDetailModal] = useState(null);
@@ -71,6 +87,12 @@ export function PurchaseOrderPage({ title }) {
   const [receiveNote, setReceiveNote] = useState("");
   const [receiveSubmitting, setReceiveSubmitting] = useState(false);
 
+=======
+  const [status, setStatus] = useState("Đang chờ");
+  const [selected, setSelected] = useState([]);
+  const [poDetailModal, setPoDetailModal] = useState(null);
+
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   // Filter state for saved orders
   const [filterSupplier, setFilterSupplier] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -81,6 +103,7 @@ export function PurchaseOrderPage({ title }) {
   const [cbQuery, setCbQuery] = useState("");
   const [cbOpen, setCbOpen] = useState(false);
   const [cbHighlight, setCbHighlight] = useState(0);
+<<<<<<< HEAD
   const comboboxRef = useRef(null);
 
   useEffect(() => {
@@ -92,6 +115,8 @@ export function PurchaseOrderPage({ title }) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 
   useEffect(() => {
     listRecords("suppliers").then(setSuppliers);
@@ -102,6 +127,7 @@ export function PurchaseOrderPage({ title }) {
   const total = selected.reduce((sum, line) => sum + line.quantity * line.price, 0);
 
   // Combobox filtered list
+<<<<<<< HEAD
   const cbFiltered = useMemo(() => {
     const q = (cbQuery || "").trim().toLowerCase();
     return products.filter((p) => {
@@ -117,6 +143,16 @@ export function PurchaseOrderPage({ title }) {
       return maSP.includes(q) || tenSP.includes(q) || loaiHang.includes(q);
     });
   }, [products, selected, cbQuery]);
+=======
+  const cbFiltered = products.filter(
+    (p) =>
+      p.TrangThai !== "Ngừng bán" &&
+      !selected.some((s) => s.id === p.id) &&
+      (cbQuery === "" ||
+        p.MaSP?.toLowerCase().includes(cbQuery.toLowerCase()) ||
+        p.TenSP?.toLowerCase().includes(cbQuery.toLowerCase()))
+  );
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -147,6 +183,7 @@ export function PurchaseOrderPage({ title }) {
   }, [filteredOrders, page, pageSize]);
 
   function addProductById(product) {
+<<<<<<< HEAD
     if (!product) return;
     if (product.TrangThai === "Ngừng bán" || product.status === "inactive") {
       toast(`Sản phẩm "${product.TenSP}" đã ngừng kinh doanh, không thể đặt hàng`);
@@ -162,6 +199,11 @@ export function PurchaseOrderPage({ title }) {
       ...current,
       { ...product, id: prodId, _id: prodId, quantity: 1, price: initialPrice },
     ]);
+=======
+    if (!product || selected.some((item) => item.id === product.id)) return;
+    const initialPrice = Number(product.GiaNhap ?? product.GiaBan ?? 0);
+    setSelected((current) => [...current, { ...product, quantity: 1, price: initialPrice }]);
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     setCbQuery("");
     setCbOpen(false);
     setCbHighlight(0);
@@ -170,6 +212,7 @@ export function PurchaseOrderPage({ title }) {
   async function submit(event) {
     event.preventDefault();
     if (!supplierId) return toast("Vui lòng chọn nhà cung cấp trước khi lưu đơn");
+<<<<<<< HEAD
     const supp = suppliers.find((s) => String(s.id) === String(supplierId) || s.MaNCC === supplierId);
     if (supp && (supp.TrangThai === "Ngưng hoạt động" || supp.status === "inactive")) {
       return toast("Nhà cung cấp đã ngưng hoạt động, không thể tạo đơn đặt hàng mới");
@@ -178,6 +221,9 @@ export function PurchaseOrderPage({ title }) {
     if (selected.some((p) => p.TrangThai === "Ngừng bán" || p.status === "inactive")) {
       return toast("Đơn đặt hàng không được chứa sản phẩm đã ngừng kinh doanh");
     }
+=======
+    if (!selected.length) return toast("Vui lòng chọn ít nhất một sản phẩm vào đơn đặt hàng");
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     if (
       selected.some(
         (line) =>
@@ -193,25 +239,36 @@ export function PurchaseOrderPage({ title }) {
       const saved = await saveRecord("purchase-orders", {
         MaNCC: supplierId,
         NgayDat: orderDate,
+<<<<<<< HEAD
         TrangThai: "Đang chờ nhập",
+=======
+        TrangThai: status,
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         TongTien: total,
         NguoiLap: currentUserInfo().name,
         items: selected.map((line) => ({
           productId: line.id,
           quantity: line.quantity,
           price: line.price,
+<<<<<<< HEAD
           quantityReceived: 0,
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         })),
       });
       setOrders((current) => [saved, ...current]);
       setSelected([]);
+<<<<<<< HEAD
       setSupplierId("");
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
       toast("Đã lưu đơn đặt hàng NCC thành công");
     } catch (error) {
       toast(error.message || "Không lưu được đơn đặt hàng");
     }
   }
 
+<<<<<<< HEAD
   // Mở modal detail + load receipts summary
   async function openDetailModal(order) {
     try {
@@ -312,12 +369,18 @@ export function PurchaseOrderPage({ title }) {
     }
   }
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   return (
     <section aria-labelledby="purchase-order-heading">
       <header className="page-header">
         <hgroup>
           <h1 id="purchase-order-heading">{title}</h1>
+<<<<<<< HEAD
           <p>Lập đơn đặt hàng NCC → Nhận hàng từng phần → Tự động cập nhật tồn kho và công nợ.</p>
+=======
+          <p>Lập đơn đặt hàng có sản phẩm, số lượng và liên kết trực tiếp với phiếu nhập.</p>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         </hgroup>
       </header>
       <form onSubmit={submit} className="document-grid">
@@ -329,6 +392,7 @@ export function PurchaseOrderPage({ title }) {
                 <span>Nhà cung cấp <span className="required-star">*</span></span>
                 <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} required>
                   <option value="">Chọn nhà cung cấp</option>
+<<<<<<< HEAD
                   {suppliers.map((supplier) => {
                     const isInactive = supplier.TrangThai === "Ngưng hoạt động" || supplier.status === "inactive";
                     return (
@@ -337,6 +401,13 @@ export function PurchaseOrderPage({ title }) {
                       </option>
                     );
                   })}
+=======
+                  {suppliers.map((supplier) => (
+                    <option value={supplier.id} key={supplier.id}>
+                      {supplier.MaNCC} · {supplier.TenNCC}
+                    </option>
+                  ))}
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                 </select>
               </label>
               <label className="field">
@@ -346,9 +417,16 @@ export function PurchaseOrderPage({ title }) {
               <label className="field">
                 <span>Trạng thái</span>
                 <select value={status} onChange={(event) => setStatus(event.target.value)}>
+<<<<<<< HEAD
                   <option>Đang chờ nhập</option>
                   <option>Đã đặt</option>
                   <option>Đã xác nhận</option>
+=======
+                  <option>Đang chờ</option>
+                  <option>Đã xác nhận</option>
+                  <option>Đã nhập kho</option>
+                  <option>Đã hủy</option>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                 </select>
               </label>
               <label className="field">
@@ -367,22 +445,32 @@ export function PurchaseOrderPage({ title }) {
               </label>
             </div>
           </section>
+<<<<<<< HEAD
           <section className="panel po-product-panel" style={{ overflow: "visible" }}>
+=======
+          <section className="panel po-product-panel">
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             <div className="po-panel-head">
               <h2>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
                 CHI TIẾT SẢN PHẨM
                 {selected.length > 0 && <span className="po-item-count">{selected.length} mặt hàng</span>}
               </h2>
+<<<<<<< HEAD
 
               {/* Custom searchable combobox */}
               <div className="po-combobox" ref={comboboxRef} style={{ position: "relative", width: "100%" }}>
+=======
+              {/* Custom searchable combobox */}
+              <div className="po-combobox" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) { setCbOpen(false); setCbHighlight(0); } }}>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                 <div className={`po-cb-input-wrap ${cbOpen ? "po-cb-open" : ""}`}>
                   <svg className="po-cb-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                   <input
                     className="po-cb-input"
                     type="text"
                     autoComplete="off"
+<<<<<<< HEAD
                     placeholder="Tìm theo tên, mã sản phẩm hoặc danh mục…"
                     value={cbQuery}
                     onFocus={() => { setCbOpen(true); setCbHighlight(0); }}
@@ -414,6 +502,18 @@ export function PurchaseOrderPage({ title }) {
                         setCbOpen(false);
                         setCbQuery("");
                       }
+=======
+                    placeholder="Tìm và thêm sản phẩm…"
+                    value={cbQuery}
+                    onFocus={() => { setCbOpen(true); setCbHighlight(0); }}
+                    onChange={(e) => { setCbQuery(e.target.value); setCbOpen(true); setCbHighlight(0); }}
+                    onKeyDown={(e) => {
+                      if (!cbOpen) return;
+                      if (e.key === "ArrowDown") { e.preventDefault(); setCbHighlight((h) => Math.min(h + 1, cbFiltered.length - 1)); }
+                      else if (e.key === "ArrowUp") { e.preventDefault(); setCbHighlight((h) => Math.max(h - 1, 0)); }
+                      else if (e.key === "Enter") { e.preventDefault(); if (cbFiltered[cbHighlight]) addProductById(cbFiltered[cbHighlight]); }
+                      else if (e.key === "Escape") { setCbOpen(false); setCbQuery(""); }
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                     }}
                   />
                   {cbQuery ? (
@@ -421,6 +521,7 @@ export function PurchaseOrderPage({ title }) {
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     </button>
                   ) : (
+<<<<<<< HEAD
                     <button
                       type="button"
                       tabIndex={-1}
@@ -449,6 +550,13 @@ export function PurchaseOrderPage({ title }) {
                       padding: 6,
                     }}
                   >
+=======
+                    <svg className="po-cb-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                  )}
+                </div>
+                {cbOpen && (
+                  <div className="po-cb-dropdown">
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                     {cbFiltered.length === 0 ? (
                       <div className="po-cb-empty">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -456,6 +564,7 @@ export function PurchaseOrderPage({ title }) {
                       </div>
                     ) : cbFiltered.map((product, idx) => (
                       <button
+<<<<<<< HEAD
                         key={product.id || product._id || idx}
                         type="button"
                         className={`po-cb-option ${idx === cbHighlight ? "po-cb-option-active" : ""}`}
@@ -487,6 +596,18 @@ export function PurchaseOrderPage({ title }) {
                         <span style={{ fontSize: 11, color: "var(--text-faint)", marginRight: 6 }}>
                           {product.LoaiHang || ""}
                         </span>
+=======
+                        key={product.id}
+                        type="button"
+                        className={`po-cb-option ${idx === cbHighlight ? "po-cb-option-active" : ""}`}
+                        onMouseEnter={() => setCbHighlight(idx)}
+                        onMouseDown={(e) => { e.preventDefault(); addProductById(product); }}
+                        tabIndex={-1}
+                      >
+                        <ProductImage src={product.HinhAnh} alt={product.TenSP} category={product.LoaiHang} size={26} borderRadius={6} />
+                        <span className="po-cb-code">{product.MaSP}</span>
+                        <span className="po-cb-name">{product.TenSP}</span>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                         {Number(product.stock || 0) <= 0 ? (
                           <span className="stock-status-out" style={{ fontSize: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Hết hàng</span>
                         ) : Number(product.stock || 0) <= LOW_STOCK_THRESHOLD ? (
@@ -500,6 +621,10 @@ export function PurchaseOrderPage({ title }) {
                   </div>
                 )}
               </div>
+<<<<<<< HEAD
+=======
+
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             </div>
 
             {selected.length === 0 ? (
@@ -532,9 +657,12 @@ export function PurchaseOrderPage({ title }) {
                             <div>
                               <strong className="po-product-code">{line.MaSP}</strong>
                               <small className="po-product-name">{line.TenSP}</small>
+<<<<<<< HEAD
                               {Number(line.stock || 0) <= 0 && (
                                 <small style={{ color: "var(--danger)", display: "block", fontSize: 10 }}>Hết hàng — đặt để bổ sung kho</small>
                               )}
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                             </div>
                           </div>
                         </td>
@@ -590,10 +718,14 @@ export function PurchaseOrderPage({ title }) {
             <div><dt>Tổng số lượng</dt><dd>{selected.reduce((sum, line) => sum + line.quantity, 0)}</dd></div>
           </dl>
           <div className="summary-total"><span>Tổng tiền</span><strong>{money.format(total)}</strong></div>
+<<<<<<< HEAD
           <div style={{ marginTop: 8, padding: "8px 10px", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, fontSize: 12, color: "#166534" }}>
             💡 Tạo đơn sẽ <strong>không tăng tồn kho</strong>. Tồn kho chỉ tăng khi bấm <strong>"Tạo phiếu nhập"</strong> sau khi NCC giao hàng.
           </div>
           <button className="btn btn-primary btn-block" type="submit" style={{ marginTop: 10 }}>Lưu đơn đặt hàng</button>
+=======
+          <button className="btn btn-primary btn-block" type="submit">Lưu đơn đặt hàng</button>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         </aside>
       </form>
 
@@ -617,12 +749,18 @@ export function PurchaseOrderPage({ title }) {
               style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
             >
               <option value="all">Tất cả trạng thái</option>
+<<<<<<< HEAD
               <option value="Đang chờ nhập">Đang chờ nhập</option>
               <option value="Đang chờ">Đang chờ</option>
               <option value="Đã đặt">Đã đặt</option>
               <option value="Đã xác nhận">Đã xác nhận</option>
               <option value="Nhập một phần">Nhập một phần</option>
               <option value="Hoàn thành">Hoàn thành</option>
+=======
+              <option value="Đang chờ">Đang chờ</option>
+              <option value="Đã xác nhận">Đã xác nhận</option>
+              <option value="Đã nhập kho">Đã nhập kho</option>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
               <option value="Đã hủy">Đã hủy</option>
             </select>
             <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12.5 }}>
@@ -662,7 +800,10 @@ export function PurchaseOrderPage({ title }) {
                 <th>Ngày đặt</th>
                 <th>Người lập phiếu</th>
                 <th>Tổng tiền</th>
+<<<<<<< HEAD
                 <th>Tiến độ nhập</th>
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                 <th>Trạng thái</th>
                 <th>Thao tác</th>
               </tr>
@@ -675,11 +816,14 @@ export function PurchaseOrderPage({ title }) {
                     sup.MaNCC === order.MaNCC ||
                     String(sup.MaNCC) === String(order.MaNCCCode)
                 );
+<<<<<<< HEAD
                 // Tính tiến độ từ items
                 const items = order.items || order.details || [];
                 const totalOrdered = items.reduce((sum, i) => sum + Number(i.quantity || i.SoLuong || 0), 0);
                 const totalReceived = items.reduce((sum, i) => sum + Number(i.quantityReceived || 0), 0);
                 const canReceive = order.TrangThai !== "Hoàn thành" && order.TrangThai !== "Đã hủy";
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                 return (
                   <tr key={order.id}>
                     <td><strong>{order.MaDDH || order.id}</strong></td>
@@ -687,6 +831,7 @@ export function PurchaseOrderPage({ title }) {
                     <td>{order.NgayDat}</td>
                     <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{order.NguoiLap || order.MaNVCode || "Quản trị viên"}</span></td>
                     <td>{money.format(order.TongTien || 0)}</td>
+<<<<<<< HEAD
                     <td style={{ minWidth: 120 }}>
                       {totalOrdered > 0 ? (
                         <PoProgressBar ordered={totalOrdered} received={totalReceived} />
@@ -712,13 +857,32 @@ export function PurchaseOrderPage({ title }) {
                           </button>
                         )}
                       </div>
+=======
+                    <td><StatusBadge status={order.TrangThai} /></td>
+                    <td>
+                      <button type="button" className="icon-sm-btn" title="Xem chi tiết" onClick={async () => {
+                        try {
+                          const details = await listRecords(`purchase-orders/${order.id || order._id}`);
+                          const loaded = (details && !Array.isArray(details) ? (details.items || details.details) : Array.isArray(details) ? details : null) || order.items || order.details || [];
+                          setPoDetailModal({ ...order, loadedDetails: loaded });
+                        } catch {
+                          setPoDetailModal({ ...order, loadedDetails: order.items || order.details || [] });
+                        }
+                      }}>
+                        <EyeIcon className="ic" />
+                      </button>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                     </td>
                   </tr>
                 );
               })}
               {!filteredOrders.length && (
                 <tr>
+<<<<<<< HEAD
                   <td colSpan={8} style={{ padding: 0 }}>
+=======
+                  <td colSpan={7} style={{ padding: 0 }}>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                     <EmptyState
                       icon={ShoppingCartIcon}
                       title="Không tìm thấy đơn đặt hàng"
@@ -742,7 +906,10 @@ export function PurchaseOrderPage({ title }) {
         )}
       </section>
 
+<<<<<<< HEAD
       {/* ── Modal Chi tiết PO ── */}
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
       <Modal
         open={!!poDetailModal}
         title={`Chi tiết đơn đặt hàng ${poDetailModal?.MaDDH || poDetailModal?.id || ""}`}
@@ -773,8 +940,11 @@ export function PurchaseOrderPage({ title }) {
                 <span className="po-detail-value"><StatusBadge status={poDetailModal.TrangThai} /></span>
               </div>
             </div>
+<<<<<<< HEAD
 
             {/* Tiến độ nhập theo từng sản phẩm */}
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             <div style={{ overflowX: "auto" }}>
               <table className="data-table">
                 <thead>
@@ -783,9 +953,13 @@ export function PurchaseOrderPage({ title }) {
                     <th>Mã SP</th>
                     <th>Tên sản phẩm</th>
                     <th>ĐVT</th>
+<<<<<<< HEAD
                     <th style={{ textAlign: "right" }}>Đặt</th>
                     <th style={{ textAlign: "right" }}>Đã nhập</th>
                     <th style={{ textAlign: "right" }}>Còn thiếu</th>
+=======
+                    <th style={{ textAlign: "right" }}>Số lượng</th>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                     <th style={{ textAlign: "right" }}>Đơn giá</th>
                     <th style={{ textAlign: "right" }}>Thành tiền</th>
                   </tr>
@@ -796,37 +970,54 @@ export function PurchaseOrderPage({ title }) {
                       String(p.id) === String(item.productId || item.MaSP || item._id) ||
                       String(p.MaSP) === String(item.MaSPCode || item.MaSP)
                     );
+<<<<<<< HEAD
                     // Lấy thông tin từ receiptsSummary nếu có (chính xác hơn)
                     const pid = String(item.productId || item.MaSP || item.id || "");
                     const summaryItem = poDetailModal.receiptsSummary?.summaryItems?.find(s => s.productId === pid);
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                     const spCode = prod?.MaSP || item.MaSPCode || (!/^[0-9a-fA-F]{24}$/.test(item.MaSP) ? item.MaSP : "") || "—";
                     const spName = prod?.TenSP || item.TenSP || item.name || "—";
                     const spUnit = prod?.DonViTinh || item.DonViTinh || "—";
                     const spPrice = Number(item.DonGia ?? item.price ?? prod?.GiaNhap ?? 0);
+<<<<<<< HEAD
                     const spQty = summaryItem?.quantityOrdered ?? Number(item.SoLuong ?? item.quantity ?? 0);
                     const spReceived = summaryItem?.quantityReceived ?? Number(item.quantityReceived ?? 0);
                     const spRemaining = Math.max(0, spQty - spReceived);
                     const spTotal = spQty * spPrice;
+=======
+                    const spQty = Number(item.SoLuong ?? item.quantity ?? 0);
+                    const spTotal = Number(item.ThanhTien || spQty * spPrice);
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                     return (
                       <tr key={idx}>
                         <td>{idx + 1}</td>
                         <td><code style={{ fontSize: 12, fontWeight: 700, color: "var(--primary)" }}>{spCode}</code></td>
                         <td>{spName}</td>
                         <td>{spUnit}</td>
+<<<<<<< HEAD
                         <td style={{ textAlign: "right", fontWeight: 600 }}>{spQty}</td>
                         <td style={{ textAlign: "right", color: spReceived > 0 ? "#059669" : "var(--text-faint)", fontWeight: spReceived > 0 ? 700 : 400 }}>{spReceived}</td>
                         <td style={{ textAlign: "right", color: spRemaining > 0 ? "#d97706" : "#059669", fontWeight: 700 }}>{spRemaining}</td>
+=======
+                        <td style={{ textAlign: "right" }}>{spQty}</td>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                         <td style={{ textAlign: "right" }}>{money.format(spPrice)}</td>
                         <td style={{ textAlign: "right", fontWeight: 700 }}>{money.format(spTotal)}</td>
                       </tr>
                     );
                   })}
                   {!(poDetailModal.loadedDetails || []).length && (
+<<<<<<< HEAD
                     <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--text-faint)", padding: 24 }}>Chưa có dữ liệu chi tiết sản phẩm</td></tr>
+=======
+                    <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)", padding: 24 }}>Chưa có dữ liệu chi tiết sản phẩm</td></tr>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                   )}
                 </tbody>
               </table>
             </div>
+<<<<<<< HEAD
 
             {/* Tổng kết */}
             {poDetailModal.receiptsSummary && (
@@ -1009,6 +1200,12 @@ export function PurchaseOrderPage({ title }) {
             <div style={{ padding: "8px 12px", background: "#fefce8", border: "1px solid #fef08a", borderRadius: 8, fontSize: 12, color: "#854d0e" }}>
               💡 Sau khi xác nhận: Tồn kho sẽ tăng theo số lượng thực nhận. Công nợ NCC phát sinh từ số tiền chưa thanh toán. Trạng thái đơn đặt hàng sẽ được cập nhật tự động.
             </div>
+=======
+            <div className="po-detail-total">
+              <span>Tổng tiền:</span>
+              <span>{money.format(poDetailModal.TongTien || 0)}</span>
+            </div>
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
           </div>
         )}
       </Modal>

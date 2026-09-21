@@ -65,6 +65,7 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
       ]
     });
     if (!supplier) throw fail("Nhà cung cấp không hợp lệ", 404);
+<<<<<<< HEAD
     if (supplier.TrangThai === "Ngưng hoạt động" || supplier.status === "inactive") {
       throw fail("Nhà cung cấp đã ngưng hoạt động, không thể tạo phiếu nhập kho", 400);
     }
@@ -75,6 +76,8 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
       }
     }
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     const rawPO = req.body.purchaseOrderId || req.body.MaDDH;
     let purchaseOrder = null;
     let purchaseOrderId = null;
@@ -83,6 +86,7 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
       purchaseOrder = await getDatabase().collection("DonDatHang").findOne(
         pId ? { _id: pId } : { MaDDH: String(rawPO) }
       );
+<<<<<<< HEAD
       if (!purchaseOrder) throw fail("Đơn đặt hàng không tồn tại", 404);
       if (purchaseOrder.TrangThai === "Đã hủy") {
         throw fail("Đơn đặt hàng đã bị hủy, không thể tạo phiếu nhập", 400);
@@ -166,6 +170,48 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
           ThanhTien: line.quantity * line.price,
         })),
         createdAt: new Date(),
+=======
+      if (purchaseOrder) {
+        purchaseOrderId = purchaseOrder._id;
+        const matchesSupplier =
+          String(purchaseOrder.MaNCC) === String(supplier._id) ||
+          String(purchaseOrder.MaNCC) === String(supplier.MaNCC) ||
+          String(purchaseOrder.MaNCCCode) === String(supplier.MaNCC);
+        if (!matchesSupplier) throw fail("Đơn đặt hàng không khớp với nhà cung cấp đã chọn", 400);
+      }
+    }
+    if (req.body.NgayNhap && !/^\d{4}-\d{2}-\d{2}$/.test(req.body.NgayNhap)) throw fail("Ngày nhập không hợp lệ");
+    const total = lines.reduce((sum, line) => sum + line.quantity * line.price, 0);
+    const created = await withTransaction(async (session) => {
+      await adjustStock(lines, 1, false, session);
+      const document = {
+      MaPN: await nextBusinessCode(getDatabase().collection("PhieuNhap"), "PhieuNhap"),
+      MaDDH: purchaseOrderId || null,
+      MaNCC: supplier._id,
+      MaNV: req.user.id,
+      NgayNhap: req.body.NgayNhap || today(),
+      TrangThai: "Đã lưu",
+      TongTien: total,
+      SoLuong: lines.reduce((sum, line) => sum + line.quantity, 0),
+      LyDoNhap: req.body.LyDoNhap || `Nhập hàng từ ${supplier.TenNCC}`,
+      NguoiLienQuan: req.body.NguoiLienQuan || supplier.TenNCC || "",
+      DiaChi: req.body.DiaChi || supplier.DiaChi || "",
+      Kho: req.body.Kho || "Kho chính",
+      DiaDiem: req.body.DiaDiem || "",
+      TkNo: req.body.TkNo || "156",
+      TkCo: req.body.TkCo || "331",
+      SoChungTuGoc: req.body.SoChungTuGoc || "",
+      GhiChu: req.body.GhiChu || req.body.note || "",
+      details: lines.map((line) => ({
+        MaSP: line.product._id,
+        TenSP: line.product.TenSP,
+        DonViTinh: line.product.DonViTinh,
+        SoLuong: line.quantity,
+        DonGia: line.price,
+        ThanhTien: line.quantity * line.price,
+      })),
+      createdAt: new Date(),
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
       };
       const result = await getDatabase().collection("PhieuNhap").insertOne(document, { session });
       await replaceDetails(getDatabase(), "CT_PhieuNhap", result.insertedId, document.details, session);
@@ -175,6 +221,7 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
         MaNCC: supplier._id,
         MaDDH: purchaseOrderId,
         MaPN: result.insertedId,
+<<<<<<< HEAD
         MaNV: req.user.id,
         LoaiCongNo: "Nhà cung cấp",
         type: "suppliers",
@@ -234,6 +281,19 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
             { session }
           );
         }
+=======
+          MaNV: req.user.id,
+        LoaiCongNo: "Nhà cung cấp",
+        NgayPhatSinh: document.NgayNhap,
+        SoTien: total,
+        SoTienDaTra: 0,
+        SoTienConLai: total,
+        TrangThai: "Còn nợ",
+        createdAt: new Date(),
+      }, { session });
+      if (purchaseOrderId) {
+        await getDatabase().collection("DonDatHang").updateOne({ _id: purchaseOrderId }, { $set: { TrangThai: "Đã nhập kho", updatedAt: new Date() } }, { session });
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
       }
       return serialize({ _id: result.insertedId, ...document });
     });
@@ -241,7 +301,10 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
   } catch (error) { next(error); }
 });
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 router.post("/goods-issues", requirePermission("goods-issues", "tao"), async (req, res, next) => {
   try {
     const lines = await productsByLines(req.body.details || req.body.items);
@@ -299,6 +362,7 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
         throw fail("Không thể lập hóa đơn cho khách hàng đã ngưng hoạt động", 400);
       }
     }
+<<<<<<< HEAD
 
     for (const line of lines) {
       if (line.product.TrangThai === "Ngừng bán" || line.product.status === "inactive" || line.product.status === "discontinued") {
@@ -320,19 +384,38 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
 
     if (promoCode) {
       promo = await getDatabase().collection("KhuyenMai").findOne({
+=======
+    const subtotal = lines.reduce((sum, line) => sum + line.quantity * line.price, 0);
+
+    // Calculate voucher / discount
+    let discount = Number(req.body.discount || req.body.GiamGia || 0);
+    let promoCode = String(req.body.promoCode || req.body.MaKM || req.body.voucherCode || "").trim();
+
+    if (promoCode) {
+      // Find promo code in KhuyenMai
+      const promo = await getDatabase().collection("KhuyenMai").findOne({
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         MaKM: { $regex: new RegExp(`^${promoCode}$`, "i") },
         TrangThai: { $ne: "Đã kết thúc" }
       });
       if (promo) {
+<<<<<<< HEAD
+=======
+        // Check scope
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         const pts = Number(customer?.DiemTichLuy || 0);
         const tier = pts >= 1000 ? "Kim Cương" : pts >= 500 ? "Hạng Vàng" : pts >= 100 ? "Hạng Bạc" : "Hạng Đồng";
         if (promo.PhamVi === "Theo đối tượng" && promo.DoiTuong && promo.DoiTuong !== "Tất cả") {
           if (!customer) {
             throw fail(`Mã ưu đãi "${promoCode}" chỉ dành cho khách hàng ${promo.DoiTuong}`);
           }
+<<<<<<< HEAD
           const dtLower = promo.DoiTuong.toLowerCase();
           const tierLower = tier.toLowerCase();
           if (!dtLower.includes(tierLower) && !tierLower.includes(dtLower)) {
+=======
+          if (!promo.DoiTuong.toLowerCase().includes(tier.toLowerCase())) {
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             throw fail(`Mã ưu đãi "${promoCode}" áp dụng cho ${promo.DoiTuong}. Khách hàng hiện tại đang là ${tier}.`);
           }
         }
@@ -343,6 +426,7 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
         }
       }
     }
+<<<<<<< HEAD
 
     const usedVoucherId = req.body.usedVoucherId;
     if (usedVoucherId && customer) {
@@ -356,6 +440,10 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
     discount = Math.max(0, Math.min(subtotal, discount));
     const total = Math.max(0, subtotal - discount);
     const isFullPaid = total === 0;
+=======
+    discount = Math.max(0, Math.min(subtotal, discount));
+    const total = subtotal - discount;
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 
     const created = await withTransaction(async (session) => {
       await adjustStock(lines, -1, false, session);
@@ -375,9 +463,12 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
           MaSP: line.product._id,
           TenSP: line.product.TenSP,
           MaSPCode: line.product.MaSP,
+<<<<<<< HEAD
           HinhAnh: line.product.HinhAnh || "",
           LoaiHang: line.product.LoaiHang || "",
           DonViTinh: line.product.DonViTinh || "Cái",
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
           SoLuong: line.quantity,
           DonGia: line.price,
           GiamGia: 0,
@@ -399,9 +490,15 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
         GiamGia: discount,
         MaKM: promoCode || null,
         TongTien: total,
+<<<<<<< HEAD
         SoTienDaTra: isFullPaid ? total : 0,
         SoTienConLai: isFullPaid ? 0 : total,
         TrangThai: isFullPaid ? "Đã thanh toán" : "Chưa thanh toán",
+=======
+        SoTienDaTra: 0,
+        SoTienConLai: total,
+        TrangThai: "Chưa thanh toán",
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         details: order.details,
         createdAt: new Date()
       };
@@ -409,7 +506,13 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
       await replaceDetails(getDatabase(), "CT_HoaDon", invoiceResult.insertedId, invoice.details, session);
 
       if (customerId) {
+<<<<<<< HEAD
         if (usedVoucherId) {
+=======
+        const usedVoucherId = req.body.usedVoucherId;
+        if (usedVoucherId) {
+          // Khách hàng chọn voucher đã đổi từ trước -> Đánh dấu voucher đã sử dụng, không trừ điểm lần 2
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
           await getDatabase().collection("KhachHang").updateOne(
             { _id: customerId, "VouchersDaDoi.id": usedVoucherId },
             {
@@ -422,6 +525,10 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
             { session }
           );
         } else {
+<<<<<<< HEAD
+=======
+          // Đổi điểm lấy voucher trực tiếp tại quầy thanh toán (nếu áp dụng voucher cần điểm)
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
           let redeemPoints = Number(req.body.redeemPoints || 0);
           if (!redeemPoints && promo) {
             redeemPoints = Number(promo.DiemYeuCau || 0);
@@ -455,6 +562,26 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
             { session }
           );
         }
+<<<<<<< HEAD
+=======
+
+        const debtCollection = getDatabase().collection("CongNo");
+        await debtCollection.insertOne({
+          MaCN: await nextBusinessCode(debtCollection, "CongNo"),
+          MaKH: customerId,
+          MaDH: orderResult.insertedId,
+          MaHD: invoiceResult.insertedId,
+          MaNV: req.user.id,
+          NguoiLap: nguoiLap,
+          LoaiCongNo: "Khách hàng",
+          NgayPhatSinh: today(),
+          SoTien: total,
+          SoTienDaTra: 0,
+          SoTienConLai: total,
+          TrangThai: "Còn nợ",
+          createdAt: new Date(),
+        }, { session });
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
       }
       return { order: serialize({ _id: orderResult.insertedId, ...order }), invoice: serialize({ _id: invoiceResult.insertedId, ...invoice }) };
     });
@@ -497,6 +624,7 @@ router.post("/payments", requirePermission("payments", "tao"), async (req, res, 
   } catch (error) { next(error); }
 });
 
+<<<<<<< HEAD
 // ── Lấy danh sách phiếu nhập đã liên kết với đơn đặt hàng NCC ──────────────
 router.get("/purchase-orders/:id/receipts", requirePermission("goods-receipts", "xem"), async (req, res, next) => {
   try {
@@ -696,6 +824,8 @@ router.post("/purchase-orders/:id/receive", requirePermission("goods-receipts", 
   } catch (error) { next(error); }
 });
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 router.post("/stocktakes", requirePermission("stocktakes", "tao"), async (req, res, next) => {
   try {
     const created = await withTransaction(async (session) => {
@@ -802,6 +932,7 @@ router.post("/returns", requirePermission("returns", "tao"), async (req, res, ne
   } catch (error) { next(error); }
 });
 
+<<<<<<< HEAD
 router.get("/inventory", requirePermission("inventory", "xem"), async (_req, res, next) => {
   try {
     const products = await getDatabase().collection("SanPham").find().sort({ TenSP: 1 }).toArray();
@@ -824,6 +955,9 @@ router.get("/inventory", requirePermission("inventory", "xem"), async (_req, res
     next(error);
   }
 });
+=======
+router.get("/inventory", requirePermission("inventory", "xem"), async (_req, res, next) => { try { const products = await getDatabase().collection("SanPham").find().sort({ TenSP: 1 }).toArray(); const stocks = await getDatabase().collection("TonKho").find().toArray(); const byProduct = new Map(stocks.map((stock) => [stock.MaSP.toString(), stock])); res.json({ data: products.map((product) => ({ ...serialize(product), stock: Number(byProduct.get(product._id.toString())?.SoLuongTon ?? product.stock ?? 0), stockUpdatedAt: byProduct.get(product._id.toString())?.updatedAt || byProduct.get(product._id.toString())?.NgayCapNhat || null })) }); } catch (error) { next(error); } });
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 
 router.post("/customers/:id/redeem-voucher", requirePermission("customers", "sua"), async (req, res, next) => {
   try {

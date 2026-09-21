@@ -1,17 +1,26 @@
+<<<<<<< HEAD
 import React from "react";
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 export function StatCard({
   icon: Icon,
   label,
   value,
   delta,
+<<<<<<< HEAD
   deltaType = "up", // "up" | "down" | "neutral"
   theme = "teal", // "teal" | "blue" | "gold" | "green" | "amber" | "red" | "purple"
   valueClass = "",
+=======
+  valueClass = "",
+  deltaDown = false,
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   badge,
   badgeType = "neutral",
   onClick,
 }) {
+<<<<<<< HEAD
   const themeColors = {
     teal: {
       bg: "#E7F0EE",
@@ -88,6 +97,34 @@ export function StatCard({
           )}
         </div>
       </div>
+=======
+  return (
+    <article
+      className={`stat-card erp-stat-card ${onClick ? "clickable" : ""}`}
+      onClick={onClick}
+    >
+      <div className="stat-card-top">
+        <span className="stat-label">{label}</span>
+        {Icon && (
+          <div className="stat-icon-wrapper" aria-hidden="true">
+            <Icon className="stat-icon" />
+          </div>
+        )}
+      </div>
+
+      <div className="stat-card-main">
+        <span className={`stat-value ${valueClass}`}>{value}</span>
+        {badge && (
+          <span className={`stat-badge badge-${badgeType}`}>{badge}</span>
+        )}
+      </div>
+
+      {delta && (
+        <div className={`stat-delta ${deltaDown ? "down" : ""}`}>
+          <span>{delta}</span>
+        </div>
+      )}
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     </article>
   );
 }

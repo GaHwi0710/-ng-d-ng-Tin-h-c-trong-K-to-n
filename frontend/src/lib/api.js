@@ -84,6 +84,7 @@ export async function logout() {
 export async function getReport(name) {
   return await request(`reports/${name}`);
 }
+<<<<<<< HEAD
 
 /** POST tới một endpoint tùy ý (không qua saveRecord logic) */
 export async function postRequest(resource, body) {
@@ -96,3 +97,5 @@ export async function getRequest(resource) {
   const result = await request(resource);
   return result.data || result;
 }
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de

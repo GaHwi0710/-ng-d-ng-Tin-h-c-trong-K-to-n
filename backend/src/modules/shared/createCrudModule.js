@@ -57,6 +57,7 @@ function validateRecord(tableName, body) {
     PhieuChi: ["NguoiNhanTien", "LyDo", "SoTien"],
   }[tableName] || [];
   if (required.some((field) => !String(body[field] ?? "").toString().trim())) return "Vui lòng nhập đủ các trường bắt buộc";
+<<<<<<< HEAD
 
   if (tableName === "SanPham") {
     if (body.GiaNhap === undefined || body.GiaNhap === null || String(body.GiaNhap).trim() === "") {
@@ -79,6 +80,8 @@ function validateRecord(tableName, body) {
     if (!body.HanSuDung || isNaN(Date.parse(body.HanSuDung))) return "Hạn sử dụng không hợp lệ hoặc chưa nhập";
   }
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   if ((tableName === "PhieuThu" || tableName === "PhieuChi") && (!Number.isFinite(Number(body.SoTien)) || Number(body.SoTien) <= 0)) {
     return "Số tiền thu/chi phải là số lớn hơn 0";
   }
@@ -87,6 +90,11 @@ function validateRecord(tableName, body) {
   }
   if (body.Email && !/^\S+@\S+\.\S+$/.test(body.Email)) return "Email không hợp lệ";
   if (body.SDT && !/^0\d{9,10}$/.test(String(body.SDT).trim())) return "Số điện thoại phải gồm 10-11 chữ số và bắt đầu bằng 0";
+<<<<<<< HEAD
+=======
+  if (tableName === "SanPham" && !["Đang bán", "Ngừng bán"].includes(body.TrangThai)) return "Trạng thái sản phẩm không hợp lệ";
+  if (tableName === "SanPham" && (!body.HanSuDung || isNaN(Date.parse(body.HanSuDung)))) return "Hạn sử dụng không hợp lệ hoặc chưa nhập";
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   if (tableName === "KhuyenMai" && Number(body.PhanTramGiam) > 100) return "Phần trăm giảm không được vượt quá 100";
   if (body.NgayBatDau && body.NgayKetThuc && String(body.NgayBatDau) > String(body.NgayKetThuc)) return "Ngày bắt đầu không được sau ngày kết thúc";
   for (const field of ["GiaNhap", "GiaBan", "DiemTichLuy", "PhanTramGiam", "SoTien", "SoTienDaTra", "SoTienConLai"]) {
@@ -227,8 +235,52 @@ export function createCrudModule(routeName, tableName) {
   router.post("/", async (req, res, next) => {
     try {
       if (tableName === "CongNo") {
+<<<<<<< HEAD
         return res.status(400).json({
           message: "Không thể tạo công nợ thủ công. Công nợ nhà cung cấp phải phát sinh tự động từ phiếu nhập kho.",
+=======
+        // Cho phép tạo công nợ thủ công (ngoài hóa đơn/phiếu nhập)
+        const body = { ...req.body };
+        const rawNCC = body.MaNCC || (body.type === "suppliers" ? body.partnerId : null);
+        const rawKH = body.MaKH || (body.type === "customers" ? body.partnerId : null);
+        const hasMaNCC = rawNCC && ObjectId.isValid(rawNCC);
+        const hasMaKH = rawKH && ObjectId.isValid(rawKH);
+        if (!hasMaNCC && !hasMaKH) {
+          return res.status(400).json({ message: "Phải chọn Nhà cung cấp hoặc Khách hàng cho khoản công nợ" });
+        }
+        body.MaNCC = hasMaNCC ? rawNCC : null;
+        body.MaKH = hasMaKH ? rawKH : null;
+
+        const soTien = Number(body.SoTien);
+        if (!Number.isFinite(soTien) || soTien <= 0) {
+          return res.status(400).json({ message: "Số tiền công nợ phải lớn hơn 0" });
+        }
+        const soTienDaTra = Math.max(0, Number(body.SoTienDaTra) || 0);
+        const soTienConLai = Math.max(0, soTien - soTienDaTra);
+        const trangThai = soTienConLai === 0 ? "Đã thanh toán" : "Còn nợ";
+        const debtCollection = getDatabase().collection("CongNo");
+        const maCN = await nextBusinessCode(debtCollection, "CongNo");
+        const document = {
+          MaCN: maCN,
+          MaNCC: hasMaNCC ? new ObjectId(body.MaNCC) : null,
+          MaKH: hasMaKH ? new ObjectId(body.MaKH) : null,
+          LoaiCongNo: hasMaNCC ? "Nhà cung cấp" : "Khách hàng",
+          type: hasMaNCC ? "suppliers" : "customers",
+          NgayPhatSinh: body.NgayPhatSinh || new Date().toISOString().slice(0, 10),
+          SoTien: soTien,
+          SoTienDaTra: soTienDaTra,
+          SoTienConLai: soTienConLai,
+          TrangThai: trangThai,
+          GhiChu: body.GhiChu || "",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        const result = await debtCollection.insertOne(document);
+        return res.status(201).json({
+          table: "CongNo",
+          data: await serializeRecord("CongNo", { _id: result.insertedId, ...document }),
+          message: "Tao moi cong no",
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         });
       }
       const collection = getDatabase().collection(tableName);
@@ -237,6 +289,7 @@ export function createCrudModule(routeName, tableName) {
         if (!body.HanSuDung || !String(body.HanSuDung).trim() || isNaN(Date.parse(body.HanSuDung))) {
           return res.status(400).json({ message: "Vui lòng chọn hạn sử dụng hợp lệ cho sản phẩm trước khi lưu" });
         }
+<<<<<<< HEAD
         if (body.GiaNhap === undefined || body.GiaNhap === null || String(body.GiaNhap).trim() === "") {
           return res.status(400).json({ message: "Giá nhập là bắt buộc" });
         }
@@ -254,6 +307,8 @@ export function createCrudModule(routeName, tableName) {
         body.GiaNhap = gn;
         body.GiaBan = gb;
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         let catDoc = null;
         if (ObjectId.isValid(body.MaLoai)) {
           catDoc = await getDatabase().collection("LoaiHang").findOne({ _id: new ObjectId(body.MaLoai) });
@@ -277,11 +332,14 @@ export function createCrudModule(routeName, tableName) {
       } else if (tableName === "DonDatHang") {
         if (!ObjectId.isValid(body.MaNCC)) return res.status(400).json({ message: "Nhà cung cấp không hợp lệ" });
         body.MaNCC = new ObjectId(body.MaNCC);
+<<<<<<< HEAD
         const suppDoc = await getDatabase().collection("NhaCungCap").findOne({ _id: body.MaNCC });
         if (!suppDoc) return res.status(400).json({ message: "Nhà cung cấp không tồn tại" });
         if (suppDoc.TrangThai === "Ngưng hoạt động" || suppDoc.status === "inactive") {
           return res.status(400).json({ message: "Nhà cung cấp đã ngưng hoạt động, không thể tạo đơn đặt hàng" });
         }
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
       }
       if (tableName === "DonDatHang") {
         const lines = body.items || body.details;
@@ -290,6 +348,7 @@ export function createCrudModule(routeName, tableName) {
         let total = 0;
         for (const line of lines) {
           const productId = parseId(line.productId || line.id || line.MaSP);
+<<<<<<< HEAD
           if (!productId) return res.status(400).json({ message: "Sản phẩm trong đơn đặt hàng không hợp lệ" });
           const productDoc = await products.findOne({ _id: productId });
           if (!productDoc) return res.status(400).json({ message: "Sản phẩm trong đơn đặt hàng không hợp lệ" });
@@ -315,6 +374,16 @@ export function createCrudModule(routeName, tableName) {
         if (!body.TrangThai || !allowedStatuses.includes(body.TrangThai)) {
           body.TrangThai = "Đang chờ nhập";
         }
+=======
+          const quantity = Number(line.quantity || line.SoLuong);
+          const price = Number(line.price ?? line.DonGia);
+          if (!productId || !await products.findOne({ _id: productId })) return res.status(400).json({ message: "Sản phẩm trong đơn đặt hàng không hợp lệ" });
+          if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0) return res.status(400).json({ message: "Số lượng và đơn giá đặt hàng không hợp lệ" });
+          total += quantity * price;
+        }
+        body.items = lines;
+        body.TongTien = total;
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
       }
       if (req.user && tableName !== "NhanVien") {
         body.MaNV = req.user.id;
@@ -379,6 +448,7 @@ export function createCrudModule(routeName, tableName) {
       const id = existingDoc._id;
 
       if (tableName === "CongNo") {
+<<<<<<< HEAD
         const body = { ...req.body };
         const soTien = Number(body.SoTien ?? existingDoc.SoTien);
         if (!Number.isFinite(soTien) || soTien <= 0) {
@@ -388,6 +458,15 @@ export function createCrudModule(routeName, tableName) {
         if (soTienDaTra > soTien) {
           return res.status(400).json({ message: `Số tiền đã thanh toán (${soTienDaTra}) không được vượt quá tổng nợ (${soTien})` });
         }
+=======
+        // Cho phép cập nhật công nợ thủ công (tính lại SoTienConLai và TrangThai)
+        const body = { ...req.body };
+        const soTien = Number(body.SoTien);
+        if (!Number.isFinite(soTien) || soTien <= 0) {
+          return res.status(400).json({ message: "Số tiền công nợ phải lớn hơn 0" });
+        }
+        const soTienDaTra = Math.max(0, Number(body.SoTienDaTra) || 0);
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         const soTienConLai = Math.max(0, soTien - soTienDaTra);
         const trangThai = soTienConLai === 0 ? "Đã thanh toán" : "Còn nợ";
         delete body.id;
@@ -405,15 +484,24 @@ export function createCrudModule(routeName, tableName) {
           { $set: update },
           { returnDocument: "after" }
         );
+<<<<<<< HEAD
         if (!result) return res.status(404).json({ message: "Không tìm thấy công nợ" });
         return res.json({
           table: "CongNo",
           data: await serializeRecord("CongNo", result),
           message: "Cập nhật công nợ thành công",
+=======
+        if (!result) return res.status(404).json({ message: "Khong tim thay cong no" });
+        return res.json({
+          table: "CongNo",
+          data: await serializeRecord("CongNo", result),
+          message: "Cap nhat cong no",
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         });
       }
       const update = { ...req.body, updatedAt: new Date() };
       if (tableName === "SanPham") {
+<<<<<<< HEAD
         if (update.GiaNhap !== undefined) {
           if (update.GiaNhap === null || String(update.GiaNhap).trim() === "") {
             return res.status(400).json({ message: "Giá nhập là bắt buộc" });
@@ -434,6 +522,8 @@ export function createCrudModule(routeName, tableName) {
           }
           update.GiaBan = gb;
         }
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         let catDoc = null;
         if (ObjectId.isValid(update.MaLoai)) {
           catDoc = await getDatabase().collection("LoaiHang").findOne({ _id: new ObjectId(update.MaLoai) });
@@ -455,6 +545,7 @@ export function createCrudModule(routeName, tableName) {
           return res.status(400).json({ message: "Loại hàng không hợp lệ" });
         }
       } else if (tableName === "DonDatHang") {
+<<<<<<< HEAD
         if (update.MaNCC) {
           if (!ObjectId.isValid(update.MaNCC)) return res.status(400).json({ message: "Nhà cung cấp không hợp lệ" });
           update.MaNCC = new ObjectId(update.MaNCC);
@@ -481,6 +572,15 @@ export function createCrudModule(routeName, tableName) {
           }
           update.TongTien = lines.reduce((sum, line) => sum + Number(line.quantity || line.SoLuong) * Number(line.price ?? line.DonGia), 0);
         }
+=======
+        if (!ObjectId.isValid(update.MaNCC)) return res.status(400).json({ message: "Nhà cung cấp không hợp lệ" });
+        update.MaNCC = new ObjectId(update.MaNCC);
+      }
+      if (tableName === "DonDatHang") {
+        const lines = update.items || update.details;
+        if (!Array.isArray(lines) || !lines.length) return res.status(400).json({ message: "Đơn đặt hàng phải có ít nhất một sản phẩm" });
+        update.TongTien = lines.reduce((sum, line) => sum + Number(line.quantity || line.SoLuong) * Number(line.price ?? line.DonGia), 0);
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
       }
       const validation = validateRecord(tableName, update);
       if (validation) return res.status(400).json({ message: validation });
@@ -520,9 +620,12 @@ export function createCrudModule(routeName, tableName) {
       if (tableName === "NhanVien" && (existingDoc.username || update.username)) {
         const uName = existingDoc.username || update.username;
         const isLocked = isLockedStatus(update.TrangThai);
+<<<<<<< HEAD
         if (isLocked && (req.user?.username === uName || req.user?.id === String(existingDoc.userId || existingDoc._id))) {
           return res.status(400).json({ message: "Không thể tự khóa tài khoản của chính mình" });
         }
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         await getDatabase().collection("Users").updateOne(
           { username: uName },
           { $set: { status: isLocked ? "Đã khóa" : "Hoạt động", updatedAt: new Date() } }
@@ -632,6 +735,7 @@ export function createCrudModule(routeName, tableName) {
         await db.collection("TonKho").deleteOne({ MaSP: id });
       }
 
+<<<<<<< HEAD
       if (tableName === "PhieuNhap") {
         await db.collection("CongNo").deleteMany({
           $or: [
@@ -649,6 +753,8 @@ export function createCrudModule(routeName, tableName) {
         });
       }
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
       const result = await db.collection(tableName).deleteOne({ _id: id });
       if (!result.deletedCount) return res.status(404).json({ message: `Không tìm thấy ${routeName}` });
       res.json({ table: tableName, id: req.params.id, softDeleted: false, message: `Đã xóa ${routeName} thành công.` });

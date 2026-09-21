@@ -4,7 +4,10 @@ import { hashPassword } from "../modules/auth/password.js";
 import { ensureBusinessCodes } from "../modules/shared/businessCode.js";
 import { backfillDetailCollections, ensureDetailCollections } from "../modules/shared/detailCollections.js";
 import { DEFAULT_ROLE_PERMISSIONS, ROLE_DESCRIPTIONS } from "../modules/shared/permissions.js";
+<<<<<<< HEAD
 import { ensureIndexes } from "./ensure-indexes.js";
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 
 // Đảm bảo 5 vai trò hệ thống luôn tồn tại kèm ma trận quyền mặc định
 // ($setOnInsert nên không ghi đè quyền đã được quản lý chỉnh sửa)
@@ -45,8 +48,11 @@ export async function seedDatabase(database) {
   const now = new Date();
   await ensureDetailCollections(database);
   await ensureBusinessCodes(database);
+<<<<<<< HEAD
   // Đảm bảo chỉ mục MongoDB cho hiệu năng truy vấn khi dữ liệu lớn
   await ensureIndexes(database);
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 
   // Đảm bảo mọi sản phẩm đều có tồn kho trong TonKho (không ghi đè nếu đã có)
   const existingProds = await database.collection("SanPham").find({}).toArray();

@@ -18,7 +18,10 @@ import { ProductImage } from "../../components/ProductImage.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
+<<<<<<< HEAD
 import { amountToWords } from "../../lib/amountToWords.js";
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -88,6 +91,7 @@ export function InvoicePage({ title }) {
   function printInvoice(invoice) {
     const customer = customerFor(invoice);
     const lines = invoice.details || [];
+<<<<<<< HEAD
     const escapeHtml = (value) =>
       String(value ?? "").replace(
         /[&<>"']/g,
@@ -472,6 +476,15 @@ export function InvoicePage({ title }) {
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => printWindow.print(), 350);
+=======
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[character]));
+    const printWindow = window.open("", "_blank", "width=900,height=720");
+    if (!printWindow) return;
+    printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(invoice.MaHD || invoice.id)}</title><style>body{font-family:Arial,sans-serif;color:#1f2a37;margin:40px auto;max-width:780px}header{display:flex;justify-content:space-between;border-bottom:2px solid #3d7068;padding-bottom:18px}h1{font-size:24px;margin:0 0 6px}h2{font-size:16px;text-transform:uppercase;letter-spacing:1px;color:#3d7068;margin:0}p{margin:5px 0;color:#6b7680}table{width:100%;border-collapse:collapse;margin-top:28px}th,td{padding:11px 8px;border-bottom:1px solid #e3e6e5;text-align:left}th:last-child,td:last-child{text-align:right}.summary{margin:24px 0 0 auto;width:300px}.summary div{display:flex;justify-content:space-between;padding:6px 0}.grand{border-top:2px solid #3d7068;margin-top:7px;padding-top:12px!important;font-size:18px;font-weight:bold;color:#2a4f49}.foot{margin-top:42px;text-align:center;font-size:12px;color:#9aa3ab}@media print{body{margin:20px}}</style></head><body><header><div><h2>Mẹ &amp; Bé</h2><p>Hệ thống bán lẻ mẹ và bé</p></div><div style="text-align:right"><h1>HÓA ĐƠN BÁN HÀNG</h1><p>${escapeHtml(invoice.MaHD || invoice.id)} · ${escapeHtml(invoice.NgayLap)}</p><p style="font-size:13px;color:#555">Người lập: <strong>${escapeHtml(invoice.NguoiLap || "Quản trị viên")}</strong></p></div></header><section style="margin-top:22px"><strong>Khách hàng:</strong> ${escapeHtml(customer?.HoTen || invoice.MaKHCode || "Khách lẻ")}<br><span style="color:#6b7680">${escapeHtml(customer?.SDT || "")} ${customer?.DiaChi ? ` · ${escapeHtml(customer.DiaChi)}` : ""}</span></section><table><thead><tr><th>Sản phẩm</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>${lines.map((line) => `<tr><td><div style="display:flex;align-items:center;gap:8px">${line.HinhAnh ? `<img src="${line.HinhAnh}" alt="" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:cover;border-radius:4px;border:1px solid #e3e6e5"/>` : ""}<span>${escapeHtml(line.TenSP || line.MaSPCode || line.MaSP)}</span></div></td><td>${Number(line.SoLuong || line.quantity || 0)}</td><td>${money.format(Number(line.DonGia || line.price || 0))}</td><td>${money.format(Number(line.ThanhTien || (line.SoLuong || line.quantity || 0) * (line.DonGia || line.price || 0)))}</td></tr>`).join("")}</tbody></table><div class="summary"><div><span>Tổng tiền</span><strong>${money.format(invoice.TongTien || 0)}</strong></div><div><span>Đã thanh toán</span><strong>${money.format(invoice.SoTienDaTra || 0)}</strong></div><div class="grand"><span>Còn phải thu</span><strong>${money.format(invoice.SoTienConLai ?? invoice.TongTien ?? 0)}</strong></div></div><p class="foot">Cảm ơn quý khách đã mua hàng tại Mẹ &amp; Bé.</p></body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   }
 
   async function pay() {

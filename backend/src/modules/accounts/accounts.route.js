@@ -114,6 +114,7 @@ router.put("/:id", async (req, res, next) => {
     const existing = await getDatabase().collection("Users").findOne({ _id: accountId });
     if (!existing) return res.status(404).json({ message: "Không tìm thấy tài khoản" });
 
+<<<<<<< HEAD
     const isSelf = req.user?.id === req.params.id || req.user?.id === accountId.toString() || req.user?.username === existing.username;
     const isLocked = isLockedStatus(req.body.status);
 
@@ -132,6 +133,9 @@ router.put("/:id", async (req, res, next) => {
       }
     }
 
+=======
+    const isLocked = isLockedStatus(req.body.status);
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     const update = {
       username: req.body.username.trim(),
       fullName: req.body.fullName.trim(),
@@ -173,14 +177,20 @@ router.patch("/:id/toggle-lock", async (req, res, next) => {
     const existing = await users.findOne({ _id: accountId });
     if (!existing) return res.status(404).json({ message: "Không tìm thấy tài khoản" });
 
+<<<<<<< HEAD
     const isSelf = req.user?.id === req.params.id || req.user?.id === accountId.toString() || req.user?.username === existing.username;
     if (isSelf) {
       return res.status(400).json({ message: "Không thể tự khóa tài khoản của chính mình" });
+=======
+    if (req.user?.id === req.params.id || req.user?.username === existing.username) {
+      return res.status(400).json({ message: "Không thể khóa tài khoản của chính mình" });
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     }
 
     const isCurrentlyLocked = isLockedStatus(existing.status);
     const newStatus = isCurrentlyLocked ? "Hoạt động" : "Đã khóa";
 
+<<<<<<< HEAD
     if (newStatus === "Đã khóa" && existing.role === "QuanLy") {
       const activeAdminCount = await users.countDocuments({
         role: "QuanLy",
@@ -192,6 +202,8 @@ router.patch("/:id/toggle-lock", async (req, res, next) => {
       }
     }
 
+=======
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     await users.updateOne({ _id: accountId }, { $set: { status: newStatus, updatedAt: new Date() } });
     await syncEmployee(getDatabase(), { ...existing, status: newStatus }, existing.username);
 
@@ -207,10 +219,15 @@ router.delete("/:id", async (req, res, next) => {
   try {
     const accountId = parseId(req.params.id);
     if (!accountId) return res.status(400).json({ message: "ID tài khoản không hợp lệ" });
+<<<<<<< HEAD
+=======
+    if (req.user.id === req.params.id) return res.status(400).json({ message: "Không thể xóa tài khoản đang đăng nhập" });
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 
     const existing = await getDatabase().collection("Users").findOne({ _id: accountId });
     if (!existing) return res.status(404).json({ message: "Không tìm thấy tài khoản" });
 
+<<<<<<< HEAD
     const isSelf = req.user?.id === req.params.id || req.user?.id === accountId.toString() || req.user?.username === existing.username;
     if (isSelf) return res.status(400).json({ message: "Không thể xóa tài khoản của chính mình" });
 
@@ -226,6 +243,10 @@ router.delete("/:id", async (req, res, next) => {
     }
 
     await getDatabase().collection("Users").deleteOne({ _id: accountId });
+=======
+    await getDatabase().collection("Users").deleteOne({ _id: accountId });
+    // Cập nhật trạng thái nhân viên sang Đã nghỉ việc
+>>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     await getDatabase().collection("NhanVien").updateOne(
       { username: existing.username },
       { $set: { TrangThai: "Đã nghỉ việc", updatedAt: new Date() } }
