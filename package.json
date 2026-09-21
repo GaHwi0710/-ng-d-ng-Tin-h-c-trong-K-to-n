@@ -1,0 +1,13 @@
+{
+  "name": "baby-shop-management",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "dev": "npm run build && npm --prefix backend run dev",
+    "start": "npm run build && npm --prefix backend start"
+  }
+}

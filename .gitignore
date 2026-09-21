@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.vite/
+coverage/
+.env
+.env.*
+!.env.example
+
+# Local operating-system files
+*.lnk
+Thumbs.db
+desktop.ini
+
+# Editor and tool state
+.vscode/
+.idea/
