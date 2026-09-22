@@ -15,10 +15,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { listRecords, saveRecord, deleteRecord } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
-<<<<<<< HEAD
 import { ProductImage } from "../../components/ProductImage.jsx";
-=======
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import { StatusBadge } from "../../components/Badge.jsx";
@@ -282,7 +279,6 @@ export function ProductsPage({ title, description }) {
     if (!formData.HanSuDung) {
       return toast("Vui lòng chọn Hạn sử dụng cho sản phẩm (Bắt buộc)");
     }
-<<<<<<< HEAD
     if (
       formData.GiaNhap === "" ||
       formData.GiaNhap === null ||
@@ -300,10 +296,6 @@ export function ProductsPage({ title, description }) {
       Number(formData.GiaBan) < 0
     ) {
       return toast("Giá bán là bắt buộc và phải là số hợp lệ >= 0");
-=======
-    if (Number(formData.GiaNhap) < 0 || Number(formData.GiaBan) < 0) {
-      return toast("Giá nhập và giá bán không được là số âm");
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     }
 
     const matchedCat = categories.find(
@@ -513,7 +505,6 @@ export function ProductsPage({ title, description }) {
                   </td>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-<<<<<<< HEAD
                       <div style={{ cursor: "pointer" }} onClick={() => openDetail(p)}>
                         <ProductImage
                           src={p.HinhAnh}
@@ -522,45 +513,6 @@ export function ProductsPage({ title, description }) {
                           size={42}
                           borderRadius={8}
                         />
-=======
-                      {p.HinhAnh ? (
-                        <img
-                          src={p.HinhAnh}
-                          alt={p.TenSP}
-                          onError={(e) => {
-                            e.target.style.display = "none";
-                            if (e.target.nextSibling) e.target.nextSibling.style.display = "flex";
-                          }}
-                          style={{
-                            width: 42,
-                            height: 42,
-                            objectFit: "cover",
-                            borderRadius: 8,
-                            border: "1px solid var(--border, #e2e8f0)",
-                            flexShrink: 0,
-                            cursor: "pointer",
-                          }}
-                          onClick={() => openDetail(p)}
-                        />
-                      ) : null}
-                      <div
-                        style={{
-                          width: 42,
-                          height: 42,
-                          borderRadius: 8,
-                          background: "var(--surface-sunken, #f1f5f9)",
-                          display: p.HinhAnh ? "none" : "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 22,
-                          flexShrink: 0,
-                          border: "1px solid var(--border, #e2e8f0)",
-                          cursor: "pointer",
-                        }}
-                        onClick={() => openDetail(p)}
-                      >
-                        {getCategoryIcon(p.LoaiHang || "")}
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                       </div>
                       <div className="prod-name-cell">
                         <strong
@@ -761,33 +713,22 @@ export function ProductsPage({ title, description }) {
 
         <div className="form-grid">
           <div className="field">
-<<<<<<< HEAD
             <label htmlFor="p-inprice">
               Giá nhập (VNĐ) <span className="required-star">*</span>
             </label>
-=======
-            <label htmlFor="p-inprice">Giá nhập (VNĐ)</label>
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             <input
               id="p-inprice"
               type="number"
               min="0"
               step="1000"
-<<<<<<< HEAD
               required
-=======
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
               value={formData.GiaNhap}
               onChange={(e) => setFormData({ ...formData, GiaNhap: e.target.value })}
             />
           </div>
           <div className="field">
             <label htmlFor="p-outprice">
-<<<<<<< HEAD
               Giá bán (VNĐ) <span className="required-star">*</span>
-=======
-              Giá bán (VNĐ)
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
               {formData.GiaBan > 0 && (
                 <span style={{ float: "right", color: "var(--success)", fontWeight: 600 }}>
                   Lãi: +{marginPercent}%
@@ -799,10 +740,7 @@ export function ProductsPage({ title, description }) {
               type="number"
               min="0"
               step="1000"
-<<<<<<< HEAD
               required
-=======
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
               value={formData.GiaBan}
               onChange={(e) => setFormData({ ...formData, GiaBan: e.target.value })}
             />
@@ -852,20 +790,12 @@ export function ProductsPage({ title, description }) {
 
           {formData.HinhAnh ? (
             <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px", background: "var(--surface-sunken, #f8fafc)", borderRadius: 8, border: "1px solid var(--border, #e2e8f0)" }}>
-<<<<<<< HEAD
               <ProductImage
                 src={formData.HinhAnh}
                 alt="Ảnh sản phẩm"
                 category={formData.LoaiHang || ""}
                 size={72}
                 borderRadius={8}
-=======
-              <img
-                src={formData.HinhAnh}
-                alt="Ảnh sản phẩm"
-                onError={(e) => { e.target.style.display = "none"; }}
-                style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border, #cbd5e1)", background: "#fff" }}
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
               />
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <label
@@ -979,7 +909,6 @@ export function ProductsPage({ title, description }) {
         >
           {/* Header Card */}
           <div style={{ display: "flex", gap: 16, alignItems: "center", paddingBottom: 16, borderBottom: "1px solid var(--border, #e2e8f0)" }}>
-<<<<<<< HEAD
             <ProductImage
               src={viewingProduct.HinhAnh}
               alt={viewingProduct.TenSP}
@@ -987,35 +916,6 @@ export function ProductsPage({ title, description }) {
               size={88}
               borderRadius={12}
             />
-=======
-            {viewingProduct.HinhAnh ? (
-              <img
-                src={viewingProduct.HinhAnh}
-                alt={viewingProduct.TenSP}
-                onError={(e) => {
-                  e.target.style.display = "none";
-                  if (e.target.nextSibling) e.target.nextSibling.style.display = "flex";
-                }}
-                style={{ width: 88, height: 88, objectFit: "cover", borderRadius: 12, border: "1px solid var(--border, #e2e8f0)", flexShrink: 0 }}
-              />
-            ) : null}
-            <div
-              style={{
-                width: 88,
-                height: 88,
-                borderRadius: 12,
-                background: "var(--surface-sunken, #f1f5f9)",
-                display: viewingProduct.HinhAnh ? "none" : "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 42,
-                border: "1px solid var(--border, #e2e8f0)",
-                flexShrink: 0,
-              }}
-            >
-              {getCategoryIcon(viewingProduct.LoaiHang || "")}
-            </div>
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
                 <span className="prod-code-badge" style={{ fontSize: 12, fontWeight: 700 }}>

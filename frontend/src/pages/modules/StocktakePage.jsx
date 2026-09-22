@@ -106,7 +106,6 @@ export function StocktakePage({ title }) {
   }
 
   function printStocktake(record) {
-<<<<<<< HEAD
     const printWindow = window.open("", "_blank", "width=880,height=920");
     if (!printWindow) return;
     const escapeHtml = (val) => String(val ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c]));
@@ -330,14 +329,6 @@ export function StocktakePage({ title }) {
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => printWindow.print(), 350);
-=======
-    const printWindow = window.open("", "_blank", "width=900,height=720");
-    if (!printWindow) return;
-    const lines = (record.details || []).map((line, index) => `<tr><td>${index + 1}</td><td>${line.MaSPCode || line.MaSP || ""}</td><td>${line.TenSP || ""}</td><td>${line.SoLuongHeThong || 0}</td><td>${line.SoLuongThucTe || 0}</td><td>${line.ChenhLech > 0 ? "+" : ""}${line.ChenhLech || 0}</td></tr>`).join("");
-    printWindow.document.write(`<html><head><title>${record.MaKK || record.id}</title><style>body{font-family:Arial;margin:36px;color:#1f2a37}h1{text-align:center}p{text-align:center;color:#6b7680}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #999;padding:8px}th{background:#e7f0ee}td:first-child{text-align:center}</style></head><body><h1>PHIẾU KIỂM KÊ KHO</h1><p>${record.MaKK || record.id} · ${record.NgayKiemKe || ""} · ${new Date(record.createdAt || Date.now()).toLocaleString("vi-VN")}</p><table><thead><tr><th>STT</th><th>Mã hàng</th><th>Sản phẩm</th><th>Tồn hệ thống</th><th>Thực tế</th><th>Chênh lệch</th></tr></thead><tbody>${lines}</tbody></table><p style="margin-top:42px">Người lập phiếu: <strong>${record.NguoiLap || "Quản trị viên"}</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Người kiểm kê: ____________________</p></body></html>`);
-    printWindow.document.close();
-    printWindow.print();
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   }
 
   return (

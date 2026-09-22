@@ -20,11 +20,7 @@ export const moduleRoutes = [
   { path: "/returns", title: "Trả hàng", description: "Ghi nhận và xử lý hàng trả lại từ khách.", allowedRoles: sales },
   { path: "/cash-receipts", title: "Phiếu thu", description: "Ghi nhận thu tiền mặt theo mẫu số 01-TT.", allowedRoles: ["QuanLy", "KeToan", "NhanVienBanHang"] },
   { path: "/cash-payments", title: "Phiếu chi", description: "Ghi nhận chi tiền mặt theo mẫu số 02-TT.", allowedRoles: accounting },
-<<<<<<< HEAD
   { path: "/debts", title: "Công nợ NCC", description: "Theo dõi và quản lý công nợ phát sinh từ phiếu nhập kho nhà cung cấp.", allowedRoles: accounting },
-=======
-  { path: "/debts", title: "Công nợ", description: "Theo dõi và quản lý công nợ nhà cung cấp.", allowedRoles: accounting },
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   { path: "/promotions", title: "Khuyến mãi", description: "Tạo và quản lý chương trình khuyến mãi.", allowedRoles: ["QuanLy", "NhanVienBanHang"] },
   { path: "/reports", title: "Báo cáo", description: "Thống kê doanh thu, nhập xuất kho và công nợ.", allowedRoles: accounting },
   { path: "/admin/employees", title: "Nhân viên", description: "Quản lý thông tin nhân viên cửa hàng.", allowedRoles: manager },

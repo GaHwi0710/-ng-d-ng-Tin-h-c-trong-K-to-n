@@ -103,7 +103,6 @@ export function SalesPOSPage({ title }) {
     function handleClickOutside(e) {
       if (!e.target.closest(".sales-cust-search")) setCustDropdownOpen(false);
     }
-<<<<<<< HEAD
     function handleKeyDown(e) {
       if (e.key === "Escape") setCustDropdownOpen(false);
     }
@@ -113,10 +112,6 @@ export function SalesPOSPage({ title }) {
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
-=======
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   }, []);
 
   const customerPts = Number(selectedCustomer?.DiemTichLuy || 0);
@@ -160,10 +155,7 @@ export function SalesPOSPage({ title }) {
   const filteredProducts = useMemo(
     () =>
       products.filter((p) => {
-<<<<<<< HEAD
         if (p.TrangThai === "Ngừng bán" || p.status === "inactive") return false;
-=======
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
         const matchSearch =
           !searchQuery ||
           p.TenSP.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -295,13 +287,10 @@ export function SalesPOSPage({ title }) {
   }
 
   function add(product) {
-<<<<<<< HEAD
     if (product.TrangThai === "Ngừng bán" || product.status === "inactive") {
       toast("Sản phẩm đã ngừng kinh doanh, không thể bán");
       return;
     }
-=======
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     if (Number(product.stock ?? 0) <= 0) {
       toast("Sản phẩm này đã hết tồn kho");
       return;
@@ -411,7 +400,6 @@ export function SalesPOSPage({ title }) {
     const subtotalVal = inv.TienHang || (inv.TongTien + (inv.GiamGia || 0));
     const discountVal = inv.GiamGia || 0;
     const totalVal = inv.TongTien || 0;
-<<<<<<< HEAD
     const invCode = inv.MaHD || inv.id;
 
     printWindow.document.write(`<!doctype html>
@@ -646,87 +634,11 @@ export function SalesPOSPage({ title }) {
   </div>
 
   <div class="receipt-scallop-bottom"></div>
-=======
-
-    printWindow.document.write(`<!doctype html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<title>Phiếu thu tiền - ${escapeHtml(inv.MaHD || inv.id)}</title>
-<style>
-  @page { size: 80mm auto; margin: 4mm; }
-  body { font-family: 'Courier New', monospace, Arial; width: 72mm; margin: 0 auto; color: #000; font-size: 12px; line-height: 1.35; }
-  .text-center { text-align: center; }
-  .text-right { text-align: right; }
-  .bold { font-weight: bold; }
-  .border-b { border-bottom: 1px dashed #444; padding-bottom: 6px; margin-bottom: 6px; }
-  .border-t { border-top: 1px dashed #444; padding-top: 6px; margin-top: 6px; }
-  .header h2 { font-size: 15px; margin: 2px 0; text-transform: uppercase; }
-  .header p { margin: 2px 0; font-size: 11px; color: #333; }
-  .meta-row { display: flex; justify-content: space-between; font-size: 11px; margin: 2px 0; }
-  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 11px; }
-  th { border-bottom: 1px solid #000; padding: 3px 0; }
-  td { padding: 3px 0; vertical-align: top; }
-  .sum-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 12px; }
-  .grand-total { font-size: 13.5px; font-weight: bold; border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 5px 0; margin: 5px 0; }
-  .footer { text-align: center; font-size: 10.5px; margin-top: 12px; color: #444; }
-  @media print { body { width: 100%; } }
-</style>
-</head>
-<body>
-  <div class="header text-center border-b">
-    <h2 class="bold">HỆ THỐNG MẸ &amp; BÉ</h2>
-    <p>Đ/c: Số 123 Đường Bán Lẻ, Q.1, TP.HCM</p>
-    <p>Hotline: 1900 6868 - 0901 234 567</p>
-    <p class="bold" style="font-size: 13px; margin-top: 6px;">PHIẾU TÍNH TIỀN (POS)</p>
-  </div>
-  <div class="meta border-b">
-    <div class="meta-row"><span>Số HĐ:</span><strong class="bold">${escapeHtml(inv.MaHD || inv.id)}</strong></div>
-    <div class="meta-row"><span>Ngày:</span><span>${escapeHtml(inv.NgayLap || new Date().toISOString().slice(0, 10))} ${new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}</span></div>
-    <div class="meta-row"><span>Thu ngân:</span><span>${escapeHtml(inv.NguoiLap || currentUserInfo().name)}</span></div>
-    <div class="meta-row"><span>Khách hàng:</span><strong>${escapeHtml(custName)}${custPhone ? ` (${escapeHtml(custPhone)})` : ""}</strong></div>
-    ${selectedCustomer ? `<div class="meta-row"><span>Hạng TV:</span><span>${customerTier || "Đồng"} · Điểm: ${customerPts}</span></div>` : ""}
-  </div>
-  <table>
-    <thead>
-      <tr>
-        <th style="text-align: left; width: 45%;">Tên SP</th>
-        <th style="text-align: center; width: 15%;">SL</th>
-        <th style="text-align: right; width: 20%;">Đơn giá</th>
-        <th style="text-align: right; width: 20%;">T.Tiền</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${lines.map((l) => `
-        <tr>
-          <td>${escapeHtml(l.TenSP || l.MaSPCode || "Sản phẩm")}</td>
-          <td class="text-center">${Number(l.SoLuong || l.quantity || 1)}</td>
-          <td class="text-right">${Number(l.DonGia || l.price || 0).toLocaleString("vi-VN")}</td>
-          <td class="text-right bold">${Number(l.ThanhTien || (Number(l.SoLuong || l.quantity || 1) * Number(l.DonGia || l.price || 0))).toLocaleString("vi-VN")}</td>
-        </tr>
-      `).join("")}
-    </tbody>
-  </table>
-  <div class="border-t">
-    <div class="sum-row"><span>Tổng số lượng:</span><span>${totalQty} món</span></div>
-    <div class="sum-row"><span>Cộng tiền hàng:</span><span>${money.format(subtotalVal)}</span></div>
-    ${Number(discountVal) > 0 ? `<div class="sum-row"><span>Chiết khấu/Voucher:</span><span>-${money.format(discountVal)}</span></div>` : ""}
-    <div class="sum-row grand-total"><span class="bold">TỔNG THANH TOÁN:</span><span class="bold">${money.format(totalVal)}</span></div>
-  </div>
-  <div class="footer">
-    <p>Cảm ơn Quý Khách! Hẹn gặp lại quý khách!</p>
-    <p style="font-style: italic;">(Kiểm tra lại hàng và hóa đơn trước khi rời quầy)</p>
-  </div>
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 </body>
 </html>`);
     printWindow.document.close();
     printWindow.focus();
-<<<<<<< HEAD
     setTimeout(() => printWindow.print(), 350);
-=======
-    printWindow.print();
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   }
 
   return (
@@ -818,7 +730,6 @@ export function SalesPOSPage({ title }) {
                     </span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", margin: "6px 0" }}>
-<<<<<<< HEAD
                     <ProductImage
                       src={product.HinhAnh}
                       alt={product.TenSP}
@@ -826,20 +737,6 @@ export function SalesPOSPage({ title }) {
                       size={38}
                       borderRadius={6}
                     />
-=======
-                    {product.HinhAnh ? (
-                      <img
-                        src={product.HinhAnh}
-                        alt={product.TenSP}
-                        onError={(e) => { e.target.style.display = "none"; }}
-                        style={{ width: 38, height: 38, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", flexShrink: 0 }}
-                      />
-                    ) : (
-                      <div style={{ width: 38, height: 38, borderRadius: 6, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
-                        {getCategoryIcon(product.LoaiHang || "")}
-                      </div>
-                    )}
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                     <strong className="tile-name" style={{ margin: 0, textAlign: "left", flex: 1, fontSize: 13, lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                       {product.TenSP}
                     </strong>
@@ -872,7 +769,6 @@ export function SalesPOSPage({ title }) {
 
           {/* Customer Selection & Membership Badge */}
           <div style={{ margin: "14px 0 10px" }}>
-<<<<<<< HEAD
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <label style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>Khách hàng:</label>
               <button
@@ -973,60 +869,6 @@ export function SalesPOSPage({ title }) {
                   </div>
                 </div>
               )}
-=======
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-              <label style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap" }}>Khách hàng:</label>
-              <div className="sales-cust-search" style={{ flex: 1 }}>
-                <div className="sales-cust-input-wrap">
-                  <MagnifyingGlassIcon style={{ width: 16, height: 16, color: "var(--text-faint)" }} />
-                  <input
-                    className="sales-cust-input"
-                    type="text"
-                    placeholder="Tìm theo tên, SĐT, mã KH..."
-                    value={custSearchQuery}
-                    onChange={e => { setCustSearchQuery(e.target.value); setCustDropdownOpen(true); }}
-                    onFocus={() => setCustDropdownOpen(true)}
-                  />
-                  {customerId && (
-                    <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-faint)", padding: 2 }} onClick={() => { setCustomerId(""); setSelectedCustomer(null); setCustSearchQuery(""); setAppliedPromo(null); setDiscountAmount(0); setPromoInput(""); }}>
-                      ✕
-                    </button>
-                  )}
-                </div>
-                {custDropdownOpen && (
-                  <div className="sales-cust-dropdown">
-                    {filteredCustSearch.length === 0 ? (
-                      <div style={{ padding: "12px", color: "var(--text-faint)", fontSize: 13 }}>Không tìm thấy khách hàng</div>
-                    ) : filteredCustSearch.slice(0, 8).map(c => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        className="sales-cust-option"
-                        onClick={() => {
-                          setCustomerId(c.id);
-                          setSelectedCustomer(c);
-                          setCustSearchQuery(c.HoTen || "");
-                          setCustDropdownOpen(false);
-                          setAppliedPromo(null); setDiscountAmount(0); setPromoInput("");
-                        }}
-                      >
-                        <span style={{ fontWeight: 600 }}>{c.HoTen}</span>
-                        <span style={{ color: "var(--text-faint)", fontSize: 12 }}>{c.SDT || ""}</span>
-                        <span style={{ color: "var(--primary)", fontSize: 11, fontWeight: 700 }}>{c.MaKH || c.id}</span>
-                      </button>
-                    ))}
-                    <div style={{ borderTop: "1px solid var(--border)", padding: "4px" }}>
-                      <button type="button" className="sales-cust-option" style={{ color: "var(--primary)", fontWeight: 600 }} onClick={() => { setCustDropdownOpen(false); }}>
-                        Khách vãng lai (không tích điểm)
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <button type="button" className="sales-cust-add-btn" onClick={() => setShowAddCustomerModal(true)}>
-                <PlusIcon style={{ width: 14, height: 14 }} /> Thêm KH mới
-              </button>
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             </div>
 
             {selectedCustomer && (
@@ -1246,7 +1088,6 @@ export function SalesPOSPage({ title }) {
             {cart.length > 0 ? (
               cart.map((item) => (
                 <article className="cart-item" key={item.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-<<<<<<< HEAD
                   <ProductImage
                     src={item.HinhAnh}
                     alt={item.TenSP}
@@ -1254,20 +1095,6 @@ export function SalesPOSPage({ title }) {
                     size={34}
                     borderRadius={6}
                   />
-=======
-                  {item.HinhAnh ? (
-                    <img
-                      src={item.HinhAnh}
-                      alt={item.TenSP}
-                      onError={(e) => { e.target.style.display = "none"; }}
-                      style={{ width: 34, height: 34, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", flexShrink: 0 }}
-                    />
-                  ) : (
-                    <div style={{ width: 34, height: 34, borderRadius: 6, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>
-                      {getCategoryIcon(item.LoaiHang || "")}
-                    </div>
-                  )}
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                   <div className="nm" style={{ flex: 1, minWidth: 0 }}>
                     <strong style={{ display: "block", fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.TenSP}</strong>
                     <small style={{ color: "var(--text-soft)" }}>{money.format(item.GiaBan)} / {item.DonViTinh || "cái"}</small>
@@ -1397,26 +1224,17 @@ export function SalesPOSPage({ title }) {
             const saved = await saveRecord("customers", { ...newCustForm, TrangThai: "Đang hoạt động", DiemTichLuy: 0 });
             setCustomers(prev => [...prev, saved]);
             setCustomerId(saved.id);
-<<<<<<< HEAD
             setCustSearchQuery(saved.HoTen || "");
             setCustDropdownOpen(false);
             setShowAddCustomerModal(false);
             setNewCustForm({ HoTen: "", SDT: "", Email: "", DiaChi: "" });
             toast(`Đã thêm khách hàng "${saved.HoTen}" và chọn vào đơn hàng`);
-=======
-            setSelectedCustomer(saved);
-            setCustSearchQuery(saved.HoTen || "");
-            setShowAddCustomerModal(false);
-            setNewCustForm({ HoTen: "", SDT: "", Email: "", DiaChi: "" });
-            toast("Đã thêm khách hàng mới thành công");
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
           } catch (err) {
             toast(err?.message || "Lỗi khi thêm khách hàng");
           }
         }}
         submitLabel="Thêm khách hàng"
       >
-<<<<<<< HEAD
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px" }}>
           <div className="field" style={{ margin: 0 }}>
             <label style={{ fontSize: 12.5, fontWeight: 600 }}>Họ và tên <span className="required-star">*</span></label>
@@ -1458,26 +1276,6 @@ export function SalesPOSPage({ title }) {
             />
           </div>
         </div>
-=======
-        <fieldset className="form-grid" style={{ border: "none", padding: 0, margin: 0 }}>
-          <div className="field">
-            <label>Họ và tên <span className="required-star">*</span></label>
-            <input value={newCustForm.HoTen} onChange={e => setNewCustForm(f => ({ ...f, HoTen: e.target.value }))} required />
-          </div>
-          <div className="field">
-            <label>Số điện thoại <span className="required-star">*</span></label>
-            <input value={newCustForm.SDT} onChange={e => setNewCustForm(f => ({ ...f, SDT: e.target.value }))} required />
-          </div>
-          <div className="field">
-            <label>Email</label>
-            <input type="email" value={newCustForm.Email} onChange={e => setNewCustForm(f => ({ ...f, Email: e.target.value }))} />
-          </div>
-          <div className="field">
-            <label>Địa chỉ</label>
-            <input value={newCustForm.DiaChi} onChange={e => setNewCustForm(f => ({ ...f, DiaChi: e.target.value }))} />
-          </div>
-        </fieldset>
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
       </Modal>
 
       {/* Modal Đổi điểm lấy voucher ngay tại quầy thu ngân */}

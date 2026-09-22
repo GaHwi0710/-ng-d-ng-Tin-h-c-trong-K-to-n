@@ -8,7 +8,6 @@ export default defineConfig({
     proxy: {
       "/api": "http://localhost:5000"
     }
-<<<<<<< HEAD
   },
   build: {
     chunkSizeWarningLimit: 1000,
@@ -27,7 +26,5 @@ export default defineConfig({
         }
       }
     }
-=======
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
   }
 });

@@ -28,10 +28,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   ChevronDownIcon,
-<<<<<<< HEAD
   MagnifyingGlassIcon,
-=======
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 } from "@heroicons/react/24/outline";
 import { moduleRoutes } from "../routes/moduleRoutes.js";
 import { getUserPermissions, userCanAccessPath } from "../lib/permissions.js";
@@ -281,7 +278,6 @@ export function AppLayout() {
             >
               <Bars3Icon style={{ width: 18, height: 18 }} aria-hidden="true" />
             </button>
-<<<<<<< HEAD
             <div className="topbar-search-box">
               <MagnifyingGlassIcon style={{ width: 15, height: 15, color: "#94A3B8", flexShrink: 0 }} aria-hidden="true" />
               <input
@@ -296,8 +292,6 @@ export function AppLayout() {
                 }}
               />
             </div>
-=======
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             <nav aria-label="Breadcrumb">
               <ol className="topbar-breadcrumb">
                 <li>

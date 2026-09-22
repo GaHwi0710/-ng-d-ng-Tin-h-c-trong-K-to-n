@@ -11,10 +11,7 @@
     "@heroicons/react": "^2.2.0",
     "@vitejs/plugin-react": "^4.2.1",
     "axios": "^1.6.7",
-<<<<<<< HEAD
     "baby-shop-management": "file:..",
-=======
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.2",

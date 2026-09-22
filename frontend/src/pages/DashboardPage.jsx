@@ -17,10 +17,7 @@ import {
 import { StatCard } from "../components/StatCard.jsx";
 import { ProductImage } from "../components/ProductImage.jsx";
 import { BarChart, ProgressBar } from "../components/BarChart.jsx";
-<<<<<<< HEAD
 import { LineChart, DonutChart } from "../components/Charts.jsx";
-=======
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 import { Badge, StatusBadge } from "../components/Badge.jsx";
 import { SkeletonCard, SkeletonRow } from "../components/SkeletonLoader.jsx";
 
@@ -254,11 +251,7 @@ export function DashboardPage() {
 
       {/* Stat Cards */}
       {loading ? (
-<<<<<<< HEAD
         <div className="stats-grid stats-grid-5">
-=======
-        <div className="stats-grid">
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
           <SkeletonCard />
           <SkeletonCard />
           <SkeletonCard />
@@ -266,87 +259,55 @@ export function DashboardPage() {
           <SkeletonCard />
         </div>
       ) : (
-<<<<<<< HEAD
         <div className="stats-grid stats-grid-5">
-=======
-        <div className="stats-grid">
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
           <StatCard
             icon={DocumentTextIcon}
             label="Doanh thu đã thu"
             value={money.format(totalRevenue)}
-<<<<<<< HEAD
             theme="gold"
             delta={revenueWeekDelta}
             deltaType="up"
-=======
-            valueClass="accent"
-            delta={revenueWeekDelta}
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             onClick={() => navigate("/reports")}
           />
           <StatCard
             icon={ShoppingCartIcon}
             label="Tổng đơn hàng"
             value={totalOrders.toLocaleString("vi-VN")}
-<<<<<<< HEAD
             theme="blue"
             delta={`${data.revenue?.orders ?? totalOrders} đơn ghi nhận`}
             deltaType="neutral"
-=======
-            delta={`${data.revenue?.orders ?? totalOrders} đơn tổng cộng`}
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             onClick={() => navigate("/sales-orders")}
           />
           <StatCard
             icon={ExclamationTriangleIcon}
             label="Hóa đơn chưa thu"
             value={pendingInvoices.toString()}
-<<<<<<< HEAD
             theme="amber"
             delta={pendingInvoices > 0 ? "Cần ghi nhận thanh toán" : "Đã thanh toán đủ"}
             deltaType={pendingInvoices > 0 ? "down" : "neutral"}
-=======
-            valueClass="danger"
-            delta={pendingInvoices > 0 ? "Cần ghi nhận thanh toán" : "Đã thu đầy đủ"}
-            deltaDown={pendingInvoices > 0}
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             onClick={() => navigate("/invoices")}
           />
           <StatCard
             icon={BanknotesIcon}
             label="Dư nợ còn lại"
             value={money.format(totalDebt)}
-<<<<<<< HEAD
             theme="purple"
             delta={totalDebt > 0 ? "Cần theo dõi công nợ" : "Không có công nợ"}
             deltaType={totalDebt > 0 ? "down" : "neutral"}
-=======
-            valueClass={totalDebt > 0 ? "danger" : undefined}
-            delta={totalDebt > 0 ? "Cần theo dõi thu hồi" : "Không có công nợ"}
-            deltaDown={totalDebt > 0}
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             onClick={() => navigate("/debts")}
           />
           <StatCard
             icon={CubeIcon}
             label="Sản phẩm sắp hết"
             value={lowStockProducts.length.toString()}
-<<<<<<< HEAD
             theme="red"
             delta={`Tồn kho ≤ ${LOW_STOCK_THRESHOLD}`}
             deltaType={lowStockProducts.length > 0 ? "down" : "neutral"}
-=======
-            valueClass="warn"
-            delta={`Tồn kho ≤ ${LOW_STOCK_THRESHOLD}`}
-            deltaDown={lowStockProducts.length > 0}
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             onClick={() => navigate("/inventory")}
           />
         </div>
       )}
 
-<<<<<<< HEAD
       {/* 2 Column Charts: Line Chart + Donut Chart (Reference 2 Layout) */}
       <div className="report-grid-2col">
         {/* Revenue 7-day Trend */}
@@ -404,57 +365,6 @@ export function DashboardPage() {
           </div>
         </article>
       </div>
-=======
-      {/* Revenue Chart */}
-      <article className="card" style={{ marginBottom: 20 }}>
-        <header className="section-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <hgroup>
-            <h3 style={{ margin: 0 }}>Doanh thu 7 ngày gần nhất</h3>
-            <p className="desc" style={{ margin: "3px 0 0" }}>Đơn vị: trăm nghìn đồng (rê chuột lên cột để xem số liệu chuẩn)</p>
-          </hgroup>
-          <button
-            type="button"
-            className="btn btn-outline btn-sm"
-            onClick={() => navigate("/reports")}
-          >
-            Xem báo cáo chi tiết
-            <ArrowRightIcon className="btn-icon" style={{ marginLeft: 4 }} />
-          </button>
-        </header>
-        <div style={{ paddingTop: 10 }}>
-          <BarChart data={weeklyRevenue} labels={dayLabels} />
-        </div>
-      </article>
-
-      {/* 2 Columns: Categories & Recent Invoices */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 20, marginBottom: 20 }}>
-        {/* Revenue by Category */}
-        <article className="card">
-          <header className="section-head">
-            <hgroup>
-              <h3 style={{ margin: 0 }}>Doanh thu theo danh mục</h3>
-              <p className="desc" style={{ margin: "3px 0 0" }}>Tỷ trọng doanh số từ hóa đơn đã thanh toán</p>
-            </hgroup>
-          </header>
-          <div style={{ marginTop: 14 }}>
-            {categories.length > 0 ? (
-              categories.map((cat) => (
-                <ProgressBar
-                  key={cat.name}
-                  label={cat.name}
-                  value={cat.value}
-                  max={maxCatValue}
-                  amount={money.format(cat.value)}
-                />
-              ))
-            ) : (
-              <p style={{ textAlign: "center", color: "var(--text-faint)", padding: "28px 0" }}>
-                Chưa có dữ liệu phân loại — số liệu sẽ hiển thị khi có đơn đã thanh toán.
-              </p>
-            )}
-          </div>
-        </article>
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 
         {/* Recent Invoices */}
         <article className="card">
@@ -516,10 +426,6 @@ export function DashboardPage() {
             </table>
           </div>
         </article>
-<<<<<<< HEAD
-=======
-      </div>
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
 
       {/* Low Stock Warning */}
       <article className="card">

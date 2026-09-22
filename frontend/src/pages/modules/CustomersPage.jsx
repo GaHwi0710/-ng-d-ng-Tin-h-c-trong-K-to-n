@@ -475,7 +475,6 @@ export function CustomersPage({ title, description }) {
         onClose={() => setModalOpen(false)}
         onSubmit={handleSave}
       >
-<<<<<<< HEAD
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px" }}>
           <div className="field" style={{ margin: 0 }}>
             <label htmlFor="cust-name" style={{ fontSize: 12.5, fontWeight: 600 }}>
@@ -498,32 +497,11 @@ export function CustomersPage({ title, description }) {
               id="cust-phone"
               type="tel"
               style={{ padding: "8px 10px", fontSize: 13 }}
-=======
-        <div className="field">
-          <label htmlFor="cust-name">Họ và tên khách hàng <span className="required-star">*</span></label>
-          <input
-            id="cust-name"
-            type="text"
-            required
-            placeholder="Ví dụ: Nguyễn Thị Lan"
-            value={formData.HoTen}
-            onChange={(e) => setFormData({ ...formData, HoTen: e.target.value })}
-          />
-        </div>
-
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="cust-phone">Số điện thoại</label>
-            <input
-              id="cust-phone"
-              type="tel"
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
               placeholder="0912345678"
               value={formData.SDT}
               onChange={(e) => setFormData({ ...formData, SDT: e.target.value })}
             />
           </div>
-<<<<<<< HEAD
 
           <div className="field" style={{ margin: 0 }}>
             <label htmlFor="cust-email" style={{ fontSize: 12.5, fontWeight: 600 }}>Email</label>
@@ -531,19 +509,11 @@ export function CustomersPage({ title, description }) {
               id="cust-email"
               type="email"
               style={{ padding: "8px 10px", fontSize: 13 }}
-=======
-          <div className="field">
-            <label htmlFor="cust-email">Email</label>
-            <input
-              id="cust-email"
-              type="email"
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
               placeholder="khachhang@gmail.com"
               value={formData.Email}
               onChange={(e) => setFormData({ ...formData, Email: e.target.value })}
             />
           </div>
-<<<<<<< HEAD
 
           <div className="field" style={{ margin: 0 }}>
             <label htmlFor="cust-address" style={{ fontSize: 12.5, fontWeight: 600 }}>Địa chỉ</label>
@@ -559,49 +529,21 @@ export function CustomersPage({ title, description }) {
 
           <div className="field" style={{ margin: 0 }}>
             <label htmlFor="cust-points" style={{ fontSize: 12.5, fontWeight: 600 }}>Điểm tích lũy khởi tạo</label>
-=======
-        </div>
-
-        <div className="field">
-          <label htmlFor="cust-address">Địa chỉ</label>
-          <input
-            id="cust-address"
-            type="text"
-            placeholder="Số nhà, tên đường, quận/huyện..."
-            value={formData.DiaChi}
-            onChange={(e) => setFormData({ ...formData, DiaChi: e.target.value })}
-          />
-        </div>
-
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="cust-points">Điểm tích lũy khởi tạo</label>
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
             <input
               id="cust-points"
               type="number"
               min="0"
-<<<<<<< HEAD
               style={{ padding: "8px 10px", fontSize: 13 }}
-=======
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
               value={formData.DiemTichLuy}
               onChange={(e) => setFormData({ ...formData, DiemTichLuy: e.target.value })}
             />
           </div>
-<<<<<<< HEAD
 
           <div className="field" style={{ margin: 0 }}>
             <label htmlFor="cust-status" style={{ fontSize: 12.5, fontWeight: 600 }}>Trạng thái</label>
             <select
               id="cust-status"
               style={{ padding: "8px 10px", fontSize: 13 }}
-=======
-          <div className="field">
-            <label htmlFor="cust-status">Trạng thái</label>
-            <select
-              id="cust-status"
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
               value={formData.TrangThai}
               onChange={(e) => setFormData({ ...formData, TrangThai: e.target.value })}
             >

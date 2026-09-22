@@ -123,15 +123,11 @@ export function WarehouseDocumentsPage({ type, title }) {
     if (!id) return;
     const product = products.find((item) => item.id === id);
     if (!product) return;
-<<<<<<< HEAD
     if (product.TrangThai === "Ngừng bán" || product.status === "inactive") {
       toast(`Sản phẩm "${product.TenSP}" đã ngừng kinh doanh, không thể lập phiếu kho`);
       event.target.value = "";
       return;
     }
-=======
-    if (selected.some((item) => item.id === id)) return;
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     if (!isReceipt && reason !== "Điều chỉnh kiểm kê thiếu" && Number(product.stock || 0) <= 0) {
       toast(`Sản phẩm "${product.TenSP}" đã hết hàng trong kho! Không thể xuất kho.`);
       event.target.value = "";
@@ -279,7 +275,6 @@ export function WarehouseDocumentsPage({ type, title }) {
       toast(msg);
       return;
     }
-<<<<<<< HEAD
     if (isReceipt) {
       const supp = suppliers.find((s) => String(s.id) === String(supplierId));
       if (supp && (supp.TrangThai === "Ngưng hoạt động" || supp.status === "inactive")) {
@@ -289,8 +284,6 @@ export function WarehouseDocumentsPage({ type, title }) {
         return;
       }
     }
-=======
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
     if (!isReceipt && invalid) {
       const msg = "Số lượng xuất không được vượt quá tồn kho hiện tại (trừ trường hợp Điều chỉnh kiểm kê thiếu).";
       setMessage(msg);
@@ -379,7 +372,6 @@ export function WarehouseDocumentsPage({ type, title }) {
                   aria-label="Chọn nhà cung cấp"
                 >
                   <option value="">Chọn nhà cung cấp</option>
-<<<<<<< HEAD
                   {suppliers.map((item) => {
                     const isInactive = item.TrangThai === "Ngưng hoạt động" || item.status === "inactive";
                     return (
@@ -388,13 +380,6 @@ export function WarehouseDocumentsPage({ type, title }) {
                       </option>
                     );
                   })}
-=======
-                  {suppliers.map((item) => (
-                    <option value={item.id} key={item.id}>
-                      {item.TenNCC} · {item.SDT}
-                    </option>
-                  ))}
->>>>>>> b09e6a4054903e1171bf23c060638f846ef913de
                 </select>
               </div>
               <div className="field">
