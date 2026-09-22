@@ -41,6 +41,345 @@ async function upsertBuiltinRoles(database) {
   }
 }
 
+async function backfillCustomerNamesOnDocuments(database) {
+  const custs = await database.collection("KhachHang").find({}).toArray();
+  const custMap = new Map();
+  for (const c of custs) {
+    custMap.set(c._id.toString(), c);
+    if (c.MaKH) custMap.set(c.MaKH, c);
+  }
+
+  // Backfill HoaDon
+  const invoices = await database.collection("HoaDon").find({}).toArray();
+  for (const inv of invoices) {
+    let tenKH = inv.TenKH;
+    let maKHCode = inv.MaKHCode;
+    if (inv.MaKH) {
+      const rawCId = inv.MaKH.toString();
+      const cust = custMap.get(rawCId) || (inv.MaKHCode ? custMap.get(inv.MaKHCode) : null);
+      if (cust) {
+        tenKH = cust.HoTen;
+        maKHCode = cust.MaKH;
+      } else if (!tenKH) {
+        tenKH = "Khách hàng";
+      }
+    } else {
+      tenKH = "Khách vãng lai";
+    }
+    await database.collection("HoaDon").updateOne(
+      { _id: inv._id },
+      { $set: { TenKH: tenKH, MaKHCode: maKHCode || null } }
+    );
+  }
+
+  // Backfill DonHang
+  const orders = await database.collection("DonHang").find({}).toArray();
+  for (const ord of orders) {
+    let tenKH = ord.TenKH;
+    let maKHCode = ord.MaKHCode;
+    if (ord.MaKH) {
+      const rawCId = ord.MaKH.toString();
+      const cust = custMap.get(rawCId) || (ord.MaKHCode ? custMap.get(ord.MaKHCode) : null);
+      if (cust) {
+        tenKH = cust.HoTen;
+        maKHCode = cust.MaKH;
+      } else if (!tenKH) {
+        tenKH = "Khách hàng";
+      }
+    } else {
+      tenKH = "Khách vãng lai";
+    }
+    await database.collection("DonHang").updateOne(
+      { _id: ord._id },
+      { $set: { TenKH: tenKH, MaKHCode: maKHCode || null } }
+    );
+  }
+
+  // Backfill CongNo
+  const debts = await database.collection("CongNo").find({}).toArray();
+  const supps = await database.collection("NhaCungCap").find({}).toArray();
+  const suppMap = new Map(supps.map((s) => [s._id.toString(), s]));
+  for (const s of supps) {
+    if (s.MaNCC) suppMap.set(s.MaNCC, s);
+  }
+
+  for (const d of debts) {
+    const update = {};
+    if (d.MaKH) {
+      const c = custMap.get(d.MaKH.toString()) || custMap.get(d.MaKHCode);
+      if (c) {
+        update.TenKH = c.HoTen;
+        update.partnerName = c.HoTen;
+        update.MaKHCode = c.MaKH;
+      }
+    } else if (d.MaNCC) {
+      const s = suppMap.get(d.MaNCC.toString()) || suppMap.get(d.MaNCCCode);
+      if (s) {
+        update.TenNCC = s.TenNCC;
+        update.partnerName = s.TenNCC;
+        update.MaNCCCode = s.MaNCC;
+      }
+    }
+    if (Object.keys(update).length > 0) {
+      await database.collection("CongNo").updateOne({ _id: d._id }, { $set: update });
+    }
+  }
+}
+
+async function seedExtraSampleProducts(database) {
+  const now = new Date();
+  const categories = await database.collection("LoaiHang").find({}).toArray();
+  const catMap = new Map(categories.map((c) => [c.TenLoai?.toLowerCase(), c]));
+
+  const sampleProducts = [
+    {
+      MaSP: "SP012",
+      TenSP: "Sữa NAN Optipro số 1 800g (0-6 tháng)",
+      categoryName: "Sữa",
+      DonViTinh: "Hộp",
+      GiaNhap: 380000,
+      GiaBan: 460000,
+      HanSuDung: "2027-09-01",
+      stock: 25,
+      HinhAnh: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP013",
+      TenSP: "Sữa Frisolac Gold số 3 850g (1-2 tuổi)",
+      categoryName: "Sữa",
+      DonViTinh: "Hộp",
+      GiaNhap: 390000,
+      GiaBan: 485000,
+      HanSuDung: "2027-11-15",
+      stock: 18,
+      HinhAnh: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP014",
+      TenSP: "Sữa bột Similac Eye-Q số 2 900g",
+      categoryName: "Sữa",
+      DonViTinh: "Hộp",
+      GiaNhap: 410000,
+      GiaBan: 510000,
+      HanSuDung: "2027-10-30",
+      stock: 14,
+      HinhAnh: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP015",
+      TenSP: "Bỉm Moony Natural size L (44 miếng)",
+      categoryName: "Bỉm/tã",
+      DonViTinh: "Gói",
+      GiaNhap: 285000,
+      GiaBan: 355000,
+      HanSuDung: "2028-03-01",
+      stock: 32,
+      HinhAnh: "https://images.unsplash.com/photo-1544816155-12df9643f363?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP016",
+      TenSP: "Bỉm Huggies Skin Perfect size XL (60 miếng)",
+      categoryName: "Bỉm/tã",
+      DonViTinh: "Gói",
+      GiaNhap: 230000,
+      GiaBan: 289000,
+      HanSuDung: "2028-05-15",
+      stock: 26,
+      HinhAnh: "https://images.unsplash.com/photo-1544816155-12df9643f363?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP017",
+      TenSP: "Bỉm Goon Friend size M (54 miếng)",
+      categoryName: "Bỉm/tã",
+      DonViTinh: "Gói",
+      GiaNhap: 155000,
+      GiaBan: 195000,
+      HanSuDung: "2028-02-28",
+      stock: 35,
+      HinhAnh: "https://images.unsplash.com/photo-1544816155-12df9643f363?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP018",
+      TenSP: "Bộ body chip cộc tay sơ sinh cotton organic",
+      categoryName: "Quần áo trẻ em",
+      DonViTinh: "Bộ",
+      GiaNhap: 75000,
+      GiaBan: 119000,
+      HanSuDung: "2029-12-31",
+      stock: 45,
+      HinhAnh: "https://images.unsplash.com/photo-1522771930-78848d9293e8?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP019",
+      TenSP: "Bộ đồ ngủ dài tay thu đông cho bé 1-3 tuổi",
+      categoryName: "Quần áo trẻ em",
+      DonViTinh: "Bộ",
+      GiaNhap: 95000,
+      GiaBan: 149000,
+      HanSuDung: "2029-12-31",
+      stock: 30,
+      HinhAnh: "https://images.unsplash.com/photo-1522771930-78848d9293e8?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP020",
+      TenSP: "Mũ len tai thỏ giữ ấm mùa đông cho bé",
+      categoryName: "Quần áo trẻ em",
+      DonViTinh: "Cái",
+      GiaNhap: 35000,
+      GiaBan: 59000,
+      HanSuDung: "2029-12-31",
+      stock: 40,
+      HinhAnh: "https://images.unsplash.com/photo-1522771930-78848d9293e8?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP021",
+      TenSP: "Máy tiệt trùng và sấy khô bình sữa Fatzbaby",
+      categoryName: "Đồ dùng cho bé",
+      DonViTinh: "Cái",
+      GiaNhap: 650000,
+      GiaBan: 850000,
+      HanSuDung: "2030-01-01",
+      stock: 8,
+      HinhAnh: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP022",
+      TenSP: "Nhiệt kế hồng ngoại đo trán Microlife FR1MF1",
+      categoryName: "Đồ dùng cho bé",
+      DonViTinh: "Cái",
+      GiaNhap: 520000,
+      GiaBan: 690000,
+      HanSuDung: "2030-01-01",
+      stock: 12,
+      HinhAnh: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP023",
+      TenSP: "Ti giả chỉnh nha Philips Avent Ultra Air 0-6M",
+      categoryName: "Đồ dùng cho bé",
+      DonViTinh: "Cái",
+      GiaNhap: 85000,
+      GiaBan: 125000,
+      HanSuDung: "2028-12-31",
+      stock: 24,
+      HinhAnh: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP024",
+      TenSP: "Ghế ăn dặm nâng hạ chiều cao Mastela 1013",
+      categoryName: "Đồ dùng cho bé",
+      DonViTinh: "Cái",
+      GiaNhap: 480000,
+      GiaBan: 650000,
+      HanSuDung: "2030-01-01",
+      stock: 9,
+      HinhAnh: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP025",
+      TenSP: "Bộ xếp hình khối gỗ Montessori 50 chi tiết",
+      categoryName: "Đồ chơi",
+      DonViTinh: "Bộ",
+      GiaNhap: 120000,
+      GiaBan: 185000,
+      HanSuDung: "2030-01-01",
+      stock: 22,
+      HinhAnh: "https://images.unsplash.com/photo-1558060370-d644479cb6f7?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP026",
+      TenSP: "Thảm nằm chơi vận động phát nhạc cho bé",
+      categoryName: "Đồ chơi",
+      DonViTinh: "Bộ",
+      GiaNhap: 220000,
+      GiaBan: 320000,
+      HanSuDung: "2030-01-01",
+      stock: 15,
+      HinhAnh: "https://images.unsplash.com/photo-1558060370-d644479cb6f7?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP027",
+      TenSP: "Xe chòi chân hình thú có đèn nhạc",
+      categoryName: "Đồ chơi",
+      DonViTinh: "Chiếc",
+      GiaNhap: 250000,
+      GiaBan: 360000,
+      HanSuDung: "2030-01-01",
+      stock: 11,
+      HinhAnh: "https://images.unsplash.com/photo-1558060370-d644479cb6f7?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP028",
+      TenSP: "Kem chống hăm Sudocrem 60g Anh Quốc",
+      categoryName: "Chăm sóc mẹ và bé",
+      DonViTinh: "Hộp",
+      GiaNhap: 75000,
+      GiaBan: 110000,
+      HanSuDung: "2028-06-30",
+      stock: 35,
+      HinhAnh: "https://images.unsplash.com/photo-1607582278043-57198ac8da43?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP029",
+      TenSP: "Nước giặt xả cho bé D-nee organic 3000ml",
+      categoryName: "Chăm sóc mẹ và bé",
+      DonViTinh: "Can",
+      GiaNhap: 145000,
+      GiaBan: 199000,
+      HanSuDung: "2028-08-31",
+      stock: 28,
+      HinhAnh: "https://images.unsplash.com/photo-1607582278043-57198ac8da43?w=300&auto=format&fit=crop&q=80",
+    },
+    {
+      MaSP: "SP030",
+      TenSP: "Sữa tắm gội thảo dược trẻ em Elemis 200ml",
+      categoryName: "Chăm sóc mẹ và bé",
+      DonViTinh: "Chai",
+      GiaNhap: 95000,
+      GiaBan: 135000,
+      HanSuDung: "2028-04-30",
+      stock: 20,
+      HinhAnh: "https://images.unsplash.com/photo-1607582278043-57198ac8da43?w=300&auto=format&fit=crop&q=80",
+    },
+  ];
+
+  for (const item of sampleProducts) {
+    const cat = catMap.get(item.categoryName.toLowerCase());
+    const existing = await database.collection("SanPham").findOne({ MaSP: item.MaSP });
+    if (!existing) {
+      const prodDoc = {
+        _id: new ObjectId(),
+        MaSP: item.MaSP,
+        TenSP: item.TenSP,
+        MaLoai: cat ? cat._id : null,
+        LoaiHang: cat ? cat.TenLoai : item.categoryName,
+        DonViTinh: item.DonViTinh,
+        GiaNhap: item.GiaNhap,
+        GiaBan: item.GiaBan,
+        HanSuDung: item.HanSuDung,
+        stock: item.stock,
+        HinhAnh: item.HinhAnh,
+        TrangThai: "Đang bán",
+        createdAt: now,
+        updatedAt: now,
+      };
+      await database.collection("SanPham").insertOne(prodDoc);
+      await database.collection("TonKho").updateOne(
+        { MaSP: prodDoc._id },
+        {
+          $set: {
+            MaSP: prodDoc._id,
+            SoLuongTon: item.stock,
+            NgayCapNhat: now.toISOString().slice(0, 10),
+            updatedAt: now,
+          },
+        },
+        { upsert: true }
+      );
+    }
+  }
+}
+
 export async function seedDatabase(database) {
   const now = new Date();
   await ensureDetailCollections(database);
@@ -153,6 +492,12 @@ export async function seedDatabase(database) {
     ]);
     console.log("Đã seed dữ liệu mẫu Phiếu thu / Phiếu chi");
   }
+
+  // 1. Backfill TenKH và MaKHCode cho HoaDon, DonHang và CongNo từ KhachHang
+  await backfillCustomerNamesOnDocuments(database);
+
+  // 2. Bổ sung nhiều sản phẩm mẫu đa dạng vào SanPham và TonKho
+  await seedExtraSampleProducts(database);
 
   // Nếu cơ sở dữ liệu đã được khởi tạo ban đầu, TUYỆT ĐỐI KHÔNG RESET hay ghi đè bất kỳ dữ liệu người dùng nào!
   if (await database.collection("_metadata").findOne({ key: "initial-seed-v1" })) {

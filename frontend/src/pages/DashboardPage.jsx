@@ -35,6 +35,7 @@ export function DashboardPage() {
     orders: [],
     invoices: [],
     debts: [],
+    customers: [],
     revenue: { total: 0, orders: 0, weekly: [] },
   });
   const [loadError, setLoadError] = useState("");
@@ -48,13 +49,15 @@ export function DashboardPage() {
       listRecords("invoices"),
       listRecords("debts"),
       getReport("revenue"),
+      listRecords("customers"),
     ])
-      .then(([products, orders, invoices, debts, revenue]) => {
+      .then(([products, orders, invoices, debts, revenue, customers]) => {
         setData({
           products: products.status === "fulfilled" ? products.value : [],
           orders: orders.status === "fulfilled" ? orders.value : [],
           invoices: invoices.status === "fulfilled" ? invoices.value : [],
           debts: debts.status === "fulfilled" ? debts.value : [],
+          customers: customers.status === "fulfilled" ? customers.value : [],
           revenue:
             revenue.status === "fulfilled"
               ? revenue.value
@@ -89,6 +92,15 @@ export function DashboardPage() {
     (sum, d) => sum + Number(d.SoTienConLai || 0),
     0
   );
+
+  const customerMap = useMemo(() => {
+    const map = new Map();
+    for (const c of data.customers || []) {
+      map.set(String(c.id || c._id), c);
+      if (c.MaKH) map.set(String(c.MaKH), c);
+    }
+    return map;
+  }, [data.customers]);
 
   // 5 Hóa đơn gần nhất
   const recentInvoices = useMemo(() => {
@@ -401,7 +413,7 @@ export function DashboardPage() {
                       </td>
                       <td>
                         <strong style={{ fontSize: 13, color: "var(--text-dark)" }}>
-                          {inv.TenKH || "Khách vãng lai"}
+                          {inv.TenKH || (inv.MaKH && customerMap.get(String(inv.MaKH))?.HoTen) || inv.HoTen || "Khách vãng lai"}
                         </strong>
                         <div style={{ fontSize: 11, color: "var(--text-faint)" }}>
                           {inv.NgayLap ? new Date(inv.NgayLap).toLocaleDateString("vi-VN") : "—"}

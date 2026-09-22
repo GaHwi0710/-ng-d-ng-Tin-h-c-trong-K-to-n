@@ -139,6 +139,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
       listRecords("customers"),
       listRecords("suppliers"),
       listRecords("product-categories"),
+      getReport(`warehouse${qs}`),
     ]).then(
       ([
         revenue,
@@ -154,6 +155,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
         custs,
         supps,
         cats,
+        warehouseReport,
       ]) => {
         const errors = [];
         const isRealError = (r) => r.status === "rejected" && r.reason?.status !== 403;
@@ -161,21 +163,26 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
         if (isRealError(debtsReport)) errors.push("Báo cáo công nợ");
         if (isRealError(inventory)) errors.push("Báo cáo tồn kho");
         if (isRealError(cf)) errors.push("Báo cáo thu chi");
+        if (isRealError(warehouseReport)) errors.push("Báo cáo nhập xuất");
         setLoadErrors(errors);
 
         setData({
           revenue:
             revenue.status === "fulfilled"
               ? revenue.value
-              : { total: 0, orders: 0, weekly: [] },
+              : { total: 0, orders: 0, weekly: [], data: [] },
           debts:
             debtsReport.status === "fulfilled"
               ? debtsReport.value
-              : { total: 0, data: [] },
+              : { total: 0, totalPayable: 0, totalReceivable: 0, debtorCustomersCount: 0, debtorSuppliersCount: 0, customerDebts: [], supplierDebts: [], data: [] },
           inventory:
             inventory.status === "fulfilled"
               ? inventory.value
-              : { data: [] },
+              : { data: [], totalProducts: 0, totalInventoryValue: 0, lowStockCount: 0, inStockRate: 100 },
+          warehouse:
+            warehouseReport.status === "fulfilled"
+              ? warehouseReport.value
+              : { totalImportUnits: 0, totalExportUnits: 0, totalImportValue: 0, totalExportValue: 0, exportImportRatio: 0, transactions: [], trend: [] },
         });
         setProducts(prods.status === "fulfilled" ? prods.value : []);
         setReceipts(recs.status === "fulfilled" ? recs.value : []);
@@ -223,19 +230,22 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
   }
 
   // --- REVENUE DATA PREPARATION (Reference 2 - Screen 1) ---
-  const paidInvoices = useMemo(() => {
+  const revenueInvoices = useMemo(() => {
+    if (data?.revenue?.data && Array.isArray(data.revenue.data) && data.revenue.data.length > 0) {
+      return data.revenue.data;
+    }
     return invoices.filter((inv) => inv.TrangThai === "Đã thanh toán");
-  }, [invoices]);
+  }, [data?.revenue?.data, invoices]);
 
-  const totalRevenue = data?.revenue?.total || paidInvoices.reduce((s, i) => s + Number(i.TongTien || 0), 0);
-  const totalOrdersCount = data?.revenue?.orders || salesOrders.length || invoices.length || 0;
+  const totalRevenue = data?.revenue?.total !== undefined ? data.revenue.total : revenueInvoices.reduce((s, i) => s + Number(i.TongTien || 0), 0);
+  const totalOrdersCount = data?.revenue?.orders || revenueInvoices.length || 0;
   const avgRevenuePerOrder = totalOrdersCount > 0 ? Math.round(totalRevenue / totalOrdersCount) : 0;
-  const paidInvoiceRate = invoices.length > 0 ? Math.round((paidInvoices.length / invoices.length) * 100) : 100;
+  const paidInvoiceRate = invoices.length > 0 ? Math.round((revenueInvoices.length / invoices.length) * 100) : 100;
 
   // Revenue by product & category
   const productRevenueMap = useMemo(() => {
     const map = new Map();
-    for (const inv of paidInvoices) {
+    for (const inv of revenueInvoices) {
       for (const line of inv.details || []) {
         const key = line.MaSPCode || line.MaSP || line.TenSP || "Khác";
         const name = line.TenSP || key;
@@ -252,7 +262,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
       }
     }
     return [...map.values()].sort((a, b) => b.total - a.total);
-  }, [paidInvoices]);
+  }, [revenueInvoices]);
 
   // Categories Donut Data
   const categoryRevenueData = useMemo(() => {
@@ -279,37 +289,36 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
       d.setDate(d.getDate() - i);
       const dateStr = d.toISOString().slice(0, 10);
       const dayLabel = `${d.getDate()}/${d.getMonth() + 1}`;
-      const dayTotal = paidInvoices
+      const dayTotal = revenueInvoices
         .filter((inv) => (inv.NgayLap || "").slice(0, 10) === dateStr)
         .reduce((sum, inv) => sum + Number(inv.TongTien || 0), 0);
       days.push({ label: dayLabel, value: dayTotal });
     }
     return days;
-  }, [data?.revenue?.weekly, paidInvoices]);
+  }, [data?.revenue?.weekly, revenueInvoices]);
 
   // --- WAREHOUSE DATA PREPARATION (Reference 2 - Screen 2) ---
-  const totalImportUnits = useMemo(() => {
-    return receipts.reduce((sum, rec) => {
-      const lineQty = (rec.details || []).reduce((s, l) => s + Number(l.SoLuong || l.quantity || 0), 0);
-      return sum + lineQty;
-    }, 0);
-  }, [receipts]);
+  const totalImportUnits = data?.warehouse?.totalImportUnits !== undefined
+    ? data.warehouse.totalImportUnits
+    : receipts.reduce((sum, rec) => sum + (rec.details || []).reduce((s, l) => s + Number(l.SoLuong || l.quantity || 0), 0), 0);
 
-  const totalExportUnits = useMemo(() => {
-    return issues.reduce((sum, iss) => {
-      const lineQty = (iss.details || []).reduce((s, l) => s + Number(l.SoLuong || l.quantity || 0), 0);
-      return sum + lineQty;
-    }, 0);
-  }, [issues]);
+  const totalExportUnits = data?.warehouse?.totalExportUnits !== undefined
+    ? data.warehouse.totalExportUnits
+    : issues.reduce((sum, iss) => sum + (iss.details || []).reduce((s, l) => s + Number(l.SoLuong || l.quantity || 0), 0), 0);
 
-  const totalCurrentStockUnits = useMemo(() => {
-    return products.reduce((sum, p) => sum + Number(p.stock || 0), 0);
-  }, [products]);
+  const totalCurrentStockUnits = data?.warehouse?.totalCurrentStockUnits !== undefined
+    ? data.warehouse.totalCurrentStockUnits
+    : products.reduce((sum, p) => sum + Number(p.stock || 0), 0);
 
-  const exportImportRatio = totalImportUnits > 0 ? ((totalExportUnits / totalImportUnits) * 100).toFixed(1) : "0";
+  const exportImportRatio = data?.warehouse?.exportImportRatio !== undefined
+    ? data.warehouse.exportImportRatio
+    : (totalImportUnits > 0 ? ((totalExportUnits / totalImportUnits) * 100).toFixed(1) : "0");
 
   // Combined transactions
   const warehouseTransactions = useMemo(() => {
+    if (data?.warehouse?.transactions && Array.isArray(data.warehouse.transactions) && data.warehouse.transactions.length > 0) {
+      return data.warehouse.transactions;
+    }
     const list = [
       ...receipts.map((r) => ({
         id: r.id || r.MaPN,
@@ -319,7 +328,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
         code: r.MaPN || r.id,
         date: r.NgayNhap || r.createdAt,
         detailsCount: (r.details || []).length,
-        person: r.NguoiLienQuan || r.NguoiLap || "Nhân viên kho",
+        person: r.TenNCC || r.NguoiLienQuan || r.NguoiLap || "Nhân viên kho",
         total: r.TongTien || (r.details || []).reduce((s, l) => s + Number(l.ThanhTien || 0), 0),
       })),
       ...issues.map((i) => ({
@@ -335,10 +344,13 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
       })),
     ];
     return list.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-  }, [receipts, issues]);
+  }, [data?.warehouse?.transactions, receipts, issues]);
 
   // Warehouse timeline line chart data
   const warehouseTrendData = useMemo(() => {
+    if (data?.warehouse?.trend && Array.isArray(data.warehouse.trend) && data.warehouse.trend.length > 0) {
+      return data.warehouse.trend;
+    }
     const today = new Date();
     const days = [];
     for (let i = 6; i >= 0; i--) {
@@ -358,26 +370,35 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
       days.push({ label: dayLabel, importVal: dayImports, exportVal: dayExports });
     }
     return days;
-  }, [receipts, issues]);
+  }, [data?.warehouse?.trend, receipts, issues]);
 
   // --- INVENTORY DATA PREPARATION (Reference 3 - Screen 1) ---
-  const totalInventoryValue = useMemo(() => {
-    return products.reduce((sum, p) => {
-      const price = Number(p.GiaNhap || p.GiaBan || 0);
-      return sum + Number(p.stock || 0) * price;
-    }, 0);
-  }, [products]);
+  const inventoryProducts = useMemo(() => {
+    if (data?.inventory?.data && Array.isArray(data.inventory.data) && data.inventory.data.length > 0) {
+      return data.inventory.data;
+    }
+    return products;
+  }, [data?.inventory?.data, products]);
 
-  const lowStockProductsCount = useMemo(() => {
-    return products.filter((p) => Number(p.stock || 0) <= LOW_STOCK_THRESHOLD).length;
-  }, [products]);
+  const totalInventoryValue = data?.inventory?.totalInventoryValue !== undefined
+    ? data.inventory.totalInventoryValue
+    : inventoryProducts.reduce((sum, p) => {
+        const price = Number(p.GiaNhap || p.GiaBan || 0);
+        return sum + Number(p.stock || 0) * price;
+      }, 0);
 
-  const inStockRate = products.length > 0 ? Math.round(((products.length - lowStockProductsCount) / products.length) * 100) : 100;
+  const lowStockProductsCount = data?.inventory?.lowStockCount !== undefined
+    ? data.inventory.lowStockCount
+    : inventoryProducts.filter((p) => Number(p.stock || 0) <= LOW_STOCK_THRESHOLD).length;
+
+  const inStockRate = data?.inventory?.inStockRate !== undefined
+    ? data.inventory.inStockRate
+    : (inventoryProducts.length > 0 ? Math.round(((inventoryProducts.length - lowStockProductsCount) / inventoryProducts.length) * 100) : 100);
 
   // Inventory value by category bar chart
   const categoryInventoryBarData = useMemo(() => {
     const map = new Map();
-    for (const p of products) {
+    for (const p of inventoryProducts) {
       const cat = p.LoaiHang || "Khác";
       const val = Number(p.stock || 0) * Number(p.GiaNhap || p.GiaBan || 0);
       map.set(cat, (map.get(cat) || 0) + val);
@@ -386,47 +407,53 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
       .map(([label, value]) => ({ label, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 6);
-  }, [products]);
+  }, [inventoryProducts]);
 
   // Inventory status Donut
   const inventoryStatusDonut = useMemo(() => {
-    const inStockCount = products.length - lowStockProductsCount;
+    const inStockCount = Math.max(0, inventoryProducts.length - lowStockProductsCount);
     return [
       { label: "Còn hàng", value: inStockCount, color: "#10B981" },
       { label: "Sắp hết hàng", value: lowStockProductsCount, color: "#F59E0B" },
     ];
-  }, [products, lowStockProductsCount]);
+  }, [inventoryProducts, lowStockProductsCount]);
 
   // --- DEBTS DATA PREPARATION (Reference 3 - Screen 2) ---
   const customerDebtsList = useMemo(() => {
+    if (data?.debts?.customerDebts && Array.isArray(data.debts.customerDebts)) {
+      return data.debts.customerDebts;
+    }
     return debts.filter((d) => d.type === "customers" || !!d.MaKH);
-  }, [debts]);
+  }, [data?.debts?.customerDebts, debts]);
 
   const supplierDebtsList = useMemo(() => {
+    if (data?.debts?.supplierDebts && Array.isArray(data.debts.supplierDebts)) {
+      return data.debts.supplierDebts;
+    }
     return debts.filter((d) => d.type === "suppliers" || !!d.MaNCC);
-  }, [debts]);
+  }, [data?.debts?.supplierDebts, debts]);
 
-  const totalReceivable = useMemo(() => {
-    return customerDebtsList.reduce((sum, d) => sum + Number(d.SoTienConLai ?? (d.SoTien - (d.SoTienDaTra || 0)) ?? 0), 0);
-  }, [customerDebtsList]);
+  const totalReceivable = data?.debts?.totalReceivable !== undefined
+    ? data.debts.totalReceivable
+    : customerDebtsList.reduce((sum, d) => sum + Number(d.SoTienConLai ?? (d.SoTien - (d.SoTienDaTra || 0)) ?? 0), 0);
 
-  const totalPayable = useMemo(() => {
-    return supplierDebtsList.reduce((sum, d) => sum + Number(d.SoTienConLai ?? (d.SoTien - (d.SoTienDaTra || 0)) ?? 0), 0);
-  }, [supplierDebtsList]);
+  const totalPayable = data?.debts?.totalPayable !== undefined
+    ? data.debts.totalPayable
+    : supplierDebtsList.reduce((sum, d) => sum + Number(d.SoTienConLai ?? (d.SoTien - (d.SoTienDaTra || 0)) ?? 0), 0);
 
-  const debtorCustomersCount = useMemo(() => {
-    return new Set(customerDebtsList.map((d) => d.MaKH || d.partnerId).filter(Boolean)).size;
-  }, [customerDebtsList]);
+  const debtorCustomersCount = data?.debts?.debtorCustomersCount !== undefined
+    ? data.debts.debtorCustomersCount
+    : new Set(customerDebtsList.map((d) => d.MaKH || d.partnerId).filter(Boolean)).size;
 
-  const debtorSuppliersCount = useMemo(() => {
-    return new Set(supplierDebtsList.map((d) => d.MaNCC || d.partnerId).filter(Boolean)).size;
-  }, [supplierDebtsList]);
+  const debtorSuppliersCount = data?.debts?.debtorSuppliersCount !== undefined
+    ? data.debts.debtorSuppliersCount
+    : new Set(supplierDebtsList.map((d) => d.MaNCC || d.partnerId).filter(Boolean)).size;
 
   // Debts Customer Donut
   const customerDebtsDonut = useMemo(() => {
     const list = customerDebtsList.map((d) => {
       const cust = customers.find((c) => c.id === d.MaKH || c.MaKH === d.MaKH);
-      const name = cust?.HoTen || d.partnerName || d.MaKH || "Khách hàng";
+      const name = d.partnerName || cust?.HoTen || d.MaKH || "Khách hàng";
       const remaining = Number(d.SoTienConLai ?? (d.SoTien - (d.SoTienDaTra || 0)) ?? 0);
       return { label: name, value: remaining };
     }).filter((x) => x.value > 0);
@@ -437,7 +464,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
   const supplierDebtsDonut = useMemo(() => {
     const list = supplierDebtsList.map((d) => {
       const supp = suppliers.find((s) => s.id === d.MaNCC || s.MaNCC === d.MaNCC);
-      const name = supp?.TenNCC || d.partnerName || d.MaNCC || "Nhà cung cấp";
+      const name = d.partnerName || supp?.TenNCC || d.MaNCC || "Nhà cung cấp";
       const remaining = Number(d.SoTienConLai ?? (d.SoTien - (d.SoTienDaTra || 0)) ?? 0);
       return { label: name, value: remaining };
     }).filter((x) => x.value > 0);
@@ -1009,9 +1036,9 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
             <StatCard
               icon={CubeIcon}
               label="Tổng số mặt hàng"
-              value={`${products.length}`}
+              value={`${inventoryProducts.length}`}
               theme="green"
-              delta="Mặt hàng SKU quản lý"
+              delta="Mặt hàng SKU hiển thị"
               deltaType="neutral"
             />
             <StatCard
@@ -1058,7 +1085,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
               </header>
               <DonutChart
                 data={inventoryStatusDonut}
-                centerValue={`${products.length} SKU`}
+                centerValue={`${inventoryProducts.length} SKU`}
                 centerLabel="Tổng mặt hàng"
                 unit="SKU"
                 size={180}
@@ -1084,7 +1111,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map((p, idx) => {
+                  {inventoryProducts.map((p, idx) => {
                     const st = Number(p.stock || 0);
                     const price = Number(p.GiaNhap || p.GiaBan || 0);
                     const val = st * price;
@@ -1106,6 +1133,13 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                       </tr>
                     );
                   })}
+                  {!inventoryProducts.length && (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: "center", color: "#94A3B8", padding: 32 }}>
+                        Không có mặt hàng nào phù hợp với bộ lọc
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

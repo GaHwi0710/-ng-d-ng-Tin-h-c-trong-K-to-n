@@ -363,6 +363,8 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
       const order = {
         MaDH: await nextBusinessCode(getDatabase().collection("DonHang"), "DonHang"),
         MaKH: customerId || null,
+        MaKHCode: customer?.MaKH || null,
+        TenKH: customer?.HoTen || "Khách vãng lai",
         MaNV: req.user.id,
         NguoiLap: nguoiLap,
         NgayDat: req.body.NgayDat || today(),
@@ -392,6 +394,8 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
         MaHD: await nextBusinessCode(getDatabase().collection("HoaDon"), "HoaDon"),
         MaDH: orderResult.insertedId,
         MaKH: customerId || null,
+        MaKHCode: customer?.MaKH || null,
+        TenKH: customer?.HoTen || "Khách vãng lai",
         MaNV: req.user.id,
         NguoiLap: nguoiLap,
         NgayLap: today(),

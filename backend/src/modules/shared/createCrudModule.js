@@ -122,34 +122,58 @@ async function serializeRecord(tableName, document) {
     }
   }
   const references = {
-    HoaDon: [{ field: "MaDH", table: "DonHang", code: "MaDH", output: "MaDHCode" }],
+    HoaDon: [
+      { field: "MaDH", table: "DonHang", code: "MaDH", output: "MaDHCode" },
+      { field: "MaKH", table: "KhachHang", code: "MaKH", output: "MaKHCode", name: "HoTen", nameOutput: "TenKH" },
+    ],
+    DonHang: [
+      { field: "MaKH", table: "KhachHang", code: "MaKH", output: "MaKHCode", name: "HoTen", nameOutput: "TenKH" },
+    ],
     PhieuXuat: [{ field: "MaDH", table: "DonHang", code: "MaDH", output: "MaDHCode" }],
-    PhieuNhap: [{ field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode" }],
+    PhieuNhap: [{ field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode", name: "TenNCC", nameOutput: "TenNCC" }],
     PhieuThu: [{ field: "MaHD", table: "HoaDon", code: "MaHD", output: "MaHDCode" }],
-    PhieuChi: [{ field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode" }],
-    DonDatHang: [{ field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode" }],
+    PhieuChi: [{ field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode", name: "TenNCC", nameOutput: "TenNCC" }],
+    DonDatHang: [{ field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode", name: "TenNCC", nameOutput: "TenNCC" }],
     CongNo: [
-      { field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode" },
-      { field: "MaKH", table: "KhachHang", code: "MaKH", output: "MaKHCode" },
+      { field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode", name: "TenNCC", nameOutput: "TenNCC" },
+      { field: "MaKH", table: "KhachHang", code: "MaKH", output: "MaKHCode", name: "HoTen", nameOutput: "TenKH" },
       { field: "MaHD", table: "HoaDon", code: "MaHD", output: "MaHDCode" },
     ],
     PhieuTraHang: [
       { field: "MaDH", table: "DonHang", code: "MaDH", output: "MaDHCode" },
-      { field: "MaKH", table: "KhachHang", code: "MaKH", output: "MaKHCode" },
+      { field: "MaKH", table: "KhachHang", code: "MaKH", output: "MaKHCode", name: "HoTen", nameOutput: "TenKH" },
       { field: "MaHD", table: "HoaDon", code: "MaHD", output: "MaHDCode" },
     ],
     SanPham: [{ field: "MaLoai", table: "LoaiHang", code: "MaLoai", output: "MaLoaiCode", name: "TenLoai", nameOutput: "LoaiHang" }],
   }[tableName] || [];
   for (const reference of references) {
-    if (!ObjectId.isValid(record[reference.field])) continue;
+    if (!record[reference.field]) continue;
+    const refVal = record[reference.field];
     const projection = { [reference.code]: 1 };
     if (reference.name) projection[reference.name] = 1;
+    const orClauses = [];
+    if (ObjectId.isValid(refVal)) {
+      orClauses.push({ _id: new ObjectId(refVal) });
+    }
+    orClauses.push({ _id: String(refVal) });
+    orClauses.push({ [reference.code]: String(refVal) });
+
     const linked = await getDatabase().collection(reference.table).findOne(
-      { _id: new ObjectId(record[reference.field]) },
+      { $or: orClauses },
       { projection },
     );
     if (linked?.[reference.code]) record[reference.output] = linked[reference.code];
     if (linked?.[reference.name]) record[reference.nameOutput] = linked[reference.name];
+  }
+  if (tableName === "HoaDon" || tableName === "DonHang") {
+    if (!record.TenKH) {
+      record.TenKH = record.MaKH ? "Khách hàng" : "Khách vãng lai";
+    }
+  }
+  if (tableName === "CongNo") {
+    if (!record.partnerName) {
+      record.partnerName = record.TenKH || record.TenNCC || (record.LoaiCongNo === "Nhà cung cấp" ? "Nhà cung cấp" : "Khách hàng");
+    }
   }
   let detailProp = Array.isArray(record.details) && record.details.length ? "details" : Array.isArray(record.items) && record.items.length ? "items" : null;
   if (!detailProp && ["DonDatHang", "DonHang", "HoaDon", "PhieuNhap", "PhieuXuat"].includes(tableName)) {
