@@ -121,10 +121,12 @@ export function userCanAccessPath(path) {
 }
 
 export const ROLE_LABELS = {
+  QuanTriHeThong: "Quản trị hệ thống",
   QuanLy: "Quản lý",
   KeToan: "Kế toán",
   NhanVienBanHang: "Nhân viên bán hàng",
-  NhanVienKho: "Nhân viên kho",
+  ThuKho: "Thủ kho",
+  NhanVienKho: "Thủ kho",
   NhanVienMuaHang: "Nhân viên mua hàng",
 };
 

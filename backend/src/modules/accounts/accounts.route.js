@@ -5,7 +5,7 @@ import { hashPassword } from "../auth/password.js";
 import { syncEmployee, isLockedStatus } from "../auth/accountEmployee.js";
 
 const router = Router();
-const builtinRoles = ["QuanLy", "KeToan", "NhanVienBanHang", "NhanVienKho", "NhanVienMuaHang"];
+const builtinRoles = ["QuanTriHeThong", "QuanLy", "KeToan", "NhanVienBanHang", "ThuKho", "NhanVienKho", "NhanVienMuaHang"];
 
 // Vai trò hợp lệ: 5 vai trò hệ thống hoặc vai trò tùy chỉnh có MaKey trong VaiTro
 async function isValidRole(db, roleKey) {

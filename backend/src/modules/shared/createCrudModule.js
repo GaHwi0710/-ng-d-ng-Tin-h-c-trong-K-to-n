@@ -48,6 +48,15 @@ function serialize(document) {
 }
 
 function validateRecord(tableName, body) {
+  if (tableName === "PhieuThu") {
+    body.NguoiNopTien = body.NguoiNopTien || body.NguoiNop || body.TenKH || "";
+    body.NguoiNop = body.NguoiNop || body.NguoiNopTien;
+  }
+  if (tableName === "PhieuChi") {
+    body.NguoiNhanTien = body.NguoiNhanTien || body.NguoiNhan || body.TenNCC || "";
+    body.NguoiNhan = body.NguoiNhan || body.NguoiNhanTien;
+  }
+
   const required = {
     KhachHang: ["HoTen"],
     NhaCungCap: ["TenNCC"],
@@ -144,6 +153,13 @@ async function serializeRecord(tableName, document) {
       { field: "MaKH", table: "KhachHang", code: "MaKH", output: "MaKHCode", name: "HoTen", nameOutput: "TenKH" },
       { field: "MaHD", table: "HoaDon", code: "MaHD", output: "MaHDCode" },
     ],
+    ThanhToan: [
+      { field: "MaHD", table: "HoaDon", code: "MaHD", output: "MaHDCode" },
+      { field: "MaPN", table: "PhieuNhap", code: "MaPN", output: "MaPNCode" },
+      { field: "MaCN", table: "CongNo", code: "MaCN", output: "MaCNCode" },
+      { field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode", name: "TenNCC", nameOutput: "TenNCC" },
+      { field: "MaKH", table: "KhachHang", code: "MaKH", output: "MaKHCode", name: "HoTen", nameOutput: "TenKH" },
+    ],
     SanPham: [{ field: "MaLoai", table: "LoaiHang", code: "MaLoai", output: "MaLoaiCode", name: "TenLoai", nameOutput: "LoaiHang" }],
   }[tableName] || [];
   for (const reference of references) {
@@ -175,14 +191,20 @@ async function serializeRecord(tableName, document) {
       record.partnerName = record.TenKH || record.TenNCC || (record.LoaiCongNo === "Nhà cung cấp" ? "Nhà cung cấp" : "Khách hàng");
     }
   }
+  if (tableName === "ThanhToan") {
+    if (!record.TenDoiTuong) {
+      record.TenDoiTuong = record.TenKH || record.TenNCC || "Khách hàng";
+    }
+  }
   let detailProp = Array.isArray(record.details) && record.details.length ? "details" : Array.isArray(record.items) && record.items.length ? "items" : null;
-  if (!detailProp && ["DonDatHang", "DonHang", "HoaDon", "PhieuNhap", "PhieuXuat"].includes(tableName)) {
+  if (!detailProp && ["DonDatHang", "DonHang", "HoaDon", "PhieuNhap", "PhieuXuat", "KiemKe"].includes(tableName)) {
     const detailMap = {
       DonDatHang: { col: "CT_DonDatHang", fk: "MaDDH" },
       DonHang: { col: "CT_DonHang", fk: "MaDH" },
       HoaDon: { col: "CT_HoaDon", fk: "MaHD" },
       PhieuNhap: { col: "CT_PhieuNhap", fk: "MaPN" },
       PhieuXuat: { col: "CT_PhieuXuat", fk: "MaPX" },
+      KiemKe: { col: "CT_KiemKe", fk: "MaKK" },
     };
     const def = detailMap[tableName];
     if (def) {
@@ -298,7 +320,18 @@ export function createCrudModule(routeName, tableName) {
         } else {
           return res.status(400).json({ message: "Loại hàng không hợp lệ" });
         }
+      } else if (tableName === "LoaiHang") {
+        if (!body.TenLoai || !String(body.TenLoai).trim()) {
+          return res.status(400).json({ message: "Tên loại hàng không được để trống" });
+        }
+        const duplicateCat = await collection.findOne({
+          TenLoai: { $regex: new RegExp(`^${String(body.TenLoai).trim()}$`, "i") }
+        });
+        if (duplicateCat) {
+          return res.status(409).json({ message: `Loại hàng "${body.TenLoai}" đã tồn tại` });
+        }
       } else if (tableName === "DonDatHang") {
+        if (!body.MaNCC && body.supplierId) body.MaNCC = body.supplierId;
         if (!ObjectId.isValid(body.MaNCC)) return res.status(400).json({ message: "Nhà cung cấp không hợp lệ" });
         body.MaNCC = new ObjectId(body.MaNCC);
         const suppDoc = await getDatabase().collection("NhaCungCap").findOne({ _id: body.MaNCC });
@@ -478,7 +511,21 @@ export function createCrudModule(routeName, tableName) {
         } else {
           return res.status(400).json({ message: "Loại hàng không hợp lệ" });
         }
+      } else if (tableName === "LoaiHang") {
+        if (update.TenLoai !== undefined) {
+          if (!update.TenLoai || !String(update.TenLoai).trim()) {
+            return res.status(400).json({ message: "Tên loại hàng không được để trống" });
+          }
+          const duplicateCat = await getDatabase().collection("LoaiHang").findOne({
+            TenLoai: { $regex: new RegExp(`^${String(update.TenLoai).trim()}$`, "i") },
+            _id: { $ne: id }
+          });
+          if (duplicateCat) {
+            return res.status(409).json({ message: `Loại hàng "${update.TenLoai}" đã tồn tại` });
+          }
+        }
       } else if (tableName === "DonDatHang") {
+        if (!update.MaNCC && update.supplierId) update.MaNCC = update.supplierId;
         if (update.MaNCC) {
           if (!ObjectId.isValid(update.MaNCC)) return res.status(400).json({ message: "Nhà cung cấp không hợp lệ" });
           update.MaNCC = new ObjectId(update.MaNCC);
@@ -593,6 +640,23 @@ export function createCrudModule(routeName, tableName) {
         }
       }
 
+      // Check for LoaiHang: cannot delete if products are linked
+      if (tableName === "LoaiHang") {
+        const catMatches = [id, String(id)];
+        if (existingDoc.MaLoai) catMatches.push(existingDoc.MaLoai);
+        const hasProducts = await db.collection("SanPham").findOne({
+          $or: [
+            { MaLoai: { $in: catMatches } },
+            { LoaiHang: existingDoc.TenLoai },
+          ],
+        });
+        if (hasProducts) {
+          return res.status(400).json({
+            message: `Không thể xóa loại hàng "${existingDoc.TenLoai}" vì đang có sản phẩm thuộc danh mục này.`,
+          });
+        }
+      }
+
       // Soft-delete for NhaCungCap
       if (tableName === "NhaCungCap") {
         const idMatches = [id, String(id)];
@@ -603,8 +667,9 @@ export function createCrudModule(routeName, tableName) {
           $or: [{ MaNCC: { $in: idMatches } }, { supplierId: { $in: idMatches } }]
         });
         const hasDebts = await db.collection("CongNo").findOne({ MaNCC: { $in: idMatches } });
+        const hasPayments = await db.collection("PhieuChi").findOne({ MaNCC: { $in: idMatches } });
 
-        if (hasPurchaseOrders || hasReceipts || hasDebts) {
+        if (hasPurchaseOrders || hasReceipts || hasDebts || hasPayments) {
           await db.collection("NhaCungCap").updateOne(
             { _id: id },
             { $set: { TrangThai: "Ngưng hoạt động", status: "inactive", updatedAt: new Date() } }

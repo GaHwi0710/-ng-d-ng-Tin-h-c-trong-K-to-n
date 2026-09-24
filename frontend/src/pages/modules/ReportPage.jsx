@@ -83,16 +83,21 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
   const [loadErrors, setLoadErrors] = useState([]);
   const [fetching, setFetching] = useState(false);
 
-  // Comprehensive Filter States (Requirement F1)
-  const [datePreset, setDatePreset] = useState("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  // Comprehensive Filter States (Requirement F1 & UC24)
+  const initialPresetDates = getPresetDates("thisMonth");
+  const [datePreset, setDatePreset] = useState("thisMonth");
+  const [dateFrom, setDateFrom] = useState(initialPresetDates.from);
+  const [dateTo, setDateTo] = useState(initialPresetDates.to);
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterProduct, setFilterProduct] = useState("all");
   const [filterSupplier, setFilterSupplier] = useState("all");
   const [filterCustomer, setFilterCustomer] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterKey, setFilterKey] = useState(0);
+
+  // UC23: Báo cáo doanh thu theo Ngày / Tháng / Năm
+  const [revenueGroupBy, setRevenueGroupBy] = useState("day"); // "day" | "month" | "year"
+  const [selectedRevenueYear, setSelectedRevenueYear] = useState(new Date().getFullYear().toString());
 
   function handlePresetChange(preset) {
     setDatePreset(preset);
@@ -102,14 +107,17 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
   }
 
   function handleResetFilters() {
-    setDatePreset("all");
-    setDateFrom("");
-    setDateTo("");
+    setDatePreset("thisMonth");
+    const dates = getPresetDates("thisMonth");
+    setDateFrom(dates.from);
+    setDateTo(dates.to);
     setFilterCategory("all");
     setFilterProduct("all");
     setFilterSupplier("all");
     setFilterCustomer("all");
     setFilterStatus("all");
+    setRevenueGroupBy("day");
+    setSelectedRevenueYear(new Date().getFullYear().toString());
     setFilterKey((k) => k + 1);
   }
 
@@ -125,8 +133,15 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
     if (filterStatus && filterStatus !== "all") params.set("status", filterStatus);
     const qs = params.toString() ? `?${params}` : "";
 
+    const revParams = new URLSearchParams(params);
+    revParams.set("groupBy", revenueGroupBy);
+    if (revenueGroupBy === "month" && selectedRevenueYear) {
+      revParams.set("year", selectedRevenueYear);
+    }
+    const revQs = revParams.toString() ? `?${revParams}` : "";
+
     Promise.allSettled([
-      getReport(`revenue${qs}`),
+      getReport(`revenue${revQs}`),
       getReport(`debts${qs}`),
       getReport(`inventory${qs}`),
       listRecords("products"),
@@ -196,7 +211,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
         if (cats.status === "fulfilled") setDbCategories(cats.value);
       }
     ).finally(() => setFetching(false));
-  }, [filterKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterKey, revenueGroupBy, selectedRevenueYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handlePrint(type) {
     if (!data) return;
@@ -206,10 +221,27 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
       const { printReport } = await import("../../lib/reportPrint.js");
       switch (type) {
         case "revenue":
-          printReport("revenue", { revenueData: data?.revenue, invoices, salesOrders });
+          printReport("revenue", {
+            revenueData: data?.revenue,
+            invoices: revenueInvoices,
+            salesOrders,
+            dateFrom,
+            dateTo,
+          });
           break;
         case "inventory":
-          printReport("inventory", { products });
+          printReport("inventory", {
+            products: inventoryProducts,
+            dateFrom: dateFrom || data?.inventory?.from,
+            dateTo: dateTo || data?.inventory?.to,
+            summary: {
+              totalBeginningStock,
+              totalImportStock,
+              totalExportStock,
+              totalEndingStock,
+              totalInventoryValue,
+            },
+          });
           break;
         case "warehouse":
           printReport("warehouse", { receipts, issues });
@@ -229,18 +261,24 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
     }
   }
 
-  // --- REVENUE DATA PREPARATION (Reference 2 - Screen 1) ---
+  // --- REVENUE DATA PREPARATION (Reference 2 - Screen 1 & UC23) ---
   const revenueInvoices = useMemo(() => {
     if (data?.revenue?.data && Array.isArray(data.revenue.data) && data.revenue.data.length > 0) {
       return data.revenue.data;
     }
-    return invoices.filter((inv) => inv.TrangThai === "Đã thanh toán");
+    return invoices.filter((inv) => inv.TrangThai !== "Đã hủy");
   }, [data?.revenue?.data, invoices]);
 
   const totalRevenue = data?.revenue?.total !== undefined ? data.revenue.total : revenueInvoices.reduce((s, i) => s + Number(i.TongTien || 0), 0);
-  const totalOrdersCount = data?.revenue?.orders || revenueInvoices.length || 0;
+  const totalPaid = data?.revenue?.totalPaid !== undefined ? data.revenue.totalPaid : revenueInvoices.reduce((s, i) => s + Number(i.SoTienDaTra ?? (i.TrangThai === "Đã thanh toán" ? i.TongTien : 0)), 0);
+  const totalUnpaid = data?.revenue?.totalUnpaid !== undefined ? data.revenue.totalUnpaid : (totalRevenue - totalPaid);
+  const totalOrdersCount = data?.revenue?.orders !== undefined ? data.revenue.orders : revenueInvoices.length;
   const avgRevenuePerOrder = totalOrdersCount > 0 ? Math.round(totalRevenue / totalOrdersCount) : 0;
-  const paidInvoiceRate = invoices.length > 0 ? Math.round((revenueInvoices.length / invoices.length) * 100) : 100;
+  const paidInvoiceRate = totalRevenue > 0 ? Math.round((totalPaid / totalRevenue) * 100) : 100;
+
+  const revenueBreakdown = useMemo(() => {
+    return data?.revenue?.breakdown || [];
+  }, [data?.revenue?.breakdown]);
 
   // Revenue by product & category
   const productRevenueMap = useMemo(() => {
@@ -273,29 +311,22 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
     return [...catMap.entries()].map(([label, value]) => ({ label, value }));
   }, [productRevenueMap]);
 
-  // Revenue 7-day Line Data
-  const revenueLineData = useMemo(() => {
+  // Revenue Line / Trend Data for UC23
+  const revenueChartData = useMemo(() => {
+    if (revenueBreakdown.length > 0) {
+      return revenueBreakdown.map((b) => ({
+        label: b.label ? b.label.replace("Tháng ", "T").replace("Năm ", "") : b.period,
+        value: b.revenue || 0,
+      }));
+    }
     if (data?.revenue?.weekly && data.revenue.weekly.length > 0) {
       return data.revenue.weekly.map((w) => ({
         label: w.date ? w.date.slice(5).replace("-", "/") : "",
         value: w.total || 0,
       }));
     }
-    // Fallback: Group paid invoices by last 7 days
-    const today = new Date();
-    const days = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
-      const dayLabel = `${d.getDate()}/${d.getMonth() + 1}`;
-      const dayTotal = revenueInvoices
-        .filter((inv) => (inv.NgayLap || "").slice(0, 10) === dateStr)
-        .reduce((sum, inv) => sum + Number(inv.TongTien || 0), 0);
-      days.push({ label: dayLabel, value: dayTotal });
-    }
-    return days;
-  }, [data?.revenue?.weekly, revenueInvoices]);
+    return [];
+  }, [revenueBreakdown, data?.revenue?.weekly]);
 
   // --- WAREHOUSE DATA PREPARATION (Reference 2 - Screen 2) ---
   const totalImportUnits = data?.warehouse?.totalImportUnits !== undefined
@@ -384,8 +415,24 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
     ? data.inventory.totalInventoryValue
     : inventoryProducts.reduce((sum, p) => {
         const price = Number(p.GiaNhap || p.GiaBan || 0);
-        return sum + Number(p.stock || 0) * price;
+        return sum + Number(p.TonCuoi ?? p.stock ?? 0) * price;
       }, 0);
+
+  const totalBeginningStock = data?.inventory?.totalBeginningStock !== undefined
+    ? data.inventory.totalBeginningStock
+    : inventoryProducts.reduce((sum, p) => sum + Number(p.TonDau || 0), 0);
+
+  const totalImportStock = data?.inventory?.totalImportStock !== undefined
+    ? data.inventory.totalImportStock
+    : inventoryProducts.reduce((sum, p) => sum + Number(p.NhapTrongKy || 0), 0);
+
+  const totalExportStock = data?.inventory?.totalExportStock !== undefined
+    ? data.inventory.totalExportStock
+    : inventoryProducts.reduce((sum, p) => sum + Number(p.XuatTrongKy || 0), 0);
+
+  const totalEndingStock = data?.inventory?.totalEndingStock !== undefined
+    ? data.inventory.totalEndingStock
+    : inventoryProducts.reduce((sum, p) => sum + Number(p.TonCuoi ?? p.stock ?? 0), 0);
 
   const lowStockProductsCount = data?.inventory?.lowStockCount !== undefined
     ? data.inventory.lowStockCount
@@ -795,41 +842,103 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 1: BÁO CÁO DOANH THU (Reference 2 - Screen 1)
+          TAB 1: BÁO CÁO DOANH THU (UC23 - Theo Ngày / Tháng / Năm)
           ───────────────────────────────────────────────────────────── */}
       {activeTab === "revenue" && (
         <>
+          {/* UC23 Mode Switcher */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              marginBottom: 16,
+              background: "#FFFFFF",
+              border: "1px solid #E2E8F0",
+              borderRadius: 8,
+              padding: "10px 14px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>
+                📊 Chế độ tổng hợp UC23:
+              </span>
+              {[
+                { id: "day", label: "📅 Theo ngày", desc: "Chi tiết theo từng ngày phát sinh" },
+                { id: "month", label: "📆 Theo tháng", desc: "Tổng hợp 12 tháng trong năm" },
+                { id: "year", label: "🗓️ Theo năm", desc: "Tổng hợp so sánh qua các năm" },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className={`btn btn-sm ${revenueGroupBy === m.id ? "btn-primary" : "btn-outline"}`}
+                  style={{
+                    padding: "5px 14px",
+                    fontSize: 12.5,
+                    fontWeight: revenueGroupBy === m.id ? 700 : 500,
+                    borderRadius: 6,
+                  }}
+                  onClick={() => {
+                    setRevenueGroupBy(m.id);
+                  }}
+                  title={m.desc}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {revenueGroupBy === "month" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: "#475569" }}>Năm báo cáo:</label>
+                <select
+                  value={selectedRevenueYear}
+                  onChange={(e) => {
+                    setSelectedRevenueYear(e.target.value);
+                  }}
+                  style={{ padding: "4px 10px", fontSize: 12.5, borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff", fontWeight: 600 }}
+                >
+                  {["2024", "2025", "2026", "2027"].map((y) => (
+                    <option key={y} value={y}>Năm {y}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
           <div className="stats-grid">
             <StatCard
               icon={BanknotesIcon}
               label="Tổng doanh thu"
               value={money.format(totalRevenue)}
               theme="gold"
-              delta="+12,5% so với tháng trước"
-              deltaType="up"
-            />
-            <StatCard
-              icon={DocumentTextIcon}
-              label="Đơn hàng"
-              value={totalOrdersCount.toLocaleString("vi-VN")}
-              theme="blue"
-              delta="+8,7% so với tháng trước"
-              deltaType="up"
-            />
-            <StatCard
-              icon={ShoppingCartIcon}
-              label="Doanh thu TB/đơn"
-              value={money.format(avgRevenuePerOrder)}
-              theme="blue"
-              delta="+3,2% so với tháng trước"
+              delta="Hóa đơn bán hàng hợp lệ"
               deltaType="up"
             />
             <StatCard
               icon={CheckCircleIcon}
-              label="Tỷ lệ hoàn thành"
-              value={`${paidInvoiceRate}%`}
+              label="Đã thu tiền"
+              value={money.format(totalPaid)}
               theme="green"
-              delta="Hóa đơn đã thanh toán"
+              delta={`${paidInvoiceRate}% trên tổng doanh thu`}
+              deltaType="up"
+            />
+            <StatCard
+              icon={ClockIcon}
+              label="Chưa thanh toán / Nợ"
+              value={money.format(totalUnpaid)}
+              theme={totalUnpaid > 0 ? "danger" : "blue"}
+              delta={totalUnpaid > 0 ? "Công nợ khách hàng" : "Không có nợ đọng"}
+              deltaType={totalUnpaid > 0 ? "down" : "neutral"}
+            />
+            <StatCard
+              icon={DocumentTextIcon}
+              label="Số hóa đơn"
+              value={totalOrdersCount.toLocaleString("vi-VN")}
+              theme="blue"
+              delta={`TB ${money.format(avgRevenuePerOrder)} / đơn`}
               deltaType="neutral"
             />
           </div>
@@ -837,18 +946,30 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
           <div className="report-grid-2col">
             <article className="card">
               <header className="section-head">
-                <h3 style={{ margin: 0 }}>Doanh thu theo ngày</h3>
+                <div>
+                  <h3 style={{ margin: 0 }}>
+                    Biểu đồ doanh thu {revenueGroupBy === "year" ? "theo năm" : revenueGroupBy === "month" ? `theo tháng (${selectedRevenueYear})` : "theo ngày"}
+                  </h3>
+                  <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748B" }}>
+                    Diễn biến doanh thu thực tế qua các mốc thời gian
+                  </p>
+                </div>
               </header>
               <LineChart
-                data={revenueLineData}
+                data={revenueChartData}
                 series={[{ key: "value", label: "Doanh thu", color: "#3D7068" }]}
-                height={200}
+                height={220}
               />
             </article>
 
             <article className="card">
               <header className="section-head">
-                <h3 style={{ margin: 0 }}>Doanh thu theo nhóm sản phẩm</h3>
+                <div>
+                  <h3 style={{ margin: 0 }}>Doanh thu theo nhóm sản phẩm</h3>
+                  <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748B" }}>
+                    Cơ cấu đóng góp của từng loại hàng
+                  </p>
+                </div>
               </header>
               <DonutChart
                 data={categoryRevenueData}
@@ -858,6 +979,76 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
               />
             </article>
           </div>
+
+          {/* BẢNG TỔNG HỢP DOANH THU THEO KỲ UC23 */}
+          <article className="card" style={{ marginBottom: 18 }}>
+            <header className="section-head">
+              <div>
+                <h3 style={{ margin: 0 }}>
+                  Bảng tổng hợp doanh thu {revenueGroupBy === "year" ? "theo năm" : revenueGroupBy === "month" ? `theo tháng (${selectedRevenueYear})` : "theo ngày"} (UC23)
+                </h3>
+                <p style={{ margin: "2px 0 0", fontSize: 12.5, color: "#64748B" }}>
+                  Tổng hợp doanh thu, tình trạng thu tiền và tỷ trọng đóng góp theo kỳ
+                </p>
+              </div>
+              <span className="badge-count">{revenueBreakdown.length} kỳ</span>
+            </header>
+            <div className="table-shell">
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ width: 48, textAlign: "center" }}>STT</th>
+                    <th>Thời gian ({revenueGroupBy === "year" ? "Năm" : revenueGroupBy === "month" ? "Tháng" : "Ngày"})</th>
+                    <th style={{ textAlign: "center", width: 90 }}>Số HĐ</th>
+                    <th style={{ textAlign: "right" }}>Doanh thu</th>
+                    <th style={{ textAlign: "right" }}>Đã thanh toán</th>
+                    <th style={{ textAlign: "right" }}>Còn nợ</th>
+                    <th style={{ textAlign: "right", width: 90 }}>Tỷ trọng</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {revenueBreakdown.map((row, idx) => (
+                    <tr key={row.period}>
+                      <td style={{ textAlign: "center", color: "#94A3B8" }}>{idx + 1}</td>
+                      <td><strong>{row.label || row.period}</strong></td>
+                      <td style={{ textAlign: "center", fontWeight: 600 }}>{row.ordersCount}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700 }} className="tabular-nums">
+                        {money.format(row.revenue)}
+                      </td>
+                      <td style={{ textAlign: "right", color: "#059669", fontWeight: 600 }} className="tabular-nums">
+                        {money.format(row.paidAmount)}
+                      </td>
+                      <td style={{ textAlign: "right", color: row.unpaidAmount > 0 ? "#DC2626" : "#64748B", fontWeight: 600 }} className="tabular-nums">
+                        {money.format(row.unpaidAmount)}
+                      </td>
+                      <td style={{ textAlign: "right", color: "var(--primary, #3D7068)", fontWeight: 700 }}>
+                        {row.percentage}%
+                      </td>
+                    </tr>
+                  ))}
+                  {!revenueBreakdown.length && (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: "center", color: "#94A3B8", padding: 32 }}>
+                        Chưa có dữ liệu doanh thu trong khoảng thời gian đã chọn
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                {revenueBreakdown.length > 0 && (
+                  <tfoot>
+                    <tr style={{ background: "#F8FAFC", fontWeight: 700 }}>
+                      <td colSpan={2} style={{ textAlign: "right" }}>Tổng cộng:</td>
+                      <td style={{ textAlign: "center" }}>{totalOrdersCount}</td>
+                      <td style={{ textAlign: "right" }} className="tabular-nums">{money.format(totalRevenue)}</td>
+                      <td style={{ textAlign: "right", color: "#059669" }} className="tabular-nums">{money.format(totalPaid)}</td>
+                      <td style={{ textAlign: "right", color: totalUnpaid > 0 ? "#DC2626" : "#64748B" }} className="tabular-nums">{money.format(totalUnpaid)}</td>
+                      <td style={{ textAlign: "right", color: "var(--primary, #3D7068)" }}>100%</td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </article>
 
           <article className="card">
             <header className="section-head">
@@ -1094,40 +1285,61 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
           </div>
 
           <article className="card">
-            <header className="section-head">
-              <h3 style={{ margin: 0 }}>Chi tiết tồn kho</h3>
+            <header className="section-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Báo cáo tổng hợp Nhập – Xuất – Tồn kho</h3>
+                <small style={{ color: "#64748B", fontSize: 12.5 }}>
+                  Kỳ báo cáo: Từ {dateFrom || data?.inventory?.from || "đầu tháng"} đến {dateTo || data?.inventory?.to || "hiện tại"} · Đẳng thức: Tồn cuối = Tồn đầu + Nhập trong kỳ - Xuất trong kỳ
+                </small>
+              </div>
+              <span className="badge-count">{inventoryProducts.length} mặt hàng</span>
             </header>
             <div className="table-shell">
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: 48, textAlign: "center" }}>STT</th>
-                    <th>Mã sản phẩm</th>
+                    <th style={{ width: 44, textAlign: "center" }}>STT</th>
+                    <th style={{ width: 95 }}>Mã SP</th>
                     <th>Tên sản phẩm</th>
-                    <th>Đơn vị tính</th>
-                    <th style={{ textAlign: "center" }}>Tồn kho</th>
-                    <th style={{ textAlign: "right" }}>Giá nhập</th>
-                    <th style={{ textAlign: "right" }}>Giá trị tồn</th>
+                    <th style={{ width: 70, textAlign: "center" }}>ĐVT</th>
+                    <th style={{ textAlign: "right", minWidth: 85 }}>Tồn đầu</th>
+                    <th style={{ textAlign: "right", minWidth: 95 }}>Nhập trong kỳ</th>
+                    <th style={{ textAlign: "right", minWidth: 95 }}>Xuất trong kỳ</th>
+                    <th style={{ textAlign: "right", minWidth: 85 }}>Tồn cuối</th>
+                    <th style={{ textAlign: "right", minWidth: 105 }}>Giá nhập</th>
+                    <th style={{ textAlign: "right", minWidth: 120 }}>Giá trị tồn</th>
                   </tr>
                 </thead>
                 <tbody>
                   {inventoryProducts.map((p, idx) => {
-                    const st = Number(p.stock || 0);
+                    const tonDau = Number(p.TonDau ?? (p.stock || 0));
+                    const nhap = Number(p.NhapTrongKy || 0);
+                    const xuat = Number(p.XuatTrongKy || 0);
+                    const tonCuoi = Number(p.TonCuoi ?? p.stock ?? 0);
                     const price = Number(p.GiaNhap || p.GiaBan || 0);
-                    const val = st * price;
+                    const val = Number(p.GiaTriTon !== undefined ? p.GiaTriTon : tonCuoi * price);
                     return (
-                      <tr key={p.id}>
+                      <tr key={p.id || p.MaSP || idx}>
                         <td style={{ textAlign: "center", color: "#94A3B8" }}>{idx + 1}</td>
                         <td><span className="prod-code-badge">{p.MaSP || p.id}</span></td>
                         <td><strong>{p.TenSP}</strong></td>
-                        <td>{p.DonViTinh || "Cái"}</td>
-                        <td style={{ textAlign: "center" }}>
-                          <Badge variant={st <= 0 ? "red" : st <= LOW_STOCK_THRESHOLD ? "amber" : "green"}>
-                            {st}
+                        <td style={{ textAlign: "center" }}>{p.DonViTinh || "Cái"}</td>
+                        <td style={{ textAlign: "right", fontWeight: 600 }} className="tabular-nums">
+                          {tonDau.toLocaleString("vi-VN")}
+                        </td>
+                        <td style={{ textAlign: "right", color: nhap > 0 ? "#16A34A" : "#64748B", fontWeight: nhap > 0 ? 600 : 400 }} className="tabular-nums">
+                          {nhap > 0 ? `+${nhap.toLocaleString("vi-VN")}` : "0"}
+                        </td>
+                        <td style={{ textAlign: "right", color: xuat > 0 ? "#DC2626" : "#64748B", fontWeight: xuat > 0 ? 600 : 400 }} className="tabular-nums">
+                          {xuat > 0 ? `-${xuat.toLocaleString("vi-VN")}` : "0"}
+                        </td>
+                        <td style={{ textAlign: "right" }}>
+                          <Badge variant={tonCuoi <= 0 ? "red" : tonCuoi <= LOW_STOCK_THRESHOLD ? "amber" : "green"}>
+                            {tonCuoi.toLocaleString("vi-VN")}
                           </Badge>
                         </td>
                         <td style={{ textAlign: "right" }} className="tabular-nums">{money.format(price)}</td>
-                        <td style={{ textAlign: "right", fontWeight: 600 }} className="tabular-nums">
+                        <td style={{ textAlign: "right", fontWeight: 600, color: "var(--primary, #3D7068)" }} className="tabular-nums">
                           {money.format(val)}
                         </td>
                       </tr>
@@ -1135,12 +1347,37 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                   })}
                   {!inventoryProducts.length && (
                     <tr>
-                      <td colSpan={7} style={{ textAlign: "center", color: "#94A3B8", padding: 32 }}>
+                      <td colSpan={10} style={{ textAlign: "center", color: "#94A3B8", padding: 32 }}>
                         Không có mặt hàng nào phù hợp với bộ lọc
                       </td>
                     </tr>
                   )}
                 </tbody>
+                {inventoryProducts.length > 0 && (
+                  <tfoot>
+                    <tr style={{ background: "#F8FAFC", fontWeight: 700, borderTop: "2px solid #CBD5E1" }}>
+                      <td colSpan={4} style={{ textAlign: "right" }}>
+                        Tổng cộng:
+                      </td>
+                      <td style={{ textAlign: "right" }} className="tabular-nums">
+                        {totalBeginningStock.toLocaleString("vi-VN")}
+                      </td>
+                      <td style={{ textAlign: "right", color: "#16A34A" }} className="tabular-nums">
+                        +{totalImportStock.toLocaleString("vi-VN")}
+                      </td>
+                      <td style={{ textAlign: "right", color: "#DC2626" }} className="tabular-nums">
+                        -{totalExportStock.toLocaleString("vi-VN")}
+                      </td>
+                      <td style={{ textAlign: "right" }} className="tabular-nums">
+                        {totalEndingStock.toLocaleString("vi-VN")}
+                      </td>
+                      <td></td>
+                      <td style={{ textAlign: "right", color: "var(--primary, #3D7068)" }} className="tabular-nums">
+                        {money.format(totalInventoryValue)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </article>

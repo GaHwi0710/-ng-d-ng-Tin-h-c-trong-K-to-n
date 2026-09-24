@@ -63,6 +63,7 @@ export function PurchaseOrderPage({ title }) {
   const [status, setStatus] = useState("Đang chờ nhập");
   const [selected, setSelected] = useState([]);
   const [poDetailModal, setPoDetailModal] = useState(null);
+  const [poSubmitting, setPoSubmitting] = useState(false);
 
   // Modal Tạo phiếu nhập từ PO
   const [receiveModal, setReceiveModal] = useState(null); // { po, items[] }
@@ -169,6 +170,8 @@ export function PurchaseOrderPage({ title }) {
 
   async function submit(event) {
     event.preventDefault();
+    if (poSubmitting) return;
+
     if (!supplierId) return toast("Vui lòng chọn nhà cung cấp trước khi lưu đơn");
     const supp = suppliers.find((s) => String(s.id) === String(supplierId) || s.MaNCC === supplierId);
     if (supp && (supp.TrangThai === "Ngưng hoạt động" || supp.status === "inactive")) {
@@ -189,6 +192,8 @@ export function PurchaseOrderPage({ title }) {
     ) {
       return toast("Số lượng phải là số nguyên dương và đơn giá không được âm");
     }
+
+    setPoSubmitting(true);
     try {
       const saved = await saveRecord("purchase-orders", {
         MaNCC: supplierId,
@@ -209,6 +214,8 @@ export function PurchaseOrderPage({ title }) {
       toast("Đã lưu đơn đặt hàng NCC thành công");
     } catch (error) {
       toast(error.message || "Không lưu được đơn đặt hàng");
+    } finally {
+      setPoSubmitting(false);
     }
   }
 
@@ -593,7 +600,9 @@ export function PurchaseOrderPage({ title }) {
           <div style={{ marginTop: 8, padding: "8px 10px", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, fontSize: 12, color: "#166534" }}>
             💡 Tạo đơn sẽ <strong>không tăng tồn kho</strong>. Tồn kho chỉ tăng khi bấm <strong>"Tạo phiếu nhập"</strong> sau khi NCC giao hàng.
           </div>
-          <button className="btn btn-primary btn-block" type="submit" style={{ marginTop: 10 }}>Lưu đơn đặt hàng</button>
+          <button className="btn btn-primary btn-block" type="submit" disabled={poSubmitting} style={{ marginTop: 10 }}>
+            {poSubmitting ? "Đang lưu đơn..." : "Lưu đơn đặt hàng"}
+          </button>
         </aside>
       </form>
 

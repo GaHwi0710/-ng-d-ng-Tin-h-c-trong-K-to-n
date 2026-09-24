@@ -9,6 +9,7 @@ export const codeDefinitions = {
   HoaDon: { field: "MaHD", prefix: "HD" },
   PhieuXuat: { field: "MaPX", prefix: "PX" },
   KiemKe: { field: "MaKK", prefix: "KK" },
+  DieuChinhKho: { field: "MaDC", prefix: "DC" },
   PhieuTraHang: { field: "MaPTH", prefix: "PTH" },
   KhuyenMai: { field: "MaKM", prefix: "KM" },
   CongNo: { field: "MaCN", prefix: "CN" },

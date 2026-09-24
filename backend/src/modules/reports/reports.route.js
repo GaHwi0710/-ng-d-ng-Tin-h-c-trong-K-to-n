@@ -32,13 +32,44 @@ async function populateSuppliersMap(db) {
 router.get("/revenue", async (req, res, next) => {
   try {
     const db = getDatabase();
-    const { from, to, customerId, productId, categoryId, status } = req.query;
+    let { from, to, year, month, customerId, productId, categoryId, status, groupBy } = req.query;
 
+    // 1. Xác định chế độ gom nhóm (day / month / year) - Mặc định theo ngày
+    let validGroupBy = String(groupBy || "").toLowerCase();
+    if (!["day", "month", "year"].includes(validGroupBy)) {
+      validGroupBy = year && !from && !to ? "month" : "day";
+    }
+
+    // 2. Xử lý thời gian và validation
+    if (year && !from && !to) {
+      const yNum = Number(year);
+      if (!Number.isInteger(yNum) || yNum < 2000 || yNum > 2100) {
+        return res.status(400).json({ error: "Năm báo cáo không hợp lệ (phải từ 2000 đến 2100)" });
+      }
+      from = `${year}-01-01`;
+      to = `${year}-12-31`;
+    }
+
+    if (month && !from && !to) {
+      if (!/^\d{4}-\d{2}$/.test(month)) {
+        return res.status(400).json({ error: "Tháng báo cáo không hợp lệ (định dạng YYYY-MM)" });
+      }
+      from = `${month}-01`;
+      const [y, m] = month.split("-").map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      to = `${month}-${String(lastDay).padStart(2, "0")}`;
+    }
+
+    if (from && to && String(from).slice(0, 10) > String(to).slice(0, 10)) {
+      return res.status(400).json({ error: "Ngày bắt đầu không được lớn hơn ngày kết thúc" });
+    }
+
+    // 3. Xây dựng filter MongoDB: Doanh thu tính từ HoaDon (SalesInvoices), loại bỏ hóa đơn hủy
     const filter = {};
     if (status && status !== "all") {
       filter.TrangThai = status;
     } else {
-      filter.TrangThai = "Đã thanh toán";
+      filter.TrangThai = { $ne: "Đã hủy" };
     }
 
     if (from || to) {
@@ -56,7 +87,7 @@ router.get("/revenue", async (req, res, next) => {
       ];
     }
 
-    let invoices = await db.collection("HoaDon").find(filter).sort({ NgayLap: -1 }).toArray();
+    let invoices = await db.collection("HoaDon").find(filter).sort({ NgayLap: 1 }).toArray();
     const custMap = await populateCustomersMap(db);
 
     // Gắn thông tin khách hàng và chi tiết sản phẩm
@@ -91,10 +122,96 @@ router.get("/revenue", async (req, res, next) => {
       });
     }
 
+    // 4. Tính toán tổng số liệu tài chính chính xác (Tránh double-count)
     const total = invoices.reduce((sum, i) => sum + Number(i.TongTien || 0), 0);
+    const totalPaid = invoices.reduce((sum, i) => {
+      const paid = Number(i.SoTienDaTra !== undefined ? i.SoTienDaTra : (i.TrangThai === "Đã thanh toán" ? i.TongTien : 0));
+      return sum + paid;
+    }, 0);
+    const totalUnpaid = invoices.reduce((sum, i) => {
+      const unpaid = Number(i.SoTienConLai !== undefined ? i.SoTienConLai : (i.TrangThai === "Chưa thanh toán" ? i.TongTien : 0));
+      return sum + unpaid;
+    }, 0);
     const totalOrders = await db.collection("DonHang").countDocuments();
 
-    // Helper tạo mảng 7 ngày kết thúc tại anchor
+    // 5. Gom nhóm dữ liệu theo Ngày / Tháng / Năm (UC23)
+    const periodMap = new Map();
+
+    const formatPeriodLabel = (pKey, mode) => {
+      if (mode === "year") return `Năm ${pKey}`;
+      if (mode === "month") {
+        const parts = pKey.split("-");
+        return parts.length >= 2 ? `Tháng ${parts[1]}/${parts[0]}` : pKey;
+      }
+      const parts = pKey.split("-");
+      if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      return pKey;
+    };
+
+    // Nếu chọn theo Tháng và đang trong một năm xác định -> Khởi tạo sẵn 12 tháng
+    if (validGroupBy === "month") {
+      let targetYear = year;
+      if (!targetYear && from && to && String(from).slice(0, 4) === String(to).slice(0, 4)) {
+        targetYear = String(from).slice(0, 4);
+      }
+      if (targetYear) {
+        for (let m = 1; m <= 12; m++) {
+          const mStr = `${targetYear}-${String(m).padStart(2, "0")}`;
+          periodMap.set(mStr, {
+            period: mStr,
+            label: formatPeriodLabel(mStr, "month"),
+            revenue: 0,
+            ordersCount: 0,
+            paidAmount: 0,
+            unpaidAmount: 0,
+          });
+        }
+      }
+    }
+
+    // Tập hợp doanh thu từ từng hóa đơn thực tế
+    for (const inv of invoices) {
+      const dateStr = String(inv.NgayLap || "").slice(0, 10);
+      let pKey = "";
+      if (validGroupBy === "year") {
+        pKey = dateStr.slice(0, 4) || "Chưa rõ";
+      } else if (validGroupBy === "month") {
+        pKey = dateStr.slice(0, 7) || "Chưa rõ";
+      } else {
+        pKey = dateStr || "Chưa rõ";
+      }
+
+      if (!periodMap.has(pKey)) {
+        periodMap.set(pKey, {
+          period: pKey,
+          label: formatPeriodLabel(pKey, validGroupBy),
+          revenue: 0,
+          ordersCount: 0,
+          paidAmount: 0,
+          unpaidAmount: 0,
+        });
+      }
+
+      const item = periodMap.get(pKey);
+      const invTotal = Number(inv.TongTien || 0);
+      const invPaid = Number(inv.SoTienDaTra !== undefined ? inv.SoTienDaTra : (inv.TrangThai === "Đã thanh toán" ? invTotal : 0));
+      const invUnpaid = Number(inv.SoTienConLai !== undefined ? inv.SoTienConLai : (inv.TrangThai === "Chưa thanh toán" ? invTotal : 0));
+
+      item.revenue += invTotal;
+      item.ordersCount += 1;
+      item.paidAmount += invPaid;
+      item.unpaidAmount += invUnpaid;
+    }
+
+    // Sắp xếp breakdown theo thứ tự thời gian
+    const breakdown = [...periodMap.values()]
+      .sort((a, b) => a.period.localeCompare(b.period))
+      .map((b) => ({
+        ...b,
+        percentage: total > 0 ? ((b.revenue / total) * 100).toFixed(1) : "0",
+      }));
+
+    // 6. Mảng 7 ngày cho Dashboard (Backward compatibility)
     const makeDates = (anchor) =>
       Array.from({ length: 7 }, (_, i) => {
         const d = new Date(`${anchor}T00:00:00`);
@@ -124,7 +241,21 @@ router.get("/revenue", async (req, res, next) => {
         .reduce((sum, inv) => sum + Number(inv.TongTien || 0), 0),
     }));
 
-    res.json({ report: "revenue", total, orders: invoices.length, allOrdersCount: totalOrders, weekly, data: invoices });
+    res.json({
+      report: "revenue",
+      groupBy: validGroupBy,
+      from: from || null,
+      to: to || null,
+      year: year || null,
+      total,
+      totalPaid,
+      totalUnpaid,
+      orders: invoices.length,
+      allOrdersCount: totalOrders,
+      breakdown,
+      weekly,
+      data: invoices,
+    });
   } catch (err) {
     next(err);
   }
@@ -296,12 +427,24 @@ router.get("/warehouse", async (req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// 3. BÁO CÁO TỒN KHO
+// 3. BÁO CÁO TỒN KHO (UC24)
 // ─────────────────────────────────────────────────────────────
 router.get("/inventory", async (req, res, next) => {
   try {
     const db = getDatabase();
     const { categoryId, productId, stockStatus, search } = req.query;
+
+    // Date range params (hỗ trợ cả from/to và startDate/endDate)
+    const fromParam = req.query.from || req.query.startDate;
+    const toParam = req.query.to || req.query.endDate;
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const firstDayOfMonthStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+
+    const fromStr = fromParam ? String(fromParam).slice(0, 10) : firstDayOfMonthStr;
+    const toStr = toParam ? String(toParam).slice(0, 10) : todayStr;
 
     const query = {};
     if (productId && productId !== "all") {
@@ -343,24 +486,111 @@ router.get("/inventory", async (req, res, next) => {
       }
     }
 
-    const products = await db.collection("SanPham").find(query).toArray();
-    const stocks = await db.collection("TonKho").find({}).toArray();
-    const categories = await db.collection("LoaiHang").find({}).toArray();
+    const [products, stocks, categories, goodsReceipts, invoices, goodsIssues] = await Promise.all([
+      db.collection("SanPham").find(query).toArray(),
+      db.collection("TonKho").find({}).toArray(),
+      db.collection("LoaiHang").find({}).toArray(),
+      db.collection("PhieuNhap").find({}).toArray(),
+      db.collection("HoaDon").find({ TrangThai: { $ne: "Đã hủy" } }).toArray(),
+      db.collection("PhieuXuat").find({}).toArray(),
+    ]);
+
     const catMap = new Map(categories.map((c) => [c._id.toString(), c.TenLoai]));
-    const stockMap = new Map(stocks.map((s) => [s.MaSP?.toString(), s.SoLuongTon]));
+    const stockMap = new Map(stocks.map((s) => [s.MaSP?.toString(), Number(s.SoLuongTon || 0)]));
+
+    // Helper: format doc date as YYYY-MM-DD
+    const extractDateStr = (doc, field) => {
+      const v = doc[field] || doc.createdAt;
+      if (!v) return "";
+      if (typeof v === "string") return v.slice(0, 10);
+      if (v instanceof Date) {
+        const y = v.getFullYear();
+        const m = String(v.getMonth() + 1).padStart(2, "0");
+        const d = String(v.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+      return "";
+    };
 
     let data = products.map((p) => {
       const catName = p.LoaiHang || (p.MaLoai ? catMap.get(p.MaLoai.toString()) : "") || "";
-      const currentStock = stockMap.has(p._id.toString()) ? stockMap.get(p._id.toString()) : (p.stock || 0);
+      const pid = p._id.toString();
+      const pCode = p.MaSP;
+      const curStock = stockMap.has(pid) ? stockMap.get(pid) : Number(p.stock || 0);
+
+      const matchesProduct = (item) => {
+        if (!item) return false;
+        const itemPid = item.MaSP?._id ? item.MaSP._id.toString() : item.MaSP?.toString();
+        return itemPid === pid || item.MaSP === pCode || item.productCode === pCode || item.productId === pid || item.MaSPCode === pCode;
+      };
+
+      // 1. Nhập kho từ PhieuNhap
+      let nhapTrongKy = 0;
+      let nhapSauKy = 0;
+      for (const pn of goodsReceipts) {
+        const d = extractDateStr(pn, "NgayNhap");
+        for (const item of (pn.details || [])) {
+          if (matchesProduct(item)) {
+            const qty = Number(item.SoLuong || item.quantity || 0);
+            if (d >= fromStr && d <= toStr) nhapTrongKy += qty;
+            if (d > toStr) nhapSauKy += qty;
+          }
+        }
+      }
+
+      // 2. Xuất kho: Bán hàng (HoaDon) + Xuất kho khác (PhieuXuat không có MaDH)
+      let xuatTrongKy = 0;
+      let xuatSauKy = 0;
+
+      // Xuất từ hóa đơn bán hàng
+      for (const hd of invoices) {
+        const d = extractDateStr(hd, "NgayLap");
+        for (const item of (hd.details || [])) {
+          if (matchesProduct(item)) {
+            const qty = Number(item.SoLuong || item.quantity || 0);
+            if (d >= fromStr && d <= toStr) xuatTrongKy += qty;
+            if (d > toStr) xuatSauKy += qty;
+          }
+        }
+      }
+
+      // Xuất kho khác từ PhieuXuat (bỏ qua nếu đã liên kết đơn hàng để tránh double-count)
+      for (const px of goodsIssues) {
+        if (px.MaDH) continue;
+        const d = extractDateStr(px, "NgayXuat");
+        for (const item of (px.details || [])) {
+          if (matchesProduct(item)) {
+            const qty = Number(item.SoLuong || item.quantity || 0);
+            if (d >= fromStr && d <= toStr) xuatTrongKy += qty;
+            if (d > toStr) xuatSauKy += qty;
+          }
+        }
+      }
+
+      // 3. Tính toán Tồn cuối và Tồn đầu chuẩn kế toán:
+      // Tồn cuối kỳ = tồn hiện tại trừ nhập phát sinh sau kỳ cộng xuất phát sinh sau kỳ
+      const tonCuoi = Math.max(0, curStock - nhapSauKy + xuatSauKy);
+      // Đẳng thức kế toán bắt buộc: TonCuoi = TonDau + NhapTrongKy - XuatTrongKy
+      // => TonDau = TonCuoi - NhapTrongKy + XuatTrongKy
+      const tonDau = tonCuoi - nhapTrongKy + xuatTrongKy;
+
+      const giaNhap = Number(p.GiaNhap || p.GiaBan || 0);
+      const giaTriTon = tonCuoi * giaNhap;
+
       return {
-        id: p._id.toString(),
+        id: pid,
         MaSP: p.MaSP,
         TenSP: p.TenSP,
         LoaiHang: catName,
-        DonViTinh: p.DonViTinh,
-        GiaNhap: p.GiaNhap,
-        GiaBan: p.GiaBan,
-        stock: currentStock,
+        DonViTinh: p.DonViTinh || "Cái",
+        GiaNhap: giaNhap,
+        GiaBan: Number(p.GiaBan || 0),
+        TonDau: tonDau,
+        NhapTrongKy: nhapTrongKy,
+        XuatTrongKy: xuatTrongKy,
+        TonCuoi: tonCuoi,
+        stock: tonCuoi,
+        GiaTriTon: giaTriTon,
         TrangThai: p.TrangThai || "Đang bán",
         HanSuDung: p.HanSuDung,
         HinhAnh: p.HinhAnh,
@@ -368,18 +598,30 @@ router.get("/inventory", async (req, res, next) => {
     });
 
     if (stockStatus && stockStatus !== "all") {
-      if (stockStatus === "out") data = data.filter((p) => Number(p.stock) <= 0);
-      else if (stockStatus === "low") data = data.filter((p) => Number(p.stock) > 0 && Number(p.stock) <= 10);
-      else if (stockStatus === "in") data = data.filter((p) => Number(p.stock) > 10);
+      if (stockStatus === "out") data = data.filter((p) => Number(p.TonCuoi) <= 0);
+      else if (stockStatus === "low") data = data.filter((p) => Number(p.TonCuoi) > 0 && Number(p.TonCuoi) <= 10);
+      else if (stockStatus === "in") data = data.filter((p) => Number(p.TonCuoi) > 10);
     }
 
-    const totalInventoryValue = data.reduce((sum, p) => sum + Number(p.stock || 0) * Number(p.GiaNhap || p.GiaBan || 0), 0);
-    const lowStockCount = data.filter((p) => Number(p.stock || 0) <= 10).length;
+    const totalBeginningStock = data.reduce((sum, p) => sum + p.TonDau, 0);
+    const totalImportStock = data.reduce((sum, p) => sum + p.NhapTrongKy, 0);
+    const totalExportStock = data.reduce((sum, p) => sum + p.XuatTrongKy, 0);
+    const totalEndingStock = data.reduce((sum, p) => sum + p.TonCuoi, 0);
+    const totalInventoryValue = data.reduce((sum, p) => sum + p.GiaTriTon, 0);
+    const lowStockCount = data.filter((p) => Number(p.TonCuoi) <= 10).length;
 
     res.json({
       report: "inventory",
+      from: fromStr,
+      to: toStr,
+      startDate: fromStr,
+      endDate: toStr,
       data,
       totalProducts: data.length,
+      totalBeginningStock,
+      totalImportStock,
+      totalExportStock,
+      totalEndingStock,
       totalInventoryValue,
       lowStockCount,
       inStockRate: data.length > 0 ? Math.round(((data.length - lowStockCount) / data.length) * 100) : 100,

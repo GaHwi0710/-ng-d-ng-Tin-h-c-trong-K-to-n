@@ -7,8 +7,13 @@ const STATUS_MAP = {
   "Đã lưu": "green",
   "Đang chờ": "amber",
   "Chờ xuất kho": "amber",
+  "Chờ điều chỉnh": "amber",
   "Đang xử lý": "amber",
   "Chưa thanh toán": "red",
+  "Hao hụt / thất thoát": "red",
+  "Đã điều chỉnh": "green",
+  "Khớp hoàn toàn": "green",
+  "Thừa kiểm kê": "green",
   "Ngừng bán": "gray",
 };
 

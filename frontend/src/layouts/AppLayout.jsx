@@ -23,6 +23,9 @@ import {
   UsersIcon,
   ShieldCheckIcon,
   KeyIcon,
+  LockClosedIcon,
+  EyeIcon,
+  EyeSlashIcon,
   WalletIcon,
   DocumentCurrencyDollarIcon,
   ChevronLeftIcon,
@@ -32,9 +35,10 @@ import {
 } from "@heroicons/react/24/outline";
 import { moduleRoutes } from "../routes/moduleRoutes.js";
 import { getUserPermissions, userCanAccessPath } from "../lib/permissions.js";
-import { ToastContainer } from "../components/Toast.jsx";
+import { ToastContainer, toast } from "../components/Toast.jsx";
 import { NotificationPopover } from "../components/NotificationPopover.jsx";
-import { logout as logoutFromApi } from "../lib/api.js";
+import { Modal } from "../components/Modal.jsx";
+import { logout as logoutFromApi, changePassword } from "../lib/api.js";
 
 const routeIcons = {
   "/dashboard": HomeIcon,
@@ -61,10 +65,12 @@ const routeIcons = {
 };
 
 const ROLE_LABELS = {
+  QuanTriHeThong: "Quản trị hệ thống",
   QuanLy: "Quản lý",
   KeToan: "Kế toán",
   NhanVienBanHang: "NV Bán hàng",
-  NhanVienKho: "NV Kho",
+  ThuKho: "Thủ kho",
+  NhanVienKho: "Thủ kho",
   NhanVienMuaHang: "NV Mua hàng",
 };
 
@@ -95,10 +101,12 @@ export function AppLayout() {
   const user = {
     ...storedUser,
     role: {
+      "Quản trị hệ thống": "QuanTriHeThong",
       "Quản lý": "QuanLy",
       "Kế toán": "KeToan",
       "Nhân viên bán hàng": "NhanVienBanHang",
-      "Nhân viên kho": "NhanVienKho",
+      "Thủ kho": "ThuKho",
+      "Nhân viên kho": "ThuKho",
       "Nhân viên mua hàng": "NhanVienMuaHang",
     }[storedUser.role] || storedUser.role,
   };
@@ -113,6 +121,59 @@ export function AppLayout() {
   });
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef(null);
+
+  // Change Password Modal state (UC02)
+  const [changePwdOpen, setChangePwdOpen] = useState(false);
+  const [pwdForm, setPwdForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [pwdError, setPwdError] = useState("");
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [showPwds, setShowPwds] = useState({ current: false, next: false, confirm: false });
+
+  const handleOpenChangePwd = () => {
+    setUserMenuOpen(false);
+    setPwdForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+    setPwdError("");
+    setShowPwds({ current: false, next: false, confirm: false });
+    setChangePwdOpen(true);
+  };
+
+  const handleChangePasswordSubmit = async (e) => {
+    if (e) e.preventDefault();
+    setPwdError("");
+
+    if (!pwdForm.currentPassword) {
+      setPwdError("Vui lòng nhập mật khẩu hiện tại");
+      return;
+    }
+    if (!pwdForm.newPassword) {
+      setPwdError("Vui lòng nhập mật khẩu mới");
+      return;
+    }
+    if (pwdForm.newPassword.length < 6) {
+      setPwdError("Mật khẩu mới phải có ít nhất 6 ký tự");
+      return;
+    }
+    if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+      setPwdError("Mật khẩu mới và xác nhận mật khẩu không khớp");
+      return;
+    }
+    if (pwdForm.newPassword === pwdForm.currentPassword) {
+      setPwdError("Mật khẩu mới không được trùng với mật khẩu hiện tại");
+      return;
+    }
+
+    try {
+      setPwdLoading(true);
+      const res = await changePassword(pwdForm.currentPassword, pwdForm.newPassword, pwdForm.confirmPassword);
+      toast(res?.message || "Đổi mật khẩu thành công!");
+      setChangePwdOpen(false);
+      setPwdForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+    } catch (err) {
+      setPwdError(err.message || "Đổi mật khẩu thất bại. Vui lòng thử lại!");
+    } finally {
+      setPwdLoading(false);
+    }
+  };
 
   // Close user dropdown on outside click
   useEffect(() => {
@@ -343,16 +404,26 @@ export function AppLayout() {
                     <strong>{user.fullName || user.username || "Quản trị viên"}</strong>
                     <small>@{user.username} · {ROLE_LABELS[user.role] || user.role || "Nhân viên"}</small>
                   </div>
+                  {user.role === "QuanLy" && (
+                    <button
+                      type="button"
+                      className="topbar-dropdown-item"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        navigate("/admin/accounts");
+                      }}
+                    >
+                      <KeyIcon style={{ width: 16, height: 16 }} />
+                      Quản lý tài khoản
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="topbar-dropdown-item"
-                    onClick={() => {
-                      setUserMenuOpen(false);
-                      navigate("/admin/accounts");
-                    }}
+                    onClick={handleOpenChangePwd}
                   >
-                    <KeyIcon style={{ width: 16, height: 16 }} />
-                    Quản lý tài khoản
+                    <LockClosedIcon style={{ width: 16, height: 16 }} />
+                    Đổi mật khẩu
                   </button>
                   <button
                     type="button"
@@ -375,6 +446,148 @@ export function AppLayout() {
           <Outlet />
         </div>
       </main>
+
+      {/* Modal Đổi mật khẩu cá nhân (UC02) */}
+      <Modal
+        open={changePwdOpen}
+        title="Đổi mật khẩu cá nhân"
+        subtitle={`Tài khoản: @${user.username || "user"} (${user.fullName || "Người dùng"})`}
+        onClose={() => !pwdLoading && setChangePwdOpen(false)}
+        onSubmit={handleChangePasswordSubmit}
+        submitLabel="Xác nhận đổi mật khẩu"
+        cancelLabel="Hủy"
+        loading={pwdLoading}
+      >
+        <form onSubmit={handleChangePasswordSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {pwdError && (
+            <div
+              style={{
+                padding: "10px 14px",
+                background: "#FEE2E2",
+                border: "1px solid #FCA5A5",
+                borderRadius: 8,
+                color: "#B91C1C",
+                fontSize: 13,
+                lineHeight: 1.5,
+              }}
+            >
+              ⚠ {pwdError}
+            </div>
+          )}
+
+          <div>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6 }}>
+              Mật khẩu hiện tại <span style={{ color: "#EF4444" }}>*</span>
+            </label>
+            <div style={{ position: "relative" }}>
+              <input
+                type={showPwds.current ? "text" : "password"}
+                className="form-input"
+                style={{ width: "100%", paddingRight: 38 }}
+                value={pwdForm.currentPassword}
+                placeholder="Nhập mật khẩu hiện tại"
+                onChange={(e) => setPwdForm((f) => ({ ...f, currentPassword: e.target.value }))}
+                autoFocus
+              />
+              <button
+                type="button"
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#64748B",
+                  padding: 4,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+                onClick={() => setShowPwds((s) => ({ ...s, current: !s.current }))}
+                tabIndex={-1}
+              >
+                {showPwds.current ? <EyeSlashIcon style={{ width: 18, height: 18 }} /> : <EyeIcon style={{ width: 18, height: 18 }} />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6 }}>
+              Mật khẩu mới <span style={{ color: "#EF4444" }}>*</span>
+            </label>
+            <div style={{ position: "relative" }}>
+              <input
+                type={showPwds.next ? "text" : "password"}
+                className="form-input"
+                style={{ width: "100%", paddingRight: 38 }}
+                value={pwdForm.newPassword}
+                placeholder="Tối thiểu 6 ký tự"
+                onChange={(e) => setPwdForm((f) => ({ ...f, newPassword: e.target.value }))}
+              />
+              <button
+                type="button"
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#64748B",
+                  padding: 4,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+                onClick={() => setShowPwds((s) => ({ ...s, next: !s.next }))}
+                tabIndex={-1}
+              >
+                {showPwds.next ? <EyeSlashIcon style={{ width: 18, height: 18 }} /> : <EyeIcon style={{ width: 18, height: 18 }} />}
+              </button>
+            </div>
+            <small style={{ color: "#64748B", fontSize: 11.5, marginTop: 4, display: "block" }}>
+              Độ dài tối thiểu 6 ký tự. Nên kết hợp chữ cái và số để tăng tính bảo mật.
+            </small>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6 }}>
+              Xác nhận mật khẩu mới <span style={{ color: "#EF4444" }}>*</span>
+            </label>
+            <div style={{ position: "relative" }}>
+              <input
+                type={showPwds.confirm ? "text" : "password"}
+                className="form-input"
+                style={{ width: "100%", paddingRight: 38 }}
+                value={pwdForm.confirmPassword}
+                placeholder="Nhập lại mật khẩu mới"
+                onChange={(e) => setPwdForm((f) => ({ ...f, confirmPassword: e.target.value }))}
+              />
+              <button
+                type="button"
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#64748B",
+                  padding: 4,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+                onClick={() => setShowPwds((s) => ({ ...s, confirm: !s.confirm }))}
+                tabIndex={-1}
+              >
+                {showPwds.confirm ? <EyeSlashIcon style={{ width: 18, height: 18 }} /> : <EyeIcon style={{ width: 18, height: 18 }} />}
+              </button>
+            </div>
+          </div>
+        </form>
+      </Modal>
 
       <ToastContainer />
     </div>

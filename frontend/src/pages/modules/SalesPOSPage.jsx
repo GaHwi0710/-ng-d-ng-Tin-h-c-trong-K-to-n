@@ -55,6 +55,7 @@ export function SalesPOSPage({ title }) {
   const [appliedRedeemedVoucher, setAppliedRedeemedVoucher] = useState(null);
   const [showRedeemModalSales, setShowRedeemModalSales] = useState(false);
   const [salesRedeemCode, setSalesRedeemCode] = useState("BAC50K");
+  const [paymentMethod, setPaymentMethod] = useState("Tiền mặt");
 
   useEffect(() => {
     const loadCustomers = () => {
@@ -348,6 +349,9 @@ export function SalesPOSPage({ title }) {
     if (selectedCustomer?.TrangThai === "Ngưng hoạt động" || selectedCustomer?.status === "inactive") {
       return toast("Không thể lập hóa đơn cho khách hàng đã ngưng hoạt động");
     }
+    if (paymentMethod === "Ghi nợ" && !customerId) {
+      return toast("Khách hàng mua ghi nợ bắt buộc phải chọn thông tin khách hàng cụ thể!");
+    }
     if (cart.some((item) => !Number.isInteger(Number(item.quantity)) || Number(item.quantity) <= 0)) return toast("Số lượng sản phẩm không hợp lệ");
     if (cart.some((item) => !Number.isFinite(Number(item.GiaBan)) || Number(item.GiaBan) < 0)) return toast("Giá bán sản phẩm không hợp lệ");
     const pointsToRedeem = appliedPromo?.DiemYeuCau ? Number(appliedPromo.DiemYeuCau) : (
@@ -360,6 +364,7 @@ export function SalesPOSPage({ title }) {
         customerId: customerId || null,
         usedVoucherId: appliedRedeemedVoucher?.id || null,
         redeemPoints: appliedRedeemedVoucher ? 0 : pointsToRedeem,
+        paymentMethod: paymentMethod,
         items: cart.map((item) => ({
           productId: item.id,
           quantity: item.quantity,
@@ -370,7 +375,7 @@ export function SalesPOSPage({ title }) {
         promoCode: appliedPromo?.MaKM || (discountAmount > 0 ? promoInput : null),
         NguoiLap: currentUserInfo().name,
         NgayDat: new Date().toISOString().slice(0, 10),
-        TrangThai: "Chờ xuất kho",
+        TrangThai: "Hoàn thành",
       });
       setCart([]);
       setAppliedPromo(null);
@@ -382,7 +387,8 @@ export function SalesPOSPage({ title }) {
       listRecords("customers").then((custs) => {
         setCustomers(custs);
       }).catch(() => {});
-      toast(`Đã lập đơn hàng và xuất hóa đơn thành công!${appliedRedeemedVoucher ? ` (Đã áp dụng voucher ${appliedRedeemedVoucher.code})` : pointsToRedeem > 0 ? ` (Đã trừ ${pointsToRedeem} điểm đổi voucher)` : ""}`);
+      const payMsg = paymentMethod === "Ghi nợ" ? " (Đã ghi nhận công nợ)" : ` (${paymentMethod})`;
+      toast(`Đã lập đơn hàng và xuất hóa đơn thành công!${payMsg}${appliedRedeemedVoucher ? ` (Đã áp dụng voucher ${appliedRedeemedVoucher.code})` : pointsToRedeem > 0 ? ` (Đã trừ ${pointsToRedeem} điểm đổi voucher)` : ""}`);
     } catch (error) {
       toast(error.message);
     }
@@ -623,7 +629,7 @@ export function SalesPOSPage({ title }) {
       <span>${money.format(totalVal)}</span>
     </div>
     <div class="receipt-payment-line">
-      <span>Thanh toán: <strong>Tiền mặt</strong></span>
+      <span>Phương thức: <strong>${escapeHtml(inv.HinhThucThanhToan || paymentMethod || "Tiền mặt")}</strong></span>
     </div>
   </div>
 
@@ -1188,6 +1194,59 @@ export function SalesPOSPage({ title }) {
               </div>
             </div>
           )}
+
+          {/* Phương thức thanh toán (UC13, UC15, UC17, UC19) */}
+          <div style={{ marginTop: 12, padding: "10px", background: "var(--surface-sunken, #f8fafc)", borderRadius: 8, border: "1px solid var(--border)" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-soft)", display: "block", marginBottom: 6 }}>
+              💳 Phương thức thanh toán:
+            </span>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+              {[
+                { id: "Tiền mặt", label: "Tiền mặt", icon: "💵" },
+                { id: "Chuyển khoản", label: "Chuyển khoản", icon: "💳" },
+                { id: "Ghi nợ", label: "Ghi nợ (Nợ)", icon: "📝" },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setPaymentMethod(m.id)}
+                  style={{
+                    padding: "8px 4px",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 3,
+                    border: paymentMethod === m.id ? "2px solid var(--primary, #3d7068)" : "1px solid var(--border, #e2e8f0)",
+                    background: paymentMethod === m.id ? "var(--primary-light, #e6f4f1)" : "#fff",
+                    color: paymentMethod === m.id ? "var(--primary-dark, #1f433e)" : "var(--text, #1e293b)",
+                    transition: "all .15s",
+                  }}
+                >
+                  <span style={{ fontSize: 16 }}>{m.icon}</span>
+                  <span>{m.label}</span>
+                </button>
+              ))}
+            </div>
+            {paymentMethod === "Ghi nợ" && !customerId && (
+              <small style={{ color: "#dc2626", fontWeight: 600, display: "block", marginTop: 6, fontSize: 11.5 }}>
+                ⚠️ Mua ghi nợ bắt buộc phải chọn Khách hàng ở trên (không áp dụng khách vãng lai)
+              </small>
+            )}
+            {paymentMethod === "Ghi nợ" && customerId && (
+              <small style={{ color: "#d97706", fontWeight: 600, display: "block", marginTop: 6, fontSize: 11.5 }}>
+                ℹ️ Đơn hàng sẽ được ghi nợ vào công nợ của khách hàng {selectedCustomer?.HoTen}
+              </small>
+            )}
+            {paymentMethod === "Tiền mặt" && (
+              <small style={{ color: "#16a34a", fontWeight: 600, display: "block", marginTop: 6, fontSize: 11.5 }}>
+                ℹ️ Tự động lập Phiếu thu tiền mặt và hoàn tất thanh toán
+              </small>
+            )}
+          </div>
 
           <button
             className="btn btn-primary btn-block"

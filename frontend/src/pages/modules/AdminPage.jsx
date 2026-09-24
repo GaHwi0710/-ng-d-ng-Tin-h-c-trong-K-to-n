@@ -23,25 +23,31 @@ import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
 
 const roleLabels = {
+  QuanTriHeThong: "Quản trị hệ thống",
   QuanLy: "Quản lý",
   KeToan: "Kế toán",
   NhanVienBanHang: "Nhân viên bán hàng",
-  NhanVienKho: "Nhân viên kho",
+  ThuKho: "Thủ kho",
+  NhanVienKho: "Thủ kho",
   NhanVienMuaHang: "Nhân viên mua hàng",
 };
 
 const roleColors = {
+  QuanTriHeThong: "indigo",
   QuanLy: "purple",
   KeToan: "green",
   NhanVienBanHang: "amber",
+  ThuKho: "blue",
   NhanVienKho: "blue",
   NhanVienMuaHang: "teal",
 };
 
 const ROLE_ICON_BY_KEY = {
+  QuanTriHeThong: "🛡️",
   QuanLy: "👑",
   KeToan: "🧮",
   NhanVienBanHang: "🛒",
+  ThuKho: "📦",
   NhanVienKho: "📦",
   NhanVienMuaHang: "🚚",
 };
@@ -79,7 +85,7 @@ export function AdminPage({ title, description, path }) {
   const currentAdmin = currentUserInfo();
   const myUsername = currentAdmin.username || "";
   const activeAdminCount = useMemo(() => {
-    return accounts.filter((a) => (a.role === "QuanLy" || a.VaiTro === "QuanLy") && a.status !== "Đã khóa").length;
+    return accounts.filter((a) => (a.role === "QuanLy" || a.role === "QuanTriHeThong" || a.VaiTro === "QuanLy" || a.VaiTro === "QuanTriHeThong" || a.VaiTro === "Quản trị hệ thống" || a.VaiTro === "Quản lý") && a.status !== "Đã khóa").length;
   }, [accounts]);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -555,7 +561,7 @@ export function AdminPage({ title, description, path }) {
                     const roleName = roleLabels[acc.role] || roles.find((r) => r.MaKey === acc.role)?.TenVaiTro || acc.role;
                     const isLocked = acc.status === "Đã khóa";
                     const isSelf = Boolean(myUsername && acc.username && acc.username.toLowerCase() === myUsername.toLowerCase());
-                    const isOnlyAdmin = (acc.role === "QuanLy" || acc.VaiTro === "QuanLy") && activeAdminCount <= 1 && !isLocked;
+                    const isOnlyAdmin = (acc.role === "QuanLy" || acc.role === "QuanTriHeThong" || acc.VaiTro === "QuanLy" || acc.VaiTro === "QuanTriHeThong" || acc.VaiTro === "Quản lý" || acc.VaiTro === "Quản trị hệ thống") && activeAdminCount <= 1 && !isLocked;
                     const cannotLock = isSelf || isOnlyAdmin;
                     const cannotDelete = isSelf || isOnlyAdmin;
 
@@ -834,9 +840,10 @@ export function AdminPage({ title, description, path }) {
                   value={empForm.VaiTro}
                   onChange={(e) => setEmpForm({ ...empForm, VaiTro: e.target.value })}
                 >
+                  <option value="Quản trị hệ thống">Quản trị hệ thống</option>
                   <option value="Quản lý">Quản lý</option>
                   <option value="Nhân viên bán hàng">Nhân viên bán hàng</option>
-                  <option value="Nhân viên kho">Nhân viên kho</option>
+                  <option value="Thủ kho">Thủ kho</option>
                   <option value="Kế toán">Kế toán</option>
                   <option value="Nhân viên mua hàng">Nhân viên mua hàng</option>
                 </select>

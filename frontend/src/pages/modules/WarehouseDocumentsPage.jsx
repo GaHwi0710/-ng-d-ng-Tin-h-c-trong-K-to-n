@@ -60,12 +60,16 @@ export function WarehouseDocumentsPage({ type, title }) {
   const [attachedDocs, setAttachedDocs] = useState("");
   const [message, setMessage] = useState("");
   const [preview, setPreview] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [paidAmount, setPaidAmount] = useState(0);
+  const [payMethod, setPayMethod] = useState("Tiền mặt");
 
   // Filters for saved documents
   const [filterSupplier, setFilterSupplier] = useState("all");
   const [filterReason, setFilterReason] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     listRecords("products").then(setProducts).catch(() => setProducts([]));
@@ -92,16 +96,27 @@ export function WarehouseDocumentsPage({ type, title }) {
       const d = v.NgayNhap || v.NgayXuat;
       if (fromDate && d && d < fromDate) return false;
       if (toDate && d && d > toDate) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const code = String(v.MaPN || v.MaPX || v.id || "").toLowerCase();
+        const party = String(v.NguoiLienQuan || v.TenNCC || "").toLowerCase();
+        const matchProduct = (v.details || []).some((item) =>
+          String(item.TenSP || item.MaSPCode || item.MaSP || "").toLowerCase().includes(q)
+        );
+        if (!code.includes(q) && !party.includes(q) && !matchProduct) return false;
+      }
+
       return true;
     });
-  }, [vouchers, isReceipt, filterSupplier, filterReason, fromDate, toDate]);
+  }, [vouchers, isReceipt, filterSupplier, filterReason, fromDate, toDate, searchQuery]);
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
 
   useEffect(() => {
     setPage(1);
-  }, [filterSupplier, filterReason, fromDate, toDate]);
+  }, [filterSupplier, filterReason, fromDate, toDate, searchQuery]);
 
   const pagedVouchers = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -187,7 +202,7 @@ export function WarehouseDocumentsPage({ type, title }) {
       setNote(`Nhập kho theo đơn đặt hàng ${po.MaDDH}`);
     }
 
-    // 3. Tự động nạp danh sách sản phẩm từ Đơn đặt hàng vào bảng Chi tiết hàng nhập
+    // 3. Tự động nạp danh sách sản phẩm từ Đơn đặt hàng vào bảng Chi tiết hàng nhập (chỉ nạp lượng còn thiếu)
     const rawItems = po.items || po.details || [];
     if (rawItems.length > 0) {
       const importedLines = rawItems.map((item) => {
@@ -195,7 +210,9 @@ export function WarehouseDocumentsPage({ type, title }) {
           (prod) => String(prod.id) === String(item.productId || item.MaSP || item._id) ||
                     String(prod.MaSP) === String(item.MaSPCode || item.MaSP)
         ) || {};
-        const qty = Number(item.quantity ?? item.SoLuong ?? 1);
+        const ordered = Number(item.quantity ?? item.SoLuong ?? 1);
+        const received = Number(item.quantityReceived ?? 0);
+        const remaining = Math.max(0, ordered - received);
         const prc = Number(item.price ?? item.DonGia ?? p.GiaNhap ?? 0);
         return {
           ...p,
@@ -204,13 +221,20 @@ export function WarehouseDocumentsPage({ type, title }) {
           TenSP: item.TenSP || p.TenSP,
           DonViTinh: item.DonViTinh || p.DonViTinh || "Cái",
           HinhAnh: item.HinhAnh || p.HinhAnh || "",
-          quantity: qty,
+          quantity: remaining,
+          remaining: remaining,
+          quantityOrdered: ordered,
+          quantityReceived: received,
           price: prc,
           stock: p.stock ?? 0,
         };
-      });
+      }).filter((item) => item.quantity > 0);
       setSelected(importedLines);
-      toast(`Đã tự động nạp ${importedLines.length} mặt hàng từ đơn đặt hàng ${po.MaDDH || ""}`);
+      if (importedLines.length > 0) {
+        toast(`Đã tự động nạp ${importedLines.length} mặt hàng còn thiếu từ đơn đặt hàng ${po.MaDDH || ""}`);
+      } else {
+        toast("Đơn đặt hàng này đã nhập đủ hàng, không còn sản phẩm nào cần nhập");
+      }
     }
   }
 
@@ -227,6 +251,8 @@ export function WarehouseDocumentsPage({ type, title }) {
       NgayNhap: new Date().toISOString().slice(0, 10),
       NgayXuat: new Date().toISOString().slice(0, 10),
       TongTien: total,
+      SoTienDaTra: isReceipt ? Math.min(Number(paidAmount) || 0, total) : 0,
+      paymentMethod: isReceipt ? payMethod : undefined,
       SoLuong: quantity,
       details: selected,
       NguoiLienQuan: personName || supplier?.TenNCC || "",
@@ -261,6 +287,8 @@ export function WarehouseDocumentsPage({ type, title }) {
 
   async function submit(event) {
     event.preventDefault();
+    if (submitting) return;
+
     if (!selected.length) {
       const msg = isReceipt
         ? "Vui lòng chọn ít nhất một sản phẩm cần nhập kho."
@@ -296,25 +324,29 @@ export function WarehouseDocumentsPage({ type, title }) {
       toast(msg);
       return;
     }
-    const record = draftRecord();
-    let saved;
+
+    setSubmitting(true);
     try {
-      saved = await saveRecord(resource, record);
+      const record = draftRecord();
+      const saved = await saveRecord(resource, record);
+      const next = { ...record, ...(saved || {}), id: saved?.id || record.id };
+
+      // Đồng bộ lại danh sách sản phẩm từ MongoDB sau khi nhập/xuất kho
+      listRecords("products").then(setProducts).catch(() => {});
+      setMessage(
+        `Đã lưu ${isReceipt ? "phiếu nhập" : "phiếu xuất"} và cập nhật tồn kho.`
+      );
+      setVouchers((current) => [next, ...current.filter((item) => item.id !== next.id)]);
+      setSelected([]);
+      setPaidAmount(0);
+      setPurchaseOrderId("");
+      toast(`Đã lưu ${isReceipt ? "phiếu nhập kho" : "phiếu xuất kho"}`);
+      setPreview(voucherModel(next));
     } catch (error) {
       toast(error.message || "Không lưu được phiếu");
-      return;
+    } finally {
+      setSubmitting(false);
     }
-    const next = { ...record, ...(saved || {}), id: saved?.id || record.id };
-
-    // Đồng bộ lại danh sách sản phẩm từ MongoDB sau khi nhập/xuất kho
-    listRecords("products").then(setProducts).catch(() => {});
-    setMessage(
-      `Đã lưu ${isReceipt ? "phiếu nhập" : "phiếu xuất"} và cập nhật tồn kho.`
-    );
-    setVouchers((current) => [next, ...current.filter((item) => item.id !== next.id)]);
-    setSelected([]);
-    toast(`Đã lưu ${isReceipt ? "phiếu nhập kho" : "phiếu xuất kho"}`);
-    setPreview(voucherModel(next));
   }
 
   return (
@@ -623,12 +655,49 @@ export function WarehouseDocumentsPage({ type, title }) {
                 {money.format(total)}
               </strong>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+
+            {isReceipt && total > 0 && (
+              <div style={{ marginTop: 10, padding: "10px", background: "#f8fafc", borderRadius: 8, border: "1px solid var(--border)" }}>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                  Thanh toán ngay cho NCC:
+                </label>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="number"
+                    min="0"
+                    max={total}
+                    value={paidAmount || ""}
+                    onChange={(e) => setPaidAmount(Math.min(total, Math.max(0, Number(e.target.value) || 0)))}
+                    placeholder="0 ₫"
+                    style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 13 }}
+                  />
+                  {paidAmount > 0 && (
+                    <select
+                      value={payMethod}
+                      onChange={(e) => setPayMethod(e.target.value)}
+                      style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                    >
+                      <option value="Tiền mặt">Tiền mặt</option>
+                      <option value="Chuyển khoản">Chuyển khoản</option>
+                    </select>
+                  )}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 6, color: "var(--text-soft)" }}>
+                  <span>Còn nợ NCC:</span>
+                  <strong style={{ color: total - paidAmount > 0 ? "#dc2626" : "#16a34a" }}>
+                    {money.format(Math.max(0, total - (Number(paidAmount) || 0)))}
+                  </strong>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button
                 className={`btn ${isReceipt ? "btn-primary" : "btn-accent"} btn-block`}
                 type="submit"
+                disabled={submitting}
               >
-                Lưu phiếu {isReceipt ? "nhập" : "xuất"}
+                {submitting ? "Đang lưu..." : `Lưu phiếu ${isReceipt ? "nhập" : "xuất"}`}
               </button>
               <button
                 className="icon-btn"
@@ -667,6 +736,17 @@ export function WarehouseDocumentsPage({ type, title }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
           <h2 style={{ margin: 0 }}>PHIẾU ĐÃ LƯU — IN MẪU 0{isReceipt ? "1" : "2"}-VT ({filteredVouchers.length})</h2>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 220, maxWidth: 320 }}>
+              <label className="invoice-search" style={{ width: "100%", margin: 0 }}>
+                <MagnifyingGlassIcon aria-hidden="true" />
+                <input
+                  type="search"
+                  placeholder={isReceipt ? "Tìm mã PN, NCC, sản phẩm..." : "Tìm mã PX, sản phẩm..."}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </label>
+            </div>
             {isReceipt ? (
               <select
                 value={filterSupplier}
@@ -707,11 +787,11 @@ export function WarehouseDocumentsPage({ type, title }) {
                 style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
               />
             </div>
-            {(filterSupplier !== "all" || filterReason !== "all" || fromDate || toDate) && (
+            {(filterSupplier !== "all" || filterReason !== "all" || fromDate || toDate || searchQuery) && (
               <button
                 type="button"
                 className="btn btn-sm"
-                onClick={() => { setFilterSupplier("all"); setFilterReason("all"); setFromDate(""); setToDate(""); }}
+                onClick={() => { setFilterSupplier("all"); setFilterReason("all"); setFromDate(""); setToDate(""); setSearchQuery(""); }}
               >
                 Xóa lọc
               </button>
@@ -726,9 +806,10 @@ export function WarehouseDocumentsPage({ type, title }) {
                 <th scope="col">Số phiếu</th>
                 <th scope="col">Ngày</th>
                 <th scope="col">{isReceipt ? "Nhà cung cấp / người giao" : "Lý do xuất"}</th>
-                <th scope="col">Người lập phiếu</th>
-                <th scope="col">Tổng tiền</th>
-                <th scope="col"></th>
+                <th scope="col" style={{ textAlign: "right" }}>Tổng SL</th>
+                <th scope="col" style={{ textAlign: "right" }}>Tổng tiền</th>
+                <th scope="col" style={{ textAlign: "center" }}>Trạng thái</th>
+                <th scope="col" style={{ textAlign: "center" }}>Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -745,9 +826,12 @@ export function WarehouseDocumentsPage({ type, title }) {
                         ? voucher.NguoiLienQuan || supplier?.TenNCC || "—"
                         : voucher.LyDoXuat || "—"}
                     </td>
-                    <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{voucher.NguoiLap || "Quản trị viên"}</span></td>
-                    <td style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{money.format(voucher.TongTien || 0)}</td>
-                    <td>
+                    <td style={{ textAlign: "right", fontWeight: 600 }}>{voucher.SoLuong ?? (voucher.details || []).reduce((s, i) => s + (Number(i.SoLuong || i.quantity) || 0), 0)}</td>
+                    <td style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{money.format(voucher.TongTien || 0)}</td>
+                    <td style={{ textAlign: "center" }}>
+                      <span className="status-pill success">{voucher.TrangThai || "Đã lưu"}</span>
+                    </td>
+                    <td style={{ textAlign: "center" }}>
                       <button
                         className="table-action"
                         type="button"
@@ -761,7 +845,7 @@ export function WarehouseDocumentsPage({ type, title }) {
               })}
               {!filteredVouchers.length && (
                 <tr>
-                  <td colSpan={6} style={{ padding: 0 }}>
+                  <td colSpan={7} style={{ padding: 0 }}>
                     <EmptyState
                       icon={isReceipt ? ArchiveBoxArrowDownIcon : ArchiveBoxIcon}
                       title={`Không tìm thấy phiếu ${isReceipt ? "nhập" : "xuất"} kho`}

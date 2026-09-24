@@ -1,9 +1,10 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { getDatabase } from "../../config/mongodb.js";
-import { passwordMatches } from "./password.js";
+import { passwordMatches, hashPassword } from "./password.js";
 import { isLockedStatus } from "./accountEmployee.js";
 import { getRolePermissions } from "../shared/permissions.js";
+import { requireAuth } from "../../common/middlewares/auth.middleware.js";
 
 const router = Router();
 const secret = process.env.JWT_SECRET || "baby-shop-development-secret";
@@ -138,5 +139,69 @@ router.get("/me", async (req, res) => {
   }
 });
 
+const handleChangePassword = async (req, res) => {
+  try {
+    const currentPassword = req.body?.currentPassword || req.body?.oldPassword;
+    const newPassword = req.body?.newPassword;
+    const confirmPassword = req.body?.confirmPassword !== undefined ? req.body?.confirmPassword : newPassword;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        message: "Vui lòng nhập đầy đủ mật khẩu hiện tại và mật khẩu mới",
+      });
+    }
+
+    if (typeof newPassword !== "string" || newPassword.length < 6) {
+      return res.status(400).json({
+        message: "Mật khẩu mới phải có ít nhất 6 ký tự",
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        message: "Mật khẩu mới và xác nhận mật khẩu không khớp",
+      });
+    }
+
+    if (newPassword === currentPassword) {
+      return res.status(400).json({
+        message: "Mật khẩu mới không được trùng với mật khẩu hiện tại",
+      });
+    }
+
+    const db = getDatabase();
+    const username = req.user?.username;
+    if (!username) {
+      return res.status(401).json({ message: "Không xác định được phiên người dùng" });
+    }
+
+    const user = await db.collection("Users").findOne({ username });
+    if (!user) {
+      return res.status(404).json({ message: "Không tìm thấy thông tin tài khoản người dùng" });
+    }
+
+    if (!passwordMatches(currentPassword, user.passwordHash)) {
+      return res.status(400).json({ message: "Mật khẩu hiện tại không chính xác" });
+    }
+
+    const newHash = hashPassword(newPassword);
+    await db.collection("Users").updateOne(
+      { _id: user._id },
+      { $set: { passwordHash: newHash, updatedAt: new Date() } }
+    );
+
+    return res.json({
+      success: true,
+      message: "Đổi mật khẩu thành công",
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Lỗi máy chủ khi đổi mật khẩu" });
+  }
+};
+
+router.put("/change-password", requireAuth, handleChangePassword);
+router.post("/change-password", requireAuth, handleChangePassword);
+
 export default router;
+
 

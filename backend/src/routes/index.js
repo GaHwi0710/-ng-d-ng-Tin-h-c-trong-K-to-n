@@ -34,7 +34,7 @@ for (const moduleConfig of modules) {
   if (moduleConfig.path === "/auth") {
     router.use(moduleConfig.path, moduleConfig.router);
   } else if (moduleConfig.path.startsWith("/admin")) {
-    router.use(moduleConfig.path, requireAuth, allowRoles("QuanLy"), moduleConfig.router);
+    router.use(moduleConfig.path, requireAuth, allowRoles("QuanLy", "QuanTriHeThong"), moduleConfig.router);
   } else if (moduleConfig.path === "/reports") {
     // Báo cáo: cần quyền Xem báo cáo
     router.use(moduleConfig.path, requireAuth, requirePermission("reports", "xem"), moduleConfig.router);

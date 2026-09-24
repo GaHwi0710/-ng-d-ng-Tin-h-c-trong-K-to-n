@@ -36,16 +36,18 @@ const READ = ["xem"];
 // Nguyên tắc đồng bộ dữ liệu: MỌI vai trò đều XEM được toàn bộ dữ liệu nghiệp vụ
 // (cùng 1 database, số liệu như nhau ở mọi tài khoản — doanh thu, hóa đơn, tồn kho...).
 // Riêng các thao tác GHI (tạo/sửa/xóa) bị siết chặt theo đúng nghiệp vụ từng vai trò.
-// Quản trị (nhân sự, phân quyền, tài khoản) chỉ dành cho Quản lý.
 const STAFF_WRITE = {
   NhanVienBanHang: ["customers", "sales-orders", "invoices", "payments", "returns", "promotions", "cash-receipts"],
+  ThuKho: ["products", "product-categories", "goods-receipts", "goods-issues", "inventory", "stocktakes"],
   NhanVienKho: ["products", "product-categories", "goods-receipts", "goods-issues", "inventory", "stocktakes"],
   KeToan: ["invoices", "payments", "debts", "reports", "cash-receipts", "cash-payments"],
   NhanVienMuaHang: ["suppliers", "purchase-orders", "goods-receipts"],
 };
 
 export const DEFAULT_ROLE_PERMISSIONS = {
-  // Quản lý: toàn quyền mọi chức năng, gồm cả quản trị hệ thống
+  // Quản trị hệ thống: Toàn quyền quản trị tài khoản, phân quyền, người dùng và hệ thống
+  QuanTriHeThong: Object.fromEntries(PERMISSION_MODULES.map((m) => [m.key, FULL])),
+  // Quản lý: Toàn quyền mọi chức năng, giám sát và xem báo cáo
   QuanLy: Object.fromEntries(PERMISSION_MODULES.map((m) => [m.key, FULL])),
 };
 
@@ -60,11 +62,13 @@ for (const [roleKey, writeModules] of Object.entries(STAFF_WRITE)) {
 }
 
 export const ROLE_DESCRIPTIONS = {
-  QuanLy: "Toàn quyền hệ thống: quản trị nhân sự, phân quyền và mọi nghiệp vụ.",
-  KeToan: "Quản lý hóa đơn, thanh toán, công nợ, thu chi tiền mặt và báo cáo thống kê.",
-  NhanVienBanHang: "Bán hàng tại quầy, lập hóa đơn, thu tiền, xử lý trả hàng và khuyến mãi.",
-  NhanVienKho: "Quản lý sản phẩm, nhập - xuất kho, tồn kho và kiểm kê.",
-  NhanVienMuaHang: "Quản lý nhà cung cấp, đặt hàng NCC và nhập kho.",
+  QuanTriHeThong: "Quản trị hệ thống: Quản lý tài khoản, phân quyền, nhân sự và cấu hình hệ thống.",
+  QuanLy: "Quản lý chung: Xem báo cáo doanh thu, tồn kho, công nợ và giám sát hoạt động kinh doanh.",
+  KeToan: "Kế toán: Quản lý hóa đơn, thanh toán, công nợ, thu tiền, chi tiền và báo cáo thống kê.",
+  NhanVienBanHang: "Nhân viên bán hàng: Bán hàng tại quầy, lập hóa đơn, thu tiền và khuyến mãi.",
+  ThuKho: "Thủ kho: Quản lý sản phẩm, nhập kho, xuất kho, tồn kho và kiểm kê.",
+  NhanVienKho: "Thủ kho: Quản lý sản phẩm, nhập kho, xuất kho, tồn kho và kiểm kê.",
+  NhanVienMuaHang: "Nhân viên mua hàng: Quản lý nhà cung cấp, đặt hàng NCC và phiếu nhập.",
 };
 
 // ---- Bộ nhớ đệm quyền theo vai trò (tránh truy vấn DB mỗi request) ----
@@ -98,7 +102,7 @@ export function requirePermission(moduleKey, action) {
     try {
       const roleKey = req.user?.role;
       if (!roleKey) return res.status(401).json({ message: "Chưa xác thực" });
-      if (roleKey === "QuanLy") return next();
+      if (roleKey === "QuanLy" || roleKey === "QuanTriHeThong") return next();
       const perms = await getRolePermissions(getDatabase(), roleKey);
       if (!perms?.[moduleKey]?.includes(action)) {
         return res.status(403).json({ message: "Permission denied" });

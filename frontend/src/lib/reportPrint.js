@@ -404,24 +404,27 @@ function buildPage(body) {
 </html>`;
 }
 
-/* ── 1. BÁO CÁO DOANH THU (Reference 2 - Screen 1) ─────────────────────────────────────────── */
-function buildRevenueHtml({ revenueData, invoices = [], salesOrders = [] }) {
-  const total = revenueData?.total || invoices.reduce((s, i) => s + Number(i.TongTien || 0), 0);
-  const collected = invoices.filter(i => i.TrangThai === "Đã thanh toán").reduce((s, i) => s + Number(i.TongTien || 0), 0);
-  const outstanding = total - collected;
-  const orderCount = salesOrders?.length || invoices.length;
-  const weekly = revenueData?.weekly || [];
-  const maxW = Math.max(1, ...weekly.map(w => w.total || 0));
+/* ── 1. BÁO CÁO DOANH THU (Reference 2 - Screen 1 & UC23) ─────────────────────────────────────────── */
+function buildRevenueHtml({ revenueData, invoices = [], salesOrders = [], dateFrom, dateTo }) {
+  const total = revenueData?.total !== undefined ? Number(revenueData.total) : invoices.reduce((s, i) => s + Number(i.TongTien || 0), 0);
+  const collected = revenueData?.totalPaid !== undefined ? Number(revenueData.totalPaid) : invoices.reduce((s, i) => s + Number(i.SoTienDaTra ?? (i.TrangThai === "Đã thanh toán" ? i.TongTien : 0)), 0);
+  const outstanding = revenueData?.totalUnpaid !== undefined ? Number(revenueData.totalUnpaid) : (total - collected);
+  const orderCount = revenueData?.orders || invoices.length;
+  const breakdown = revenueData?.breakdown || [];
+  const groupBy = revenueData?.groupBy || "day";
 
-  const weekRows = weekly.map(w => `
+  const groupByLabel = groupBy === "year" ? "theo Năm" : groupBy === "month" ? "theo Tháng" : "theo Ngày";
+  const periodText = dateFrom && dateTo ? `Từ ngày ${dateFrom} đến ngày ${dateTo}` : "Kỳ báo cáo kinh doanh hiện tại";
+
+  const breakdownRows = breakdown.map((b, i) => `
     <tr>
-      <td>${esc(w.date)}</td>
-      <td class="right mono"><strong>${moneyFmt.format(w.total)}</strong></td>
-      <td>
-        <div class="bar-wrap">
-          <div class="bar-fill" style="width:${Math.round(w.total/maxW*100)}%;background:#3D7068"></div>
-        </div>
-      </td>
+      <td class="center mono">${i + 1}</td>
+      <td><strong>${esc(b.label || b.period)}</strong></td>
+      <td class="center mono">${b.ordersCount || 0}</td>
+      <td class="right mono"><strong>${moneyFmt.format(Number(b.revenue || 0))}</strong></td>
+      <td class="right mono" style="color:#059669">${moneyFmt.format(Number(b.paidAmount || 0))}</td>
+      <td class="right mono" style="color:${Number(b.unpaidAmount || 0) > 0 ? '#b91c1c' : '#64748b'}">${moneyFmt.format(Number(b.unpaidAmount || 0))}</td>
+      <td class="right mono">${b.percentage || 0}%</td>
     </tr>
   `).join("");
 
@@ -434,17 +437,17 @@ function buildRevenueHtml({ revenueData, invoices = [], salesOrders = [] }) {
         <td class="mono">${esc(inv.MaDHCode || inv.MaDH || "—")}</td>
         <td>${esc(inv.NgayLap || "—")}</td>
         <td class="right mono"><strong>${moneyFmt.format(Number(inv.TongTien || 0))}</strong></td>
-        <td class="right mono" style="color:${Number(inv.SoTienConLai ?? inv.TongTien ?? 0) > 0 ? '#b91c1c' : '#059669'}">${moneyFmt.format(Number(inv.SoTienConLai ?? inv.TongTien ?? 0))}</td>
+        <td class="right mono" style="color:${Number(inv.SoTienConLai ?? (inv.TrangThai === 'Chưa thanh toán' ? inv.TongTien : 0)) > 0 ? '#b91c1c' : '#059669'}">${moneyFmt.format(Number(inv.SoTienConLai ?? (inv.TrangThai === 'Chưa thanh toán' ? inv.TongTien : 0)))}</td>
         <td class="center"><span class="badge ${badge}">${esc(inv.TrangThai || "—")}</span></td>
       </tr>
     `;
   }).join("");
 
   return buildPage(`
-    ${shopHeader("Tổng hợp đến hiện tại")}
+    ${shopHeader(periodText)}
     <div class="rpt-title-box">
-      <div class="rpt-title">Báo cáo doanh thu bán hàng</div>
-      <div class="rpt-subtitle">Tổng hợp doanh thu, tình trạng thanh toán và danh sách hóa đơn phát sinh</div>
+      <div class="rpt-title">BÁO CÁO DOANH THU BÁN HÀNG ${groupByLabel.toUpperCase()}</div>
+      <div class="rpt-subtitle">${periodText} · Phân tích doanh thu, tỷ trọng và thu tiền theo chuẩn kế toán</div>
     </div>
 
     <div class="stat-row">
@@ -454,37 +457,53 @@ function buildRevenueHtml({ revenueData, invoices = [], salesOrders = [] }) {
       </div>
       <div class="stat-box success">
         <div class="val">${moneyFmt.format(collected)}</div>
-        <div class="lbl">Đã thanh toán</div>
+        <div class="lbl">Đã thu tiền</div>
       </div>
       <div class="stat-box danger">
         <div class="val">${moneyFmt.format(outstanding)}</div>
-        <div class="lbl">Chưa thanh toán</div>
+        <div class="lbl">Chưa thanh toán / Nợ</div>
       </div>
       <div class="stat-box amber">
         <div class="val">${numFmt.format(orderCount)}</div>
-        <div class="lbl">Tổng đơn hàng</div>
+        <div class="lbl">Tổng số hóa đơn</div>
       </div>
     </div>
 
-    ${weekly.length ? `
+    ${breakdown.length ? `
       <div class="section-title">
-        <span>Doanh thu theo chu kỳ gần nhất</span>
-        <span class="badge-count">${weekly.length} mốc</span>
+        <span>Bảng tổng hợp doanh thu ${groupByLabel} (UC23)</span>
+        <span class="badge-count">${breakdown.length} kỳ</span>
       </div>
       <table>
         <thead>
           <tr>
-            <th>Ngày / Giai đoạn</th>
+            <th class="center" style="width:36px">STT</th>
+            <th>Thời gian (${groupByLabel})</th>
+            <th class="center" style="width:70px">Số HĐ</th>
             <th class="right">Doanh thu</th>
-            <th style="width:180px">Tỷ trọng</th>
+            <th class="right">Đã thanh toán</th>
+            <th class="right">Còn nợ</th>
+            <th class="right" style="width:70px">Tỷ trọng</th>
           </tr>
         </thead>
-        <tbody>${weekRows}</tbody>
+        <tbody>
+          ${breakdownRows}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2" class="right">Tổng cộng:</td>
+            <td class="center mono"><strong>${orderCount}</strong></td>
+            <td class="right mono"><strong>${moneyFmt.format(total)}</strong></td>
+            <td class="right mono" style="color:#059669"><strong>${moneyFmt.format(collected)}</strong></td>
+            <td class="right mono" style="color:${outstanding > 0 ? '#b91c1c' : '#64748b'}"><strong>${moneyFmt.format(outstanding)}</strong></td>
+            <td class="right mono">100%</td>
+          </tr>
+        </tfoot>
       </table>
     ` : ""}
 
     <div class="section-title">
-      <span>Danh sách hóa đơn bán hàng</span>
+      <span>Chi tiết danh sách hóa đơn phát sinh</span>
       <span class="badge-count">${invoices.length} hóa đơn</span>
     </div>
     <table>
@@ -517,95 +536,108 @@ function buildRevenueHtml({ revenueData, invoices = [], salesOrders = [] }) {
   `);
 }
 
-/* ── 2. BÁO CÁO TỒN KHO (Reference 3 - Screen 1) ─────────────────────────────────────────── */
-function buildInventoryHtml({ products = [] }) {
+/* ── 2. BÁO CÁO TỒN KHO (UC24 - Reference 3 - Screen 1) ─────────────────────────────────────────── */
+function buildInventoryHtml({ products = [], dateFrom, dateTo, summary = {} }) {
   const total = products.length;
-  const outOfStock = products.filter(p => Number(p.stock || 0) <= 0).length;
-  const lowStock = products.filter(p => Number(p.stock || 0) > 0 && Number(p.stock || 0) <= 10).length;
-  const inStock = total - outOfStock - lowStock;
-  const totalVal = products.reduce((s, p) => s + (Number(p.stock || 0) * Number(p.GiaBan || p.GiaVon || 0)), 0);
+  const totalBeginningStock = summary.totalBeginningStock !== undefined
+    ? Number(summary.totalBeginningStock)
+    : products.reduce((s, p) => s + Number(p.TonDau || 0), 0);
+  const totalImportStock = summary.totalImportStock !== undefined
+    ? Number(summary.totalImportStock)
+    : products.reduce((s, p) => s + Number(p.NhapTrongKy || 0), 0);
+  const totalExportStock = summary.totalExportStock !== undefined
+    ? Number(summary.totalExportStock)
+    : products.reduce((s, p) => s + Number(p.XuatTrongKy || 0), 0);
+  const totalEndingStock = summary.totalEndingStock !== undefined
+    ? Number(summary.totalEndingStock)
+    : products.reduce((s, p) => s + Number(p.TonCuoi ?? p.stock ?? 0), 0);
+  const totalVal = summary.totalInventoryValue !== undefined
+    ? Number(summary.totalInventoryValue)
+    : products.reduce((s, p) => s + Number(p.GiaTriTon !== undefined ? p.GiaTriTon : (Number(p.TonCuoi ?? p.stock ?? 0) * Number(p.GiaNhap || p.GiaBan || 0))), 0);
 
-  const sorted = [...products].sort((a, b) => Number(a.stock || 0) - Number(b.stock || 0));
+  const periodText = dateFrom && dateTo ? `Từ ngày ${dateFrom} đến ngày ${dateTo}` : "Tại thời điểm hiện tại";
 
-  const rows = sorted.map((p, i) => {
-    const st = Number(p.stock || 0);
-    const badge = st <= 0 ? "badge-red" : st <= 10 ? "badge-amber" : "badge-green";
-    const label = st <= 0 ? "Hết hàng" : st <= 10 ? "Sắp hết" : "Còn hàng";
-    const itemVal = st * Number(p.GiaBan || 0);
+  const rows = products.map((p, i) => {
+    const tonDau = Number(p.TonDau ?? (p.stock || 0));
+    const nhap = Number(p.NhapTrongKy || 0);
+    const xuat = Number(p.XuatTrongKy || 0);
+    const tonCuoi = Number(p.TonCuoi ?? p.stock ?? 0);
+    const giaNhap = Number(p.GiaNhap || p.GiaBan || 0);
+    const itemVal = Number(p.GiaTriTon !== undefined ? p.GiaTriTon : tonCuoi * giaNhap);
 
     return `
       <tr>
         <td class="center mono">${i+1}</td>
         <td><strong class="mono">${esc(p.MaSP || p.id)}</strong></td>
-        <td>${esc(p.TenSP)}</td>
-        <td>${esc(p.LoaiHang || "—")}</td>
+        <td><strong>${esc(p.TenSP)}</strong></td>
         <td class="center">${esc(p.DonViTinh || "Cái")}</td>
-        <td class="right mono"><strong>${numFmt.format(st)}</strong></td>
-        <td class="right mono">${moneyFmt.format(Number(p.GiaBan || 0))}</td>
+        <td class="right mono">${numFmt.format(tonDau)}</td>
+        <td class="right mono" style="color:${nhap > 0 ? '#15803d' : '#64748b'}">${nhap > 0 ? '+' : ''}${numFmt.format(nhap)}</td>
+        <td class="right mono" style="color:${xuat > 0 ? '#b91c1c' : '#64748b'}">${xuat > 0 ? '-' : ''}${numFmt.format(xuat)}</td>
+        <td class="right mono"><strong>${numFmt.format(tonCuoi)}</strong></td>
+        <td class="right mono">${moneyFmt.format(giaNhap)}</td>
         <td class="right mono"><strong>${moneyFmt.format(itemVal)}</strong></td>
-        <td class="center"><span class="badge ${badge}">${label}</span></td>
       </tr>
     `;
   }).join("");
 
   return buildPage(`
-    ${shopHeader("Tại thời điểm hiện tại")}
+    ${shopHeader(periodText)}
     <div class="rpt-title-box">
-      <div class="rpt-title">Báo cáo tình trạng tồn kho hàng hóa</div>
-      <div class="rpt-subtitle">Chi tiết số lượng tồn kho, giá trị ước tính và phân loại cảnh báo tồn kho</div>
+      <div class="rpt-title">BÁO CÁO TỔNG HỢP NHẬP – XUẤT – TỒN KHO</div>
+      <div class="rpt-subtitle">${periodText} · Công thức kế toán: Tồn cuối = Tồn đầu + Nhập trong kỳ - Xuất trong kỳ</div>
     </div>
 
     <div class="stat-row">
       <div class="stat-box primary">
-        <div class="val">${numFmt.format(total)}</div>
-        <div class="lbl">Tổng mặt hàng</div>
+        <div class="val">${numFmt.format(totalBeginningStock)}</div>
+        <div class="lbl">Tổng tồn đầu kỳ</div>
       </div>
       <div class="stat-box success">
-        <div class="val">${numFmt.format(inStock)}</div>
-        <div class="lbl">Còn hàng (> 10)</div>
-      </div>
-      <div class="stat-box amber">
-        <div class="val">${numFmt.format(lowStock)}</div>
-        <div class="lbl">Sắp hết hàng (1-10)</div>
+        <div class="val">+${numFmt.format(totalImportStock)}</div>
+        <div class="lbl">Tổng nhập trong kỳ</div>
       </div>
       <div class="stat-box danger">
-        <div class="val">${numFmt.format(outOfStock)}</div>
-        <div class="lbl">Hết hàng (0)</div>
+        <div class="val">-${numFmt.format(totalExportStock)}</div>
+        <div class="lbl">Tổng xuất trong kỳ</div>
+      </div>
+      <div class="stat-box primary">
+        <div class="val">${numFmt.format(totalEndingStock)}</div>
+        <div class="lbl">Tổng tồn cuối kỳ</div>
       </div>
     </div>
 
-    ${outOfStock > 0 ? `
-      <div class="alert-box">
-        ⚠ Có <strong>${outOfStock} mặt hàng</strong> đã hết hàng trong kho. Cần liên hệ Nhà cung cấp để lên đơn đặt hàng nhập kho bổ sung kịp thời.
-      </div>
-    ` : ""}
-
     <div class="section-title">
-      <span>Bảng chi tiết tồn kho hàng hóa</span>
-      <span class="badge-count">${total} sản phẩm</span>
+      <span>Bảng chi tiết biến động tồn kho theo mặt hàng</span>
+      <span class="badge-count">${total} mặt hàng</span>
     </div>
     <table>
       <thead>
         <tr>
           <th class="center" style="width:36px">STT</th>
-          <th>Mã SP</th>
+          <th style="width:70px">Mã SP</th>
           <th>Tên sản phẩm</th>
-          <th>Loại hàng</th>
-          <th class="center">ĐVT</th>
-          <th class="right">Tồn kho</th>
-          <th class="right">Đơn giá bán</th>
+          <th class="center" style="width:50px">ĐVT</th>
+          <th class="right">Tồn đầu</th>
+          <th class="right">Nhập trong kỳ</th>
+          <th class="right">Xuất trong kỳ</th>
+          <th class="right">Tồn cuối</th>
+          <th class="right">Giá nhập</th>
           <th class="right">Giá trị tồn</th>
-          <th class="center">Tình trạng</th>
         </tr>
       </thead>
       <tbody>
-        ${rows || '<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8">Chưa có dữ liệu tồn kho</td></tr>'}
+        ${rows || '<tr><td colspan="10" style="text-align:center;padding:16px;color:#94a3b8">Chưa có dữ liệu tồn kho</td></tr>'}
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="5" class="right">Tổng giá trị tồn kho ước tính:</td>
-          <td class="right mono" colspan="3" style="font-size:12px;color:#1d4ed8">${moneyFmt.format(totalVal)}</td>
+          <td colspan="4" class="right"><strong>Tổng cộng:</strong></td>
+          <td class="right mono"><strong>${numFmt.format(totalBeginningStock)}</strong></td>
+          <td class="right mono" style="color:#15803d"><strong>+${numFmt.format(totalImportStock)}</strong></td>
+          <td class="right mono" style="color:#b91c1c"><strong>-${numFmt.format(totalExportStock)}</strong></td>
+          <td class="right mono"><strong>${numFmt.format(totalEndingStock)}</strong></td>
           <td></td>
+          <td class="right mono" style="font-size:12px;color:#1d4ed8"><strong>${moneyFmt.format(totalVal)}</strong></td>
         </tr>
       </tfoot>
     </table>

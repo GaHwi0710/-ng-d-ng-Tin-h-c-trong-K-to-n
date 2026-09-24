@@ -81,6 +81,13 @@ export async function logout() {
   }
 }
 
+export async function changePassword(currentPassword, newPassword, confirmPassword) {
+  return await request("auth/change-password", {
+    method: "PUT",
+    body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+  });
+}
+
 export async function getReport(name) {
   return await request(`reports/${name}`);
 }

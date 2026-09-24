@@ -43,12 +43,27 @@ async function adjustStock(lines, direction, allowShortage = false, session) {
   const applied = [];
   for (const line of lines) {
     const delta = direction * line.quantity;
-    const filter = direction < 0 && !allowShortage ? { MaSP: line.product._id, SoLuongTon: { $gte: line.quantity } } : { MaSP: line.product._id };
-    const result = await stocks.updateOne(filter, { $set: { MaSP: line.product._id, updatedAt: new Date(), NgayCapNhat: today() }, $inc: { SoLuongTon: delta } }, { upsert: direction > 0, session });
+    const filter = direction < 0 && !allowShortage
+      ? { MaSP: line.product._id, $or: [{ SoLuongTon: { $gte: line.quantity } }, { SoLuong: { $gte: line.quantity } }] }
+      : { MaSP: line.product._id };
+    const result = await stocks.updateOne(
+      filter,
+      {
+        $set: { MaSP: line.product._id, updatedAt: new Date(), NgayCapNhat: today() },
+        $inc: { SoLuongTon: delta, SoLuong: delta }
+      },
+      { upsert: direction > 0, session }
+    );
     if (!result.modifiedCount && !(direction > 0 && result.upsertedCount)) {
-      for (const previous of applied) await stocks.updateOne({ MaSP: previous.product._id }, { $inc: { SoLuongTon: -previous.delta } }, { session });
+      for (const previous of applied) {
+        await stocks.updateOne(
+          { MaSP: previous.product._id },
+          { $inc: { SoLuongTon: -previous.delta, SoLuong: -previous.delta } },
+          { session }
+        );
+      }
       const current = await stocks.findOne({ MaSP: line.product._id }, { session });
-      throw fail(`${line.product.TenSP} vượt tồn kho hiện tại (${current?.SoLuongTon || 0})`, 409);
+      throw fail(`${line.product.TenSP} vượt tồn kho hiện tại (${current?.SoLuongTon ?? current?.SoLuong ?? 0})`, 409);
     }
     await getDatabase().collection("SanPham").updateOne({ _id: line.product._id }, { $inc: { stock: delta } }, { session });
     applied.push({ product: line.product, delta });
@@ -98,27 +113,31 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
       if (!matchesSupplier) throw fail("Đơn đặt hàng không khớp với nhà cung cấp đã chọn", 400);
 
       // Kiểm tra số lượng còn thiếu trên từng sản phẩm
-      const poItemMap = new Map();
       const poRawItems = purchaseOrder.items || [];
-      // Đọc CT_DonDatHang nếu items không lưu inline
       let poItems = poRawItems;
       if (!poItems.length) {
         poItems = await getDatabase().collection("CT_DonDatHang").find({ MaDDH: purchaseOrderId }).toArray();
       }
-      for (const poItem of poItems) {
-        const pid = String(poItem.productId || poItem.MaSP || "");
-        const ordered = Number(poItem.quantity || poItem.SoLuong || 0);
-        const received = Number(poItem.quantityReceived || 0);
-        poItemMap.set(pid, { ordered, received, remaining: ordered - received });
-      }
+
+      const matchPoItem = (product) => {
+        const pidStr = String(product._id);
+        const codeStr = String(product.MaSP || "");
+        return poItems.find((item) => {
+          const itemPid = String(item.productId || item.MaSP || item.id || "");
+          const itemCode = String(item.MaSPCode || item.MaSP || "");
+          return itemPid === pidStr || itemPid === codeStr || itemCode === codeStr || itemCode === pidStr;
+        });
+      };
 
       for (const line of lines) {
-        const pid = String(line.product._id);
-        const info = poItemMap.get(pid);
-        if (!info) throw fail(`Sản phẩm "${line.product.TenSP}" không có trong đơn đặt hàng`, 400);
-        if (line.quantity > info.remaining) {
+        const poItem = matchPoItem(line.product);
+        if (!poItem) throw fail(`Sản phẩm "${line.product.TenSP}" không có trong đơn đặt hàng`, 400);
+        const ordered = Number(poItem.quantity || poItem.SoLuong || 0);
+        const received = Number(poItem.quantityReceived || 0);
+        const remaining = Math.max(0, ordered - received);
+        if (line.quantity > remaining) {
           throw fail(
-            `Sản phẩm "${line.product.TenSP}": số lượng nhập (${line.quantity}) vượt số còn thiếu (${info.remaining}) trong đơn đặt hàng`,
+            `Sản phẩm "${line.product.TenSP}": số lượng nhập (${line.quantity}) vượt số còn thiếu (${remaining}) trong đơn đặt hàng`,
             400
           );
         }
@@ -131,6 +150,7 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
     if (paidAmount > total) throw fail("Số tiền đã thanh toán không được vượt quá tổng tiền phiếu nhập", 400);
     const remaining = Math.max(0, total - paidAmount);
     const debtStatus = remaining === 0 ? "Đã thanh toán" : "Còn nợ";
+    const nguoiLap = req.user?.fullName || req.user?.username || "Thủ kho";
 
     const created = await withTransaction(async (session) => {
       await adjustStock(lines, 1, false, session);
@@ -139,6 +159,7 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
         MaDDH: purchaseOrderId || null,
         MaNCC: supplier._id,
         MaNV: req.user.id,
+        NguoiLap: nguoiLap,
         NgayNhap: req.body.NgayNhap || today(),
         TrangThai: "Đã lưu",
         TongTien: total,
@@ -152,7 +173,7 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
         DiaDiem: req.body.DiaDiem || "",
         TkNo: req.body.TkNo || "156",
         TkCo: req.body.TkCo || "331",
-        SoChungTuGoc: req.body.SoChungTuGoc || "",
+        SoChungTuGoc: purchaseOrder ? (purchaseOrder.MaDDH || String(purchaseOrderId)) : (req.body.SoChungTuGoc || ""),
         GhiChu: req.body.GhiChu || req.body.note || "",
         details: lines.map((line) => ({
           MaSP: line.product._id,
@@ -178,6 +199,8 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
         MaNV: req.user.id,
         LoaiCongNo: "Nhà cung cấp",
         type: "suppliers",
+        partnerName: supplier.TenNCC,
+        TenNCC: supplier.TenNCC,
         NgayPhatSinh: document.NgayNhap,
         SoTien: total,
         SoTienDaTra: paidAmount,
@@ -186,22 +209,65 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
         createdAt: new Date(),
       }, { session });
 
+      // UC19 & UC18: Ghi nhận thanh toán và phiếu chi nếu có trả trước ngay khi nhận
+      if (paidAmount > 0) {
+        const phuongThuc = req.body.paymentMethod || req.body.PhuongThuc || "Tiền mặt";
+        const paymentDoc = {
+          MaTT: await nextBusinessCode(getDatabase().collection("ThanhToan"), "ThanhToan"),
+          MaPN: result.insertedId,
+          MaPNCode: document.MaPN,
+          MaDDH: purchaseOrderId,
+          MaNCC: supplier._id,
+          TenDoiTuong: supplier.TenNCC,
+          TenKH: supplier.TenNCC,
+          LoaiThanhToan: "Chi trả NCC",
+          PhuongThuc: phuongThuc,
+          SoTien: paidAmount,
+          NgayThanhToan: document.NgayNhap,
+          TrangThai: "Đã thanh toán",
+          createdAt: new Date(),
+        };
+        await getDatabase().collection("ThanhToan").insertOne(paymentDoc, { session });
+
+        if (phuongThuc === "Tiền mặt") {
+          const cashVoucherDoc = {
+            MaPC: await nextBusinessCode(getDatabase().collection("PhieuChi"), "PhieuChi"),
+            NgayLap: document.NgayNhap,
+            NgayChi: document.NgayNhap,
+            NguoiNhanTien: supplier.TenNCC,
+            NguoiNhan: supplier.TenNCC,
+            DiaChi: supplier.DiaChi || "",
+            LyDo: `Thanh toán tiền hàng phiếu nhập ${document.MaPN}`,
+            SoTien: paidAmount,
+            PhuongThuc: "Tiền mặt",
+            MaPN: result.insertedId,
+            MaNCC: supplier._id,
+            TrangThai: "Đã chi",
+            NguoiLap: nguoiLap,
+            MaNV: req.user.id,
+            createdAt: new Date(),
+          };
+          await getDatabase().collection("PhieuChi").insertOne(cashVoucherDoc, { session });
+        }
+      }
+
       // Cập nhật số lượng đã nhận trên từng item của PO + tính lại trạng thái PO
       if (purchaseOrderId) {
-        // Lấy lại PO items để cập nhật quantityReceived
         const poDoc = await getDatabase().collection("DonDatHang").findOne({ _id: purchaseOrderId }, { session });
         let poItems = poDoc?.items || [];
         if (!poItems.length) {
           poItems = await getDatabase().collection("CT_DonDatHang").find({ MaDDH: purchaseOrderId }, { session }).toArray();
         }
 
-        // Tạo map: productId → số lượng vừa nhập trong phiếu này
-        const receivedNowMap = new Map(lines.map((l) => [String(l.product._id), l.quantity]));
-
-        // Cập nhật quantityReceived trên từng item
         const updatedItems = poItems.map((item) => {
-          const pid = String(item.productId || item.MaSP || "");
-          const justReceived = receivedNowMap.get(pid) || 0;
+          const matchedLine = lines.find((l) => {
+            const pidStr = String(l.product._id);
+            const codeStr = String(l.product.MaSP || "");
+            const itemPid = String(item.productId || item.MaSP || item.id || "");
+            const itemCode = String(item.MaSPCode || item.MaSP || "");
+            return itemPid === pidStr || itemPid === codeStr || itemCode === codeStr || itemCode === pidStr;
+          });
+          const justReceived = matchedLine ? matchedLine.quantity : 0;
           return {
             ...item,
             quantityReceived: Number(item.quantityReceived || 0) + justReceived,
@@ -220,13 +286,11 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
           newPoStatus = "Đang chờ nhập";
         }
 
-        // Lưu items đã cập nhật và trạng thái mới
         await getDatabase().collection("DonDatHang").updateOne(
           { _id: purchaseOrderId },
           { $set: { items: updatedItems, TrangThai: newPoStatus, updatedAt: new Date() } },
           { session }
         );
-        // Đồng bộ CT_DonDatHang
         if (updatedItems.length) {
           await getDatabase().collection("CT_DonDatHang").deleteMany({ MaDDH: purchaseOrderId }, { session });
           await getDatabase().collection("CT_DonDatHang").insertMany(
@@ -244,6 +308,13 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
 
 router.post("/goods-issues", requirePermission("goods-issues", "tao"), async (req, res, next) => {
   try {
+    const orderId = id(req.body.orderId || req.body.MaDH);
+    if (orderId) {
+      const existingIssue = await getDatabase().collection("PhieuXuat").findOne({ MaDH: orderId });
+      if (existingIssue) {
+        throw fail(`Đơn hàng này đã được tự động lập phiếu xuất kho (${existingIssue.MaPX || "Đã xuất kho"}). Không được xuất kho trùng lặp.`, 400);
+      }
+    }
     const lines = await productsByLines(req.body.details || req.body.items);
     const reason = req.body.reason || req.body.LyDoXuat || "Bán hàng";
     const allowShortage = reason === "Điều chỉnh kiểm kê thiếu";
@@ -355,7 +426,12 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
 
     discount = Math.max(0, Math.min(subtotal, discount));
     const total = Math.max(0, subtotal - discount);
-    const isFullPaid = total === 0;
+    const paymentMethod = req.body.paymentMethod || req.body.PhuongThuc || "Tiền mặt";
+    const isCredit = paymentMethod === "Ghi nợ";
+    if (isCredit && !customerId) {
+      throw fail("Khách hàng mua ghi nợ bắt buộc phải chọn thông tin khách hàng cụ thể", 400);
+    }
+    const isFullPaid = !isCredit;
 
     const created = await withTransaction(async (session) => {
       await adjustStock(lines, -1, false, session);
@@ -368,7 +444,7 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
         MaNV: req.user.id,
         NguoiLap: nguoiLap,
         NgayDat: req.body.NgayDat || today(),
-        TrangThai: "Chờ xuất kho",
+        TrangThai: "Hoàn thành",
         TienHang: subtotal,
         GiamGia: discount,
         MaKM: promoCode || null,
@@ -390,15 +466,44 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
       const orderResult = await getDatabase().collection("DonHang").insertOne(order, { session });
       await replaceDetails(getDatabase(), "CT_DonHang", orderResult.insertedId, order.details, session);
 
+      // UC14: Tự động lập Phiếu xuất kho
+      const issueDoc = {
+        MaPX: await nextBusinessCode(getDatabase().collection("PhieuXuat"), "PhieuXuat"),
+        MaDH: orderResult.insertedId,
+        MaDHCode: order.MaDH,
+        MaNV: req.user.id,
+        NgayXuat: req.body.NgayDat || today(),
+        LyDoXuat: `Xuất kho bán hàng theo đơn ${order.MaDH}`,
+        GhiChu: `Tự động xuất kho theo đơn bán hàng ${order.MaDH}`,
+        NguoiLienQuan: customer?.HoTen || "Khách mua lẻ",
+        DiaChi: customer?.DiaChi || "",
+        Kho: "Kho chính",
+        TrangThai: "Đã xuất kho",
+        TongTien: lines.reduce((sum, line) => sum + line.quantity * (Number(line.product.GiaNhap) || line.price), 0),
+        SoLuong: lines.reduce((sum, line) => sum + line.quantity, 0),
+        details: lines.map((line) => ({
+          MaSP: line.product._id,
+          TenSP: line.product.TenSP,
+          DonViTinh: line.product.DonViTinh || "Cái",
+          SoLuong: line.quantity,
+          DonGia: Number(line.product.GiaNhap) || line.price,
+          ThanhTien: line.quantity * (Number(line.product.GiaNhap) || line.price),
+        })),
+        createdAt: new Date(),
+      };
+      const issueResult = await getDatabase().collection("PhieuXuat").insertOne(issueDoc, { session });
+      await replaceDetails(getDatabase(), "CT_PhieuXuat", issueResult.insertedId, issueDoc.details, session);
+
       const invoice = {
         MaHD: await nextBusinessCode(getDatabase().collection("HoaDon"), "HoaDon"),
         MaDH: orderResult.insertedId,
+        MaDHCode: order.MaDH,
         MaKH: customerId || null,
         MaKHCode: customer?.MaKH || null,
         TenKH: customer?.HoTen || "Khách vãng lai",
         MaNV: req.user.id,
         NguoiLap: nguoiLap,
-        NgayLap: today(),
+        NgayLap: req.body.NgayDat || today(),
         TienHang: subtotal,
         GiamGia: discount,
         MaKM: promoCode || null,
@@ -406,11 +511,68 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
         SoTienDaTra: isFullPaid ? total : 0,
         SoTienConLai: isFullPaid ? 0 : total,
         TrangThai: isFullPaid ? "Đã thanh toán" : "Chưa thanh toán",
+        HinhThucThanhToan: paymentMethod,
         details: order.details,
         createdAt: new Date()
       };
       const invoiceResult = await getDatabase().collection("HoaDon").insertOne(invoice, { session });
       await replaceDetails(getDatabase(), "CT_HoaDon", invoiceResult.insertedId, invoice.details, session);
+
+      if (isCredit) {
+        // UC15: Ghi nhận công nợ khách hàng khi bán chịu
+        await getDatabase().collection("CongNo").insertOne({
+          MaCN: await nextBusinessCode(getDatabase().collection("CongNo"), "CongNo"),
+          MaKH: customerId,
+          MaKHCode: customer?.MaKH || null,
+          TenKH: customer?.HoTen || "Khách hàng",
+          MaDH: orderResult.insertedId,
+          MaHD: invoiceResult.insertedId,
+          MaNV: req.user.id,
+          LoaiCongNo: "Khách hàng",
+          SoTien: total,
+          SoTienDaTra: 0,
+          SoTienConLai: total,
+          TrangThai: "Còn nợ",
+          NgayPhatSinh: req.body.NgayDat || today(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }, { session });
+      } else if (isFullPaid) {
+        // UC19: Ghi nhận lịch sử thanh toán
+        const paymentDoc = {
+          MaTT: await nextBusinessCode(getDatabase().collection("ThanhToan"), "ThanhToan"),
+          MaHD: invoiceResult.insertedId,
+          MaHDCode: invoice.MaHD,
+          TenKH: customer?.HoTen || "Khách vãng lai",
+          PhuongThuc: paymentMethod,
+          SoTien: total,
+          NgayThanhToan: req.body.NgayDat || today(),
+          TrangThai: "Đã thanh toán",
+          createdAt: new Date(),
+        };
+        await getDatabase().collection("ThanhToan").insertOne(paymentDoc, { session });
+
+        // UC17: Nếu thu tiền mặt, tự động lập Phiếu thu
+        if (paymentMethod === "Tiền mặt" && total > 0) {
+          const receiptDoc = {
+            MaPT: await nextBusinessCode(getDatabase().collection("PhieuThu"), "PhieuThu"),
+            MaHD: invoiceResult.insertedId,
+            MaHDCode: invoice.MaHD,
+            MaKH: customerId || null,
+            TenKH: customer?.HoTen || "Khách vãng lai",
+            NguoiNop: customer?.HoTen || "Khách mua lẻ",
+            LyDo: `Thu tiền bán hàng hóa đơn ${invoice.MaHD}`,
+            SoTien: total,
+            PhuongThuc: "Tiền mặt",
+            NgayThu: req.body.NgayDat || today(),
+            NguoiLap: nguoiLap,
+            MaNV: req.user.id,
+            TrangThai: "Đã thu",
+            createdAt: new Date(),
+          };
+          await getDatabase().collection("PhieuThu").insertOne(receiptDoc, { session });
+        }
+      }
 
       if (customerId) {
         if (usedVoucherId) {
@@ -483,7 +645,18 @@ router.post("/payments", requirePermission("payments", "tao"), async (req, res, 
       const remaining = Math.max(0, Number(invoice.TongTien || 0) - currentPaid);
       if (amount > remaining) throw fail(`Số tiền thanh toán vượt số còn nợ (${remaining})`, 409);
       const totalPaid = currentPaid + amount;
-      const paymentDocument = { MaTT: await nextBusinessCode(getDatabase().collection("ThanhToan"), "ThanhToan"), MaHD: invoiceId, PhuongThuc: req.body.method || req.body.PhuongThuc || "Tiền mặt", SoTien: amount, NgayThanhToan: today(), TrangThai: "Đã ghi nhận", createdAt: new Date() };
+      const phuongThuc = req.body.method || req.body.PhuongThuc || "Tiền mặt";
+      const paymentDocument = {
+        MaTT: await nextBusinessCode(getDatabase().collection("ThanhToan"), "ThanhToan"),
+        MaHD: invoiceId,
+        MaHDCode: invoice.MaHD,
+        TenKH: invoice.TenKH || "Khách hàng",
+        PhuongThuc: phuongThuc,
+        SoTien: amount,
+        NgayThanhToan: today(),
+        TrangThai: "Đã thanh toán",
+        createdAt: new Date()
+      };
       const result = await getDatabase().collection("ThanhToan").insertOne(paymentDocument, { session });
       const remainingAfterPayment = Math.max(0, Number(invoice.TongTien) - totalPaid);
       const status = totalPaid >= Number(invoice.TongTien) ? "Đã thanh toán" : "Thanh toán một phần";
@@ -495,10 +668,224 @@ router.post("/payments", requirePermission("payments", "tao"), async (req, res, 
           { session, upsert: true },
         );
       }
+
+      // UC17: Nếu thanh toán tiền mặt, tự động lập Phiếu thu
+      if (phuongThuc === "Tiền mặt" && amount > 0) {
+        const receiptDoc = {
+          MaPT: await nextBusinessCode(getDatabase().collection("PhieuThu"), "PhieuThu"),
+          MaHD: invoiceId,
+          MaHDCode: invoice.MaHD,
+          MaKH: invoice.MaKH || null,
+          TenKH: invoice.TenKH || "Khách hàng",
+          NguoiNop: invoice.TenKH || "Khách hàng",
+          LyDo: `Thu tiền thanh toán hóa đơn ${invoice.MaHD}`,
+          SoTien: amount,
+          PhuongThuc: "Tiền mặt",
+          NgayThu: today(),
+          NguoiLap: req.user?.fullName || req.user?.username || "Kế toán",
+          MaNV: req.user.id,
+          TrangThai: "Đã thu",
+          createdAt: new Date(),
+        };
+        await getDatabase().collection("PhieuThu").insertOne(receiptDoc, { session });
+      }
+
       return serialize({ _id: result.insertedId, ...paymentDocument });
     });
     res.status(201).json({ data: payment, message: "Đã ghi nhận thanh toán" });
   } catch (error) { next(error); }
+});
+
+// ── Thanh toán công nợ (UC18 / UC15) ─────────────────────────────────────────
+router.post("/debts/:id/pay", requirePermission("debts", "sua"), async (req, res, next) => {
+  try {
+    const debtId = id(req.params.id);
+    const amount = Number(req.body.amount || req.body.SoTien || req.body.payment);
+    if (!Number.isFinite(amount) || amount <= 0) throw fail("Số tiền thanh toán phải lớn hơn 0", 400);
+
+    const phuongThuc = req.body.method || req.body.PhuongThuc || "Tiền mặt";
+    const paymentDate = req.body.date || req.body.NgayThanhToan || today();
+
+    const result = await withTransaction(async (session) => {
+      const debtCol = getDatabase().collection("CongNo");
+      const debt = await debtCol.findOne(
+        debtId ? { _id: debtId } : { $or: [{ MaCN: String(req.params.id) }, { id: String(req.params.id) }] },
+        { session }
+      );
+      if (!debt) throw fail("Không tìm thấy bản ghi công nợ", 404);
+
+      const totalDebt = Number(debt.SoTien || 0);
+      const currentPaid = Number(debt.SoTienDaTra || 0);
+      const currentRemaining = Math.max(0, Number(debt.SoTienConLai ?? (totalDebt - currentPaid)));
+
+      if (amount > currentRemaining) {
+        throw fail(`Số tiền thanh toán (${amount.toLocaleString("vi-VN")} ₫) vượt số còn nợ (${currentRemaining.toLocaleString("vi-VN")} ₫)`, 400);
+      }
+
+      const newPaid = currentPaid + amount;
+      const newRemaining = Math.max(0, totalDebt - newPaid);
+      const newStatus = newRemaining === 0 ? "Đã thanh toán" : "Còn nợ";
+
+      // 1. Cập nhật CongNo
+      await debtCol.updateOne(
+        { _id: debt._id },
+        {
+          $set: {
+            SoTienDaTra: newPaid,
+            SoTienConLai: newRemaining,
+            TrangThai: newStatus,
+            updatedAt: new Date(),
+          },
+        },
+        { session }
+      );
+
+      const isSupplier = debt.LoaiCongNo === "Nhà cung cấp" || (!debt.MaKH && (!!debt.MaNCC || debt.type === "suppliers"));
+      let partyName = "";
+      let supplierDoc = null;
+      let customerDoc = null;
+
+      if (isSupplier) {
+        supplierDoc = await getDatabase().collection("NhaCungCap").findOne(
+          { $or: [{ _id: id(debt.MaNCC) }, { MaNCC: String(debt.MaNCC) }] },
+          { session }
+        );
+        partyName = supplierDoc?.TenNCC || debt.partnerName || debt.TenNCC || "Nhà cung cấp";
+
+        // Cập nhật PhieuNhap nếu có
+        if (debt.MaPN) {
+          const pnStatus = newRemaining === 0 ? "Đã thanh toán" : "Thanh toán một phần";
+          await getDatabase().collection("PhieuNhap").updateOne(
+            { $or: [{ _id: id(debt.MaPN) }, { MaPN: String(debt.MaPN) }] },
+            {
+              $inc: { SoTienDaTra: amount },
+              $set: {
+                SoTienConLai: newRemaining,
+                TrangThai: pnStatus,
+                updatedAt: new Date(),
+              },
+            },
+            { session }
+          );
+        }
+
+        // Tạo bản ghi ThanhToan (UC19)
+        const paymentDoc = {
+          MaTT: await nextBusinessCode(getDatabase().collection("ThanhToan"), "ThanhToan"),
+          MaCN: debt._id,
+          MaCNCode: debt.MaCN,
+          MaPN: debt.MaPN || null,
+          MaNCC: debt.MaNCC || null,
+          TenDoiTuong: partyName,
+          TenKH: partyName,
+          TenNCC: partyName,
+          LoaiThanhToan: "Chi trả NCC",
+          PhuongThuc: phuongThuc,
+          SoTien: amount,
+          NgayThanhToan: paymentDate,
+          TrangThai: "Đã thanh toán",
+          createdAt: new Date(),
+        };
+        await getDatabase().collection("ThanhToan").insertOne(paymentDoc, { session });
+
+        // Tạo PhieuChi tiền mặt (UC18)
+        if (phuongThuc === "Tiền mặt") {
+          const cashPaymentDoc = {
+            MaPC: await nextBusinessCode(getDatabase().collection("PhieuChi"), "PhieuChi"),
+            NgayLap: paymentDate,
+            NgayChi: paymentDate,
+            NguoiNhanTien: partyName,
+            NguoiNhan: partyName,
+            DiaChi: supplierDoc?.DiaChi || debt.DiaChi || "",
+            LyDo: req.body.note || req.body.LyDo || `Thanh toán công nợ NCC theo chứng từ ${debt.MaPN || debt.MaCN}`,
+            SoTien: amount,
+            PhuongThuc: "Tiền mặt",
+            MaCN: debt._id,
+            MaNCC: debt.MaNCC || null,
+            TrangThai: "Đã chi",
+            NguoiLap: req.user?.fullName || req.user?.username || "Kế toán",
+            MaNV: req.user.id,
+            createdAt: new Date(),
+          };
+          await getDatabase().collection("PhieuChi").insertOne(cashPaymentDoc, { session });
+        }
+      } else {
+        // Khách hàng
+        customerDoc = await getDatabase().collection("KhachHang").findOne(
+          { $or: [{ _id: id(debt.MaKH) }, { MaKH: String(debt.MaKH) }] },
+          { session }
+        );
+        partyName = customerDoc?.HoTen || debt.partnerName || debt.TenKH || "Khách hàng";
+
+        // Cập nhật HoaDon nếu có
+        if (debt.MaHD) {
+          const invoiceStatus = newRemaining === 0 ? "Đã thanh toán" : "Thanh toán một phần";
+          await getDatabase().collection("HoaDon").updateOne(
+            { $or: [{ _id: id(debt.MaHD) }, { MaHD: String(debt.MaHD) }] },
+            {
+              $set: {
+                SoTienDaTra: newPaid,
+                SoTienConLai: newRemaining,
+                TrangThai: invoiceStatus,
+                updatedAt: new Date(),
+              },
+            },
+            { session }
+          );
+        }
+
+        // Tạo bản ghi ThanhToan (UC19)
+        const paymentDoc = {
+          MaTT: await nextBusinessCode(getDatabase().collection("ThanhToan"), "ThanhToan"),
+          MaCN: debt._id,
+          MaCNCode: debt.MaCN,
+          MaHD: debt.MaHD || null,
+          MaKH: debt.MaKH || null,
+          TenDoiTuong: partyName,
+          TenKH: partyName,
+          LoaiThanhToan: "Thu nợ KH",
+          PhuongThuc: phuongThuc,
+          SoTien: amount,
+          NgayThanhToan: paymentDate,
+          TrangThai: "Đã thanh toán",
+          createdAt: new Date(),
+        };
+        await getDatabase().collection("ThanhToan").insertOne(paymentDoc, { session });
+
+        // Tạo PhieuThu tiền mặt (UC17)
+        if (phuongThuc === "Tiền mặt") {
+          const cashReceiptDoc = {
+            MaPT: await nextBusinessCode(getDatabase().collection("PhieuThu"), "PhieuThu"),
+            NgayLap: paymentDate,
+            NgayThu: paymentDate,
+            NguoiNopTien: partyName,
+            NguoiNop: partyName,
+            DiaChi: customerDoc?.DiaChi || debt.DiaChi || "",
+            LyDo: req.body.note || req.body.LyDo || `Thu nợ khách hàng theo chứng từ ${debt.MaHD || debt.MaCN}`,
+            SoTien: amount,
+            PhuongThuc: "Tiền mặt",
+            MaCN: debt._id,
+            MaHD: debt.MaHD || null,
+            TrangThai: "Đã thu",
+            NguoiLap: req.user?.fullName || req.user?.username || "Kế toán",
+            MaNV: req.user.id,
+            createdAt: new Date(),
+          };
+          await getDatabase().collection("PhieuThu").insertOne(cashReceiptDoc, { session });
+        }
+      }
+
+      const updatedDebt = await debtCol.findOne({ _id: debt._id }, { session });
+      return serialize(updatedDebt);
+    });
+
+    res.json({
+      data: result,
+      message: `Đã ghi nhận thanh toán ${amount.toLocaleString("vi-VN")} ₫ thành công`,
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // ── Lấy danh sách phiếu nhập đã liên kết với đơn đặt hàng NCC ──────────────
@@ -573,17 +960,17 @@ router.post("/purchase-orders/:id/receive", requirePermission("goods-receipts", 
 
     const paidAmount = Math.max(0, Number(req.body.SoTienDaTra || req.body.paidAmount || 0));
     const ngayNhap = req.body.NgayNhap || today();
+    const nguoiLap = req.user?.fullName || req.user?.username || "Thủ kho";
 
-    // Validate từng dòng nhập so với PO remaining
-    const poItemMap = new Map();
-    for (const item of poItems) {
-      const pid = String(item.productId || item.MaSP || "");
-      poItemMap.set(pid, {
-        ordered: Number(item.quantity || item.SoLuong || 0),
-        received: Number(item.quantityReceived || 0),
-        price: Number(item.price || item.DonGia || 0),
+    const matchPoItem = (product) => {
+      const pidStr = String(product._id);
+      const codeStr = String(product.MaSP || "");
+      return poItems.find((item) => {
+        const itemPid = String(item.productId || item.MaSP || item.id || "");
+        const itemCode = String(item.MaSPCode || item.MaSP || "");
+        return itemPid === pidStr || itemPid === codeStr || itemCode === codeStr || itemCode === pidStr;
       });
-    }
+    };
 
     const lines = [];
     for (const rl of receiveLines) {
@@ -595,16 +982,17 @@ router.post("/purchase-orders/:id/receive", requirePermission("goods-receipts", 
       if (product.TrangThai === "Ngừng bán" || product.status === "inactive") {
         throw fail(`Sản phẩm "${product.TenSP}" đã ngừng bán`, 400);
       }
-      const pid = String(product._id);
-      const info = poItemMap.get(pid);
-      if (!info) throw fail(`Sản phẩm "${product.TenSP}" không có trong đơn đặt hàng`, 400);
-      const remaining = info.ordered - info.received;
+      const poItem = matchPoItem(product);
+      if (!poItem) throw fail(`Sản phẩm "${product.TenSP}" không có trong đơn đặt hàng`, 400);
+      const ordered = Number(poItem.quantity || poItem.SoLuong || 0);
+      const received = Number(poItem.quantityReceived || 0);
+      const remaining = Math.max(0, ordered - received);
       const qty = Number(rl.quantity || rl.SoLuong || 0);
       if (!Number.isInteger(qty) || qty <= 0) throw fail(`Số lượng nhận của "${product.TenSP}" phải là số nguyên dương`, 400);
       if (qty > remaining) {
         throw fail(`"${product.TenSP}": số lượng nhận (${qty}) vượt số còn thiếu (${remaining})`, 400);
       }
-      const linePrice = Number(rl.price || rl.DonGia || info.price || product.GiaNhap || 0);
+      const linePrice = Number(rl.price || rl.DonGia || poItem.price || poItem.DonGia || product.GiaNhap || 0);
       lines.push({ product, quantity: qty, price: linePrice });
     }
 
@@ -620,6 +1008,7 @@ router.post("/purchase-orders/:id/receive", requirePermission("goods-receipts", 
         MaDDH: poId,
         MaNCC: supplier._id,
         MaNV: req.user.id,
+        NguoiLap: nguoiLap,
         NgayNhap: ngayNhap,
         TrangThai: "Đã lưu",
         TongTien: total,
@@ -633,7 +1022,7 @@ router.post("/purchase-orders/:id/receive", requirePermission("goods-receipts", 
         GhiChu: req.body.GhiChu || req.body.note || "",
         TkNo: "156",
         TkCo: "331",
-        SoChungTuGoc: "",
+        SoChungTuGoc: po.MaDDH || String(poId),
         details: lines.map((l) => ({
           MaSP: l.product._id,
           MaSPCode: l.product.MaSP,
@@ -661,6 +1050,8 @@ router.post("/purchase-orders/:id/receive", requirePermission("goods-receipts", 
         MaNV: req.user.id,
         LoaiCongNo: "Nhà cung cấp",
         type: "suppliers",
+        partnerName: supplier.TenNCC,
+        TenNCC: supplier.TenNCC,
         NgayPhatSinh: ngayNhap,
         SoTien: total,
         SoTienDaTra: paidAmount,
@@ -669,11 +1060,58 @@ router.post("/purchase-orders/:id/receive", requirePermission("goods-receipts", 
         createdAt: new Date(),
       }, { session });
 
+      // UC19 & UC18: Ghi nhận thanh toán và phiếu chi nếu có trả trước
+      if (paidAmount > 0) {
+        const phuongThuc = req.body.paymentMethod || req.body.PhuongThuc || "Tiền mặt";
+        const paymentDoc = {
+          MaTT: await nextBusinessCode(getDatabase().collection("ThanhToan"), "ThanhToan"),
+          MaPN: result.insertedId,
+          MaPNCode: document.MaPN,
+          MaDDH: poId,
+          MaNCC: supplier._id,
+          TenDoiTuong: supplier.TenNCC,
+          TenKH: supplier.TenNCC,
+          LoaiThanhToan: "Chi trả NCC",
+          PhuongThuc: phuongThuc,
+          SoTien: paidAmount,
+          NgayThanhToan: ngayNhap,
+          TrangThai: "Đã thanh toán",
+          createdAt: new Date(),
+        };
+        await getDatabase().collection("ThanhToan").insertOne(paymentDoc, { session });
+
+        if (phuongThuc === "Tiền mặt") {
+          const cashVoucherDoc = {
+            MaPC: await nextBusinessCode(getDatabase().collection("PhieuChi"), "PhieuChi"),
+            NgayLap: ngayNhap,
+            NgayChi: ngayNhap,
+            NguoiNhanTien: supplier.TenNCC,
+            NguoiNhan: supplier.TenNCC,
+            DiaChi: supplier.DiaChi || "",
+            LyDo: `Thanh toán tiền hàng phiếu nhập ${document.MaPN}`,
+            SoTien: paidAmount,
+            PhuongThuc: "Tiền mặt",
+            MaPN: result.insertedId,
+            MaNCC: supplier._id,
+            TrangThai: "Đã chi",
+            NguoiLap: nguoiLap,
+            MaNV: req.user.id,
+            createdAt: new Date(),
+          };
+          await getDatabase().collection("PhieuChi").insertOne(cashVoucherDoc, { session });
+        }
+      }
+
       // Cập nhật quantityReceived trên PO items
-      const receivedNowMap = new Map(lines.map((l) => [String(l.product._id), l.quantity]));
       const updatedItems = poItems.map((item) => {
-        const pid = String(item.productId || item.MaSP || "");
-        const justReceived = receivedNowMap.get(pid) || 0;
+        const matchedLine = lines.find((l) => {
+          const pidStr = String(l.product._id);
+          const codeStr = String(l.product.MaSP || "");
+          const itemPid = String(item.productId || item.MaSP || item.id || "");
+          const itemCode = String(item.MaSPCode || item.MaSP || "");
+          return itemPid === pidStr || itemPid === codeStr || itemCode === codeStr || itemCode === pidStr;
+        });
+        const justReceived = matchedLine ? matchedLine.quantity : 0;
         return { ...item, quantityReceived: Number(item.quantityReceived || 0) + justReceived };
       });
       const totalOrdered = updatedItems.reduce((s, i) => s + Number(i.quantity || i.SoLuong || 0), 0);
@@ -702,26 +1140,331 @@ router.post("/purchase-orders/:id/receive", requirePermission("goods-receipts", 
 
 router.post("/stocktakes", requirePermission("stocktakes", "tao"), async (req, res, next) => {
   try {
-    const created = await withTransaction(async (session) => {
-      const items = [];
-    for (const line of req.body.items || []) {
-      const product = await getDatabase().collection("SanPham").findOne({ _id: id(line.productId || line.MaSP) }, { session });
-      if (!product) throw fail("Sản phẩm kiểm kê không tồn tại", 404);
-      const stock = await getDatabase().collection("TonKho").findOne({ MaSP: product._id }, { session });
-      const actual = Number(line.actual ?? line.SoLuongThucTe);
-      if (!Number.isInteger(actual) || actual < 0) throw fail("Số lượng thực tế không hợp lệ");
-      items.push({ MaSP: product._id, SoLuongHeThong: Number(stock?.SoLuongTon || 0), SoLuongThucTe: actual, ChenhLech: actual - Number(stock?.SoLuongTon || 0) });
-      await getDatabase().collection("TonKho").updateOne({ MaSP: product._id }, { $set: { SoLuongTon: actual, NgayCapNhat: today(), updatedAt: new Date() } }, { upsert: true, session });
-      await getDatabase().collection("SanPham").updateOne({ _id: product._id }, { $set: { stock: actual } }, { session });
+    const rawItems = req.body.items || req.body.details || [];
+    if (!Array.isArray(rawItems) || !rawItems.length) {
+      throw fail("Phiếu kiểm kê phải có ít nhất một sản phẩm", 400);
     }
-    if (!items.length) throw fail("Phiếu kiểm kê phải có sản phẩm");
-      const document = { MaKK: await nextBusinessCode(getDatabase().collection("KiemKe"), "KiemKe"), MaNV: req.user.id, NguoiLap: req.user?.fullName || req.user?.username || "Nhân viên", NgayKiemKe: req.body.NgayKiemKe || today(), GhiChu: req.body.note || "Kiểm kê kho", details: items, createdAt: new Date(), updatedAt: new Date() };
+
+    const items = [];
+    for (const line of rawItems) {
+      const rawProductId = line.productId || line.MaSP || line.id || line._id;
+      if (!rawProductId) throw fail("Sản phẩm kiểm kê không hợp lệ", 400);
+      const product = await getDatabase().collection("SanPham").findOne({
+        $or: [
+          ...(id(rawProductId) ? [{ _id: id(rawProductId) }] : []),
+          { MaSP: String(rawProductId) },
+          { _id: String(rawProductId) },
+        ],
+      });
+      if (!product) throw fail(`Sản phẩm kiểm kê không tồn tại: ${rawProductId}`, 404);
+
+      const stockDoc = await getDatabase().collection("TonKho").findOne({
+        $or: [{ MaSP: product._id }, { MaSP: String(product.MaSP) }],
+      });
+      const sysStock = Number(stockDoc?.SoLuongTon ?? stockDoc?.SoLuong ?? product.stock ?? 0);
+      const actualInput = line.actual ?? line.SoLuongThucTe;
+      if (actualInput === undefined || actualInput === null || actualInput === "") {
+        throw fail(`Vui lòng nhập số lượng thực tế cho sản phẩm "${product.TenSP}"`, 400);
+      }
+      const actual = Number(actualInput);
+      if (!Number.isInteger(actual) || actual < 0) {
+        throw fail(`Số lượng thực tế của "${product.TenSP}" phải là số nguyên không âm (≥ 0)`, 400);
+      }
+      const diff = actual - sysStock;
+      items.push({
+        MaSP: product._id,
+        MaSPCode: product.MaSP,
+        TenSP: product.TenSP,
+        DonViTinh: product.DonViTinh || "Cái",
+        LoaiHang: product.LoaiHang || "",
+        GiaNhap: Number(product.GiaNhap || 0),
+        GiaBan: Number(product.GiaBan || 0),
+        SoLuongHeThong: sysStock,
+        SoLuongThucTe: actual,
+        ChenhLech: diff,
+        LyDo: line.LyDo || line.reason || (diff === 0 ? "Khớp tồn kho" : diff < 0 ? "Hao hụt / thất thoát" : "Thừa kiểm kê"),
+      });
+    }
+
+    const hasDiscrepancy = items.some((it) => it.ChenhLech !== 0);
+    const initialStatus = hasDiscrepancy ? "Chờ điều chỉnh" : "Khớp hoàn toàn";
+
+    const created = await withTransaction(async (session) => {
+      const document = {
+        MaKK: await nextBusinessCode(getDatabase().collection("KiemKe"), "KiemKe"),
+        MaNV: req.user.id,
+        NguoiLap: req.user?.fullName || req.user?.username || "Thủ kho",
+        NgayKiemKe: req.body.NgayKiemKe || today(),
+        GhiChu: req.body.note || req.body.GhiChu || "Kiểm kê kho định kỳ",
+        TrangThai: initialStatus,
+        TongMatHang: items.length,
+        SoMucLech: items.filter((it) => it.ChenhLech !== 0).length,
+        TongChenhLech: items.reduce((sum, it) => sum + it.ChenhLech, 0),
+        details: items,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
       const result = await getDatabase().collection("KiemKe").insertOne(document, { session });
       await replaceDetails(getDatabase(), "CT_KiemKe", result.insertedId, document.details, session);
-      return serialize({ _id: result.insertedId, ...document });
+      return { ...serialize({ _id: result.insertedId, ...document }), _id: result.insertedId.toString() };
     });
-    res.status(201).json({ data: created, message: "Đã lưu kiểm kê và điều chỉnh tồn kho" });
-  } catch (error) { next(error); }
+
+    res.status(201).json({
+      data: created,
+      message: hasDiscrepancy
+        ? `Đã lưu phiếu kiểm kê (${created.MaKK}). Có ${created.SoMucLech} mặt hàng bị chênh lệch cần xác nhận điều chỉnh.`
+        : `Đã lưu phiếu kiểm kê (${created.MaKK}). Toàn bộ số lượng khớp hoàn toàn với hệ thống.`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// UC22: Xác nhận điều chỉnh tồn kho theo phiếu kiểm kê
+router.post("/stocktakes/:id/adjust", requirePermission("stocktakes", "sua"), async (req, res, next) => {
+  try {
+    const rawId = req.params.id;
+    const stocktake = await getDatabase().collection("KiemKe").findOne({
+      $or: [
+        ...(id(rawId) ? [{ _id: id(rawId) }] : []),
+        { MaKK: String(rawId) },
+        { id: String(rawId) },
+      ],
+    });
+    if (!stocktake) throw fail("Không tìm thấy phiếu kiểm kê", 404);
+
+    if (stocktake.TrangThai === "Đã điều chỉnh") {
+      throw fail("Phiếu kiểm kê này đã được xác nhận điều chỉnh tồn kho trước đó", 400);
+    }
+
+    let items = stocktake.details || [];
+    if (!items.length) {
+      items = await getDatabase().collection("CT_KiemKe").find({ MaKK: stocktake._id }).toArray();
+    }
+    if (!items.length) {
+      throw fail("Phiếu kiểm kê không có chi tiết sản phẩm để điều chỉnh", 400);
+    }
+
+    const reason = req.body.reason || req.body.LyDo || `Điều chỉnh tồn kho theo phiếu kiểm kê ${stocktake.MaKK}`;
+    const nguoiThucHien = req.user?.fullName || req.user?.username || "Thủ kho";
+
+    const adjustedDoc = await withTransaction(async (session) => {
+      const adjustmentLines = [];
+
+      for (const item of items) {
+        const prodId = item.MaSP;
+        const actual = Number(item.SoLuongThucTe);
+        if (!Number.isInteger(actual) || actual < 0) {
+          throw fail(`Số lượng thực tế của sản phẩm không hợp lệ: ${actual}`, 400);
+        }
+
+        // Lấy tồn trước khi điều chỉnh
+        const currentStockDoc = await getDatabase().collection("TonKho").findOne({ MaSP: prodId }, { session });
+        const beforeStock = Number(currentStockDoc?.SoLuongTon ?? currentStockDoc?.SoLuong ?? 0);
+        const diff = actual - beforeStock;
+
+        // Cập nhật TonKho (đồng bộ cả SoLuongTon và SoLuong)
+        await getDatabase().collection("TonKho").updateOne(
+          { MaSP: prodId },
+          {
+            $set: {
+              SoLuongTon: actual,
+              SoLuong: actual,
+              NgayCapNhat: today(),
+              updatedAt: new Date(),
+            },
+          },
+          { upsert: true, session }
+        );
+
+        // Cập nhật SanPham.stock
+        await getDatabase().collection("SanPham").updateOne(
+          { _id: prodId },
+          { $set: { stock: actual, updatedAt: new Date() } },
+          { session }
+        );
+
+        adjustmentLines.push({
+          MaSP: prodId,
+          MaSPCode: item.MaSPCode || "",
+          TenSP: item.TenSP || "",
+          DonViTinh: item.DonViTinh || "Cái",
+          TonTruoc: beforeStock,
+          TonSau: actual,
+          ChenhLech: diff,
+          LyDo: item.LyDo || reason,
+        });
+      }
+
+      // Cập nhật trạng thái phiếu kiểm kê
+      await getDatabase().collection("KiemKe").updateOne(
+        { _id: stocktake._id },
+        {
+          $set: {
+            TrangThai: "Đã điều chỉnh",
+            NgayDieuChinh: today(),
+            NguoiDieuChinh: nguoiThucHien,
+            LyDoDieuChinh: reason,
+            updatedAt: new Date(),
+          },
+        },
+        { session }
+      );
+
+      // Lưu nhật ký lịch sử điều chỉnh tồn kho vào collection DieuChinhKho
+      const historyDoc = {
+        MaDC: await nextBusinessCode(getDatabase().collection("DieuChinhKho"), "DieuChinhKho"),
+        MaKK: stocktake.MaKK,
+        stocktakeId: stocktake._id,
+        NgayDieuChinh: today(),
+        NguoiThucHien: nguoiThucHien,
+        MaNV: req.user.id,
+        LyDo: reason,
+        SoMatHangDieuChinh: adjustmentLines.length,
+        SoMucChenhLech: adjustmentLines.filter((l) => l.ChenhLech !== 0).length,
+        details: adjustmentLines,
+        createdAt: new Date(),
+      };
+      await getDatabase().collection("DieuChinhKho").insertOne(historyDoc, { session });
+
+      return historyDoc;
+    });
+
+    res.json({
+      data: adjustedDoc,
+      message: `Đã xác nhận điều chỉnh tồn kho thành công theo phiếu kiểm kê ${stocktake.MaKK}`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// UC22: Điều chỉnh tồn kho trực tiếp theo danh sách mặt hàng
+router.post("/inventory/adjust", requirePermission("inventory", "sua"), async (req, res, next) => {
+  try {
+    const rawItems = req.body.items || [];
+    if (!Array.isArray(rawItems) || !rawItems.length) {
+      throw fail("Danh sách sản phẩm điều chỉnh không được để trống", 400);
+    }
+
+    const reason = req.body.reason || req.body.LyDo || "Điều chỉnh tồn kho";
+    const nguoiThucHien = req.user?.fullName || req.user?.username || "Thủ kho";
+
+    const result = await withTransaction(async (session) => {
+      const adjustmentLines = [];
+      for (const line of rawItems) {
+        const rawProductId = line.productId || line.MaSP || line.id || line._id;
+        if (!rawProductId) throw fail("Sản phẩm không hợp lệ", 400);
+        const product = await getDatabase().collection("SanPham").findOne({
+          $or: [
+            ...(id(rawProductId) ? [{ _id: id(rawProductId) }] : []),
+            { MaSP: String(rawProductId) },
+            { _id: String(rawProductId) },
+          ],
+        }, { session });
+        if (!product) throw fail(`Không tìm thấy sản phẩm ${rawProductId}`, 404);
+
+        const currentStockDoc = await getDatabase().collection("TonKho").findOne({ MaSP: product._id }, { session });
+        const beforeStock = Number(currentStockDoc?.SoLuongTon ?? currentStockDoc?.SoLuong ?? product.stock ?? 0);
+
+        const targetQty = Number(line.newStock ?? line.SoLuongThucTe ?? line.actual);
+        if (!Number.isInteger(targetQty) || targetQty < 0) {
+          throw fail(`Số lượng tồn mới của "${product.TenSP}" phải là số nguyên không âm (≥ 0)`, 400);
+        }
+        const diff = targetQty - beforeStock;
+
+        await getDatabase().collection("TonKho").updateOne(
+          { MaSP: product._id },
+          {
+            $set: {
+              SoLuongTon: targetQty,
+              SoLuong: targetQty,
+              NgayCapNhat: today(),
+              updatedAt: new Date(),
+            },
+          },
+          { upsert: true, session }
+        );
+
+        await getDatabase().collection("SanPham").updateOne(
+          { _id: product._id },
+          { $set: { stock: targetQty, updatedAt: new Date() } },
+          { session }
+        );
+
+        adjustmentLines.push({
+          MaSP: product._id,
+          MaSPCode: product.MaSP,
+          TenSP: product.TenSP,
+          DonViTinh: product.DonViTinh || "Cái",
+          TonTruoc: beforeStock,
+          TonSau: targetQty,
+          ChenhLech: diff,
+          LyDo: line.reason || line.LyDo || reason,
+        });
+      }
+
+      const historyDoc = {
+        MaDC: await nextBusinessCode(getDatabase().collection("DieuChinhKho"), "DieuChinhKho"),
+        MaKK: req.body.MaKK || null,
+        stocktakeId: req.body.stocktakeId ? id(req.body.stocktakeId) : null,
+        NgayDieuChinh: today(),
+        NguoiThucHien: nguoiThucHien,
+        MaNV: req.user.id,
+        LyDo: reason,
+        SoMatHangDieuChinh: adjustmentLines.length,
+        SoMucChenhLech: adjustmentLines.filter((l) => l.ChenhLech !== 0).length,
+        details: adjustmentLines,
+        createdAt: new Date(),
+      };
+      await getDatabase().collection("DieuChinhKho").insertOne(historyDoc, { session });
+      return historyDoc;
+    });
+
+    res.status(200).json({
+      data: result,
+      message: `Đã cập nhật tồn kho thành công cho ${result.details.length} sản phẩm`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Lịch sử điều chỉnh tồn kho
+router.get("/inventory/adjustments", requirePermission("inventory", "xem"), async (_req, res, next) => {
+  try {
+    const list = await getDatabase()
+      .collection("DieuChinhKho")
+      .find()
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.json({
+      data: list.map((item) => ({
+        id: String(item._id),
+        ...item,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/stocktakes/adjustments", requirePermission("stocktakes", "xem"), async (_req, res, next) => {
+  try {
+    const list = await getDatabase()
+      .collection("DieuChinhKho")
+      .find()
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.json({
+      data: list.map((item) => ({
+        id: String(item._id),
+        ...item,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.post("/returns", requirePermission("returns", "tao"), async (req, res, next) => {
@@ -812,15 +1555,29 @@ router.get("/inventory", requirePermission("inventory", "xem"), async (_req, res
     const stocks = await getDatabase().collection("TonKho").find().toArray();
     const categories = await getDatabase().collection("LoaiHang").find().toArray();
     const catMap = new Map(categories.map((c) => [c._id.toString(), c.TenLoai]));
-    const byProduct = new Map(stocks.map((stock) => [stock.MaSP.toString(), stock]));
+    const byProduct = new Map();
+    for (const stock of stocks) {
+      if (stock.MaSP) {
+        byProduct.set(stock.MaSP.toString(), stock);
+        byProduct.set(String(stock.MaSP), stock);
+      }
+    }
+
     res.json({
       data: products.map((product) => {
         const catName = product.LoaiHang || (product.MaLoai ? catMap.get(product.MaLoai.toString()) : "") || "";
+        const stockDoc = byProduct.get(product._id.toString()) || byProduct.get(String(product.MaSP));
+        const currentStock = Number(stockDoc?.SoLuongTon ?? stockDoc?.SoLuong ?? product.stock ?? 0);
         return {
           ...serialize(product),
+          _id: product._id.toString(),
           LoaiHang: catName,
-          stock: Number(byProduct.get(product._id.toString())?.SoLuongTon ?? product.stock ?? 0),
-          stockUpdatedAt: byProduct.get(product._id.toString())?.updatedAt || byProduct.get(product._id.toString())?.NgayCapNhat || null,
+          stock: currentStock,
+          SoLuongTon: currentStock,
+          GiaNhap: Number(product.GiaNhap || 0),
+          GiaBan: Number(product.GiaBan || 0),
+          SoLuongToiThieu: Number(product.SoLuongToiThieu || 10),
+          stockUpdatedAt: stockDoc?.updatedAt || stockDoc?.NgayCapNhat || null,
         };
       }),
     });

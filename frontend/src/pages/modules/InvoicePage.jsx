@@ -13,7 +13,7 @@ import {
 import { listRecords, saveRecord } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
-import { StatusBadge } from "../../components/Badge.jsx";
+import { StatusBadge, Badge } from "../../components/Badge.jsx";
 import { ProductImage } from "../../components/ProductImage.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import { Pagination } from "../../components/Pagination.jsx";
@@ -28,23 +28,32 @@ const money = new Intl.NumberFormat("vi-VN", {
 
 export function InvoicePage({ title }) {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState("invoices"); // "invoices" | "payments"
   const [invoices, setInvoices] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [payModal, setPayModal] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [payMethod, setPayMethod] = useState("Tiền mặt");
   const [payAmount, setPayAmount] = useState(0);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("Tất cả");
+  const [payFilterMethod, setPayFilterMethod] = useState("all");
+  const [payFilterType, setPayFilterType] = useState("all"); // "all" | "thu" | "chi"
 
   // Multi-criteria filters
   const [filterCustomer, setFilterCustomer] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
+  const loadData = () => {
+    listRecords("invoices").then(setInvoices).catch(() => []);
+    listRecords("customers").then(setCustomers).catch(() => []);
+    listRecords("payments").then(setPayments).catch(() => []);
+  };
+
   useEffect(() => {
-    listRecords("invoices").then(setInvoices);
-    listRecords("customers").then(setCustomers).catch(() => {});
+    loadData();
   }, []);
 
   const visibleInvoices = invoices.filter((invoice) => {
@@ -65,17 +74,104 @@ export function InvoicePage({ title }) {
     return true;
   });
 
+  const visiblePayments = useMemo(() => {
+    return payments.filter((p) => {
+      const isChi =
+        p.LoaiThanhToan?.includes("Chi") ||
+        p.DoiTuong === "Nhà cung cấp" ||
+        Boolean(p.MaPNCode) ||
+        Boolean(p.TenNCC);
+
+      if (payFilterType === "thu" && isChi) return false;
+      if (payFilterType === "chi" && !isChi) return false;
+
+      const q = query.trim().toLowerCase();
+      const code = String(p.MaTT || p.id || "").toLowerCase();
+      const invCode = String(p.MaHDCode || p.MaHD || "").toLowerCase();
+      const receiptCode = String(p.MaPNCode || p.MaPN || "").toLowerCase();
+      const debtCode = String(p.MaCNCode || "").toLowerCase();
+      const custName = String(p.TenKH || "").toLowerCase();
+      const nccName = String(p.TenNCC || "").toLowerCase();
+      const partyName = String(p.TenDoiTuong || "").toLowerCase();
+      const typeName = String(p.LoaiThanhToan || "").toLowerCase();
+      const method = String(p.PhuongThuc || "").toLowerCase();
+
+      const matchesQuery =
+        !q ||
+        code.includes(q) ||
+        invCode.includes(q) ||
+        receiptCode.includes(q) ||
+        debtCode.includes(q) ||
+        custName.includes(q) ||
+        nccName.includes(q) ||
+        partyName.includes(q) ||
+        typeName.includes(q) ||
+        method.includes(q);
+
+      if (!matchesQuery) return false;
+
+      if (payFilterMethod !== "all" && p.PhuongThuc !== payFilterMethod) return false;
+
+      const d = String(p.NgayThanhToan || p.createdAt || "");
+      if (fromDate && d && d.slice(0, 10) < fromDate) return false;
+      if (toDate && d && d.slice(0, 10) > toDate) return false;
+      return true;
+    });
+  }, [payments, query, payFilterType, payFilterMethod, fromDate, toDate]);
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
 
   useEffect(() => {
     setPage(1);
-  }, [query, statusFilter, filterCustomer, fromDate, toDate]);
+  }, [query, statusFilter, filterCustomer, fromDate, toDate, activeTab, payFilterMethod, payFilterType]);
 
   const pagedInvoices = useMemo(() => {
     const start = (page - 1) * pageSize;
     return visibleInvoices.slice(start, start + pageSize);
   }, [visibleInvoices, page, pageSize]);
+
+  const pagedPayments = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return visiblePayments.slice(start, start + pageSize);
+  }, [visiblePayments, page, pageSize]);
+
+  const invoicePayments = useMemo(() => {
+    if (!selectedInvoice) return [];
+    return payments.filter(
+      (p) =>
+        String(p.MaHD) === String(selectedInvoice.id) ||
+        String(p.MaHD) === String(selectedInvoice._id) ||
+        String(p.MaHDCode) === String(selectedInvoice.MaHD)
+    );
+  }, [payments, selectedInvoice]);
+
+  const paymentStats = useMemo(() => {
+    let totalCount = 0;
+    let totalThu = 0;
+    let totalChi = 0;
+    let cashTotal = 0;
+    let bankTotal = 0;
+
+    for (const p of payments) {
+      const isChi =
+        p.LoaiThanhToan?.includes("Chi") ||
+        p.DoiTuong === "Nhà cung cấp" ||
+        Boolean(p.MaPNCode) ||
+        Boolean(p.TenNCC);
+      const amount = Number(p.SoTien) || 0;
+      totalCount++;
+      if (isChi) {
+        totalChi += amount;
+      } else {
+        totalThu += amount;
+      }
+      if (p.PhuongThuc === "Tiền mặt") cashTotal += amount;
+      if (p.PhuongThuc === "Chuyển khoản") bankTotal += amount;
+    }
+    const netBalance = totalThu - totalChi;
+    return { totalCount, totalThu, totalChi, netBalance, cashTotal, bankTotal };
+  }, [payments]);
 
   const totalValue = invoices.reduce((sum, invoice) => sum + Number(invoice.TongTien || 0), 0);
   const collectedValue = invoices.reduce((sum, invoice) => sum + Number(invoice.SoTienDaTra || 0), 0);
@@ -516,121 +612,369 @@ export function InvoicePage({ title }) {
         </button>
       </header>
 
-      <div className="invoice-stats">
-        <article><span>Tổng hóa đơn</span><strong>{invoices.length}</strong><small>Chứng từ đã phát sinh</small></article>
-        <article><span>Giá trị bán ra</span><strong>{money.format(totalValue)}</strong><small>Tổng giá trị hóa đơn</small></article>
-        <article><span>Đã thu</span><strong className="positive">{money.format(collectedValue)}</strong><small>Thanh toán đã ghi nhận</small></article>
-        <article><span>Còn phải thu</span><strong className="warning">{money.format(outstandingValue)}</strong><small>Cần theo dõi công nợ</small></article>
+      {/* Tab Switcher: Hóa đơn vs Lịch sử thanh toán (UC19) */}
+      <div style={{ display: "flex", gap: 10, margin: "14px 0 16px", borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab("invoices")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "9px 18px",
+            borderRadius: 8,
+            border: activeTab === "invoices" ? "2px solid var(--primary, #3d7068)" : "1px solid var(--border, #cbd5e1)",
+            background: activeTab === "invoices" ? "var(--primary-light, #e6f4f1)" : "#fff",
+            color: activeTab === "invoices" ? "var(--primary-dark, #1f433e)" : "var(--text, #334155)",
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: "pointer",
+            transition: "all .15s ease",
+          }}
+        >
+          <CreditCardIcon style={{ width: 18, height: 18 }} />
+          <span>Danh sách Hóa đơn bán hàng</span>
+          <span
+            style={{
+              padding: "2px 8px",
+              borderRadius: 12,
+              fontSize: 11.5,
+              background: activeTab === "invoices" ? "var(--primary, #3d7068)" : "#e2e8f0",
+              color: activeTab === "invoices" ? "#fff" : "#475569",
+            }}
+          >
+            {invoices.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("payments")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "9px 18px",
+            borderRadius: 8,
+            border: activeTab === "payments" ? "2px solid var(--primary, #3d7068)" : "1px solid var(--border, #cbd5e1)",
+            background: activeTab === "payments" ? "var(--primary-light, #e6f4f1)" : "#fff",
+            color: activeTab === "payments" ? "var(--primary-dark, #1f433e)" : "var(--text, #334155)",
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: "pointer",
+            transition: "all .15s ease",
+          }}
+        >
+          <BanknotesIcon style={{ width: 18, height: 18 }} />
+          <span>Lịch sử thanh toán (UC19)</span>
+          <span
+            style={{
+              padding: "2px 8px",
+              borderRadius: 12,
+              fontSize: 11.5,
+              background: activeTab === "payments" ? "var(--primary, #3d7068)" : "#e2e8f0",
+              color: activeTab === "payments" ? "#fff" : "#475569",
+            }}
+          >
+            {payments.length}
+          </span>
+        </button>
       </div>
 
-      <div className="invoice-toolbar" style={{ flexWrap: "wrap", gap: 10 }}>
-        <label className="invoice-search" style={{ flex: 1, minWidth: 240, maxWidth: 380 }}>
-          <MagnifyingGlassIcon aria-hidden="true" />
-          <input type="search" placeholder="Tìm mã hóa đơn, đơn hàng, khách hàng..." value={query} onChange={(event) => setQuery(event.target.value)} />
-        </label>
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <select
-            value={filterCustomer}
-            onChange={(e) => setFilterCustomer(e.target.value)}
-            style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
-          >
-            <option value="all">Tất cả khách hàng</option>
-            {customers.map((c) => (
-              <option value={c.id} key={c.id}>{c.HoTen}</option>
-            ))}
-          </select>
-
-          <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12.5 }}>
-            <span style={{ color: "var(--text-soft)" }}>Từ:</span>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
-            />
-            <span style={{ color: "var(--text-soft)" }}>Đến:</span>
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
-            />
+      {activeTab === "invoices" && (
+        <>
+          <div className="invoice-stats">
+            <article><span>Tổng hóa đơn</span><strong>{invoices.length}</strong><small>Chứng từ đã phát sinh</small></article>
+            <article><span>Giá trị bán ra</span><strong>{money.format(totalValue)}</strong><small>Tổng giá trị hóa đơn</small></article>
+            <article><span>Đã thu</span><strong className="positive">{money.format(collectedValue)}</strong><small>Thanh toán đã ghi nhận</small></article>
+            <article><span>Còn phải thu</span><strong className="warning">{money.format(outstandingValue)}</strong><small>Cần theo dõi công nợ</small></article>
           </div>
 
-          {(filterCustomer !== "all" || fromDate || toDate) && (
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => { setFilterCustomer("all"); setFromDate(""); setToDate(""); }}
-            >
-              Xóa lọc
-            </button>
+          <div className="invoice-toolbar" style={{ flexWrap: "wrap", gap: 10 }}>
+            <label className="invoice-search" style={{ flex: 1, minWidth: 240, maxWidth: 380 }}>
+              <MagnifyingGlassIcon aria-hidden="true" />
+              <input type="search" placeholder="Tìm mã hóa đơn, đơn hàng, khách hàng..." value={query} onChange={(event) => setQuery(event.target.value)} />
+            </label>
+
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <select
+                value={filterCustomer}
+                onChange={(e) => setFilterCustomer(e.target.value)}
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+              >
+                <option value="all">Tất cả khách hàng</option>
+                {customers.map((c) => (
+                  <option value={c.id} key={c.id}>{c.HoTen}</option>
+                ))}
+              </select>
+
+              <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12.5 }}>
+                <span style={{ color: "var(--text-soft)" }}>Từ:</span>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                />
+                <span style={{ color: "var(--text-soft)" }}>Đến:</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                />
+              </div>
+
+              {(filterCustomer !== "all" || fromDate || toDate) && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => { setFilterCustomer("all"); setFromDate(""); setToDate(""); }}
+                >
+                  Xóa lọc
+                </button>
+              )}
+            </div>
+
+            <div className="filter-chips" aria-label="Lọc trạng thái hóa đơn">
+              {["Tất cả", "Chưa thanh toán", "Thanh toán một phần", "Đã thanh toán"].map((status) => (
+                <button key={status} type="button" className={`filter-chip ${statusFilter === status ? "active" : ""}`} onClick={() => setStatusFilter(status)}>{status}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Mã hóa đơn</th>
+                  <th scope="col">Khách hàng</th>
+                  <th scope="col">Ngày lập</th>
+                  <th scope="col">Người lập phiếu</th>
+                  <th scope="col">Giá trị</th>
+                  <th scope="col">Còn phải thu</th>
+                  <th scope="col">Trạng thái</th>
+                  <th scope="col"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedInvoices.map((invoice) => (
+                  <tr key={invoice.id}>
+                    <td><button className="invoice-code" type="button" onClick={() => setSelectedInvoice(invoice)}>{invoice.MaHD || invoice.id}</button><small>{invoice.MaDHCode || invoice.MaDH || "Không có đơn hàng"}</small></td>
+                    <td>{customerFor(invoice)?.HoTen || invoice.MaKHCode || "Khách lẻ"}</td>
+                    <td>{invoice.NgayLap}</td>
+                    <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{invoice.NguoiLap || invoice.MaNVCode || "Quản trị viên"}</span></td>
+                    <td>{money.format(invoice.TongTien || 0)}</td>
+                    <td><strong>{money.format(invoice.SoTienConLai ?? invoice.TongTien ?? 0)}</strong></td>
+                    <td><StatusBadge status={invoice.TrangThai} /></td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="icon-btn" type="button" title="Xem chi tiết" aria-label="Xem chi tiết" onClick={() => setSelectedInvoice(invoice)}><EyeIcon className="ic" aria-hidden="true" /></button>
+                        {invoice.TrangThai !== "Đã thanh toán" && <button className="btn btn-accent btn-sm" type="button" onClick={() => { setPayModal(invoice); setPayAmount(Number(invoice.SoTienConLai ?? invoice.TongTien)); }}>Thu tiền</button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {!visibleInvoices.length && (
+                  <tr>
+                    <td colSpan={8} style={{ padding: 0 }}>
+                      <EmptyState
+                        icon={CreditCardIcon}
+                        title="Không tìm thấy hóa đơn"
+                        description={invoices.length ? "Không có hóa đơn nào khớp với bộ lọc tìm kiếm." : "Chưa có hóa đơn bán hàng nào phát sinh."}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {visibleInvoices.length > 0 && (
+            <Pagination
+              currentPage={page}
+              totalItems={visibleInvoices.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
           )}
-        </div>
+        </>
+      )}
 
-        <div className="filter-chips" aria-label="Lọc trạng thái hóa đơn">
-          {["Tất cả", "Chưa thanh toán", "Thanh toán một phần", "Đã thanh toán"].map((status) => (
-            <button key={status} type="button" className={`filter-chip ${statusFilter === status ? "active" : ""}`} onClick={() => setStatusFilter(status)}>{status}</button>
-          ))}
-        </div>
-      </div>
+      {activeTab === "payments" && (
+        <>
+          <div className="invoice-stats">
+            <article>
+              <span>Tổng giao dịch</span>
+              <strong>{paymentStats.totalCount}</strong>
+              <small>Lượt phát sinh ghi nhận</small>
+            </article>
+            <article>
+              <span>Tổng thu (Khách hàng)</span>
+              <strong className="positive">+{money.format(paymentStats.totalThu)}</strong>
+              <small>Thu bán hàng &amp; thu nợ KH</small>
+            </article>
+            <article>
+              <span>Tổng chi (Nhà cung cấp)</span>
+              <strong style={{ color: "#d97706" }}>-{money.format(paymentStats.totalChi)}</strong>
+              <small>Chi trả tiền hàng &amp; nợ NCC</small>
+            </article>
+            <article>
+              <span>Dòng tiền ròng</span>
+              <strong style={{ color: paymentStats.netBalance >= 0 ? "var(--success)" : "#ef4444" }}>
+                {paymentStats.netBalance >= 0 ? "+" : ""}{money.format(paymentStats.netBalance)}
+              </strong>
+              <small>Chênh lệch Thu - Chi</small>
+            </article>
+          </div>
 
-      <div className="table-shell">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Mã hóa đơn</th>
-              <th scope="col">Khách hàng</th>
-              <th scope="col">Ngày lập</th>
-              <th scope="col">Người lập phiếu</th>
-              <th scope="col">Giá trị</th>
-              <th scope="col">Còn phải thu</th>
-              <th scope="col">Trạng thái</th>
-              <th scope="col"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {pagedInvoices.map((invoice) => (
-              <tr key={invoice.id}>
-                <td><button className="invoice-code" type="button" onClick={() => setSelectedInvoice(invoice)}>{invoice.MaHD || invoice.id}</button><small>{invoice.MaDHCode || invoice.MaDH || "Không có đơn hàng"}</small></td>
-                <td>{customerFor(invoice)?.HoTen || invoice.MaKHCode || "Khách lẻ"}</td>
-                <td>{invoice.NgayLap}</td>
-                <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{invoice.NguoiLap || invoice.MaNVCode || "Quản trị viên"}</span></td>
-                <td>{money.format(invoice.TongTien || 0)}</td>
-                <td><strong>{money.format(invoice.SoTienConLai ?? invoice.TongTien ?? 0)}</strong></td>
-                <td><StatusBadge status={invoice.TrangThai} /></td>
-                <td>
-                  <div className="row-actions">
-                    <button className="icon-btn" type="button" title="Xem chi tiết" aria-label="Xem chi tiết" onClick={() => setSelectedInvoice(invoice)}><EyeIcon className="ic" aria-hidden="true" /></button>
-                    {invoice.TrangThai !== "Đã thanh toán" && <button className="btn btn-accent btn-sm" type="button" onClick={() => { setPayModal(invoice); setPayAmount(Number(invoice.SoTienConLai ?? invoice.TongTien)); }}>Thu tiền</button>}
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {!visibleInvoices.length && (
-              <tr>
-                <td colSpan={8} style={{ padding: 0 }}>
-                  <EmptyState
-                    icon={CreditCardIcon}
-                    title="Không tìm thấy hóa đơn"
-                    description={invoices.length ? "Không có hóa đơn nào khớp với bộ lọc tìm kiếm." : "Chưa có hóa đơn bán hàng nào phát sinh."}
-                  />
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          <div className="invoice-toolbar" style={{ flexWrap: "wrap", gap: 10 }}>
+            <label className="invoice-search" style={{ flex: 1, minWidth: 240, maxWidth: 380 }}>
+              <MagnifyingGlassIcon aria-hidden="true" />
+              <input
+                type="search"
+                placeholder="Tìm mã TT, hóa đơn, phiếu nhập, đối tượng..."
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
 
-      {visibleInvoices.length > 0 && (
-        <Pagination
-          currentPage={page}
-          totalItems={visibleInvoices.length}
-          pageSize={pageSize}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
-        />
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <select
+                value={payFilterType}
+                onChange={(e) => setPayFilterType(e.target.value)}
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+              >
+                <option value="all">Tất cả giao dịch (Thu &amp; Chi)</option>
+                <option value="thu">Thu từ khách hàng (+)</option>
+                <option value="chi">Chi trả nhà cung cấp (-)</option>
+              </select>
+
+              <select
+                value={payFilterMethod}
+                onChange={(e) => setPayFilterMethod(e.target.value)}
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+              >
+                <option value="all">Tất cả phương thức</option>
+                <option value="Tiền mặt">Tiền mặt</option>
+                <option value="Chuyển khoản">Chuyển khoản</option>
+              </select>
+
+              <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12.5 }}>
+                <span style={{ color: "var(--text-soft)" }}>Từ:</span>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                />
+                <span style={{ color: "var(--text-soft)" }}>Đến:</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                />
+              </div>
+
+              {(payFilterType !== "all" || payFilterMethod !== "all" || fromDate || toDate) && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => { setPayFilterType("all"); setPayFilterMethod("all"); setFromDate(""); setToDate(""); }}
+                >
+                  Xóa lọc
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col" style={{ width: 45 }}>STT</th>
+                  <th scope="col">Mã thanh toán</th>
+                  <th scope="col">Phân loại</th>
+                  <th scope="col">Chứng từ liên quan</th>
+                  <th scope="col">Đối tượng</th>
+                  <th scope="col" style={{ textAlign: "right" }}>Số tiền</th>
+                  <th scope="col">Phương thức</th>
+                  <th scope="col">Ngày thanh toán</th>
+                  <th scope="col" style={{ textAlign: "center" }}>Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedPayments.map((p, idx) => {
+                  const isChi =
+                    p.LoaiThanhToan?.includes("Chi") ||
+                    p.DoiTuong === "Nhà cung cấp" ||
+                    Boolean(p.MaPNCode) ||
+                    Boolean(p.TenNCC);
+                  const docCode = p.MaHDCode || p.MaPNCode || p.MaCNCode || p.MaHD || p.MaPN || "—";
+                  const partyName = p.TenDoiTuong || p.TenNCC || p.TenKH || (isChi ? "Nhà cung cấp" : "Khách lẻ");
+
+                  return (
+                    <tr key={p.id}>
+                      <td style={{ color: "var(--text-faint)", fontWeight: 600 }}>{(page - 1) * pageSize + idx + 1}</td>
+                      <td><span className="prod-code-badge">{p.MaTT || p.id}</span></td>
+                      <td>
+                        {isChi ? (
+                          <Badge variant="warning">{p.LoaiThanhToan || "Chi trả NCC"}</Badge>
+                        ) : (
+                          <Badge variant="green">{p.LoaiThanhToan || "Thu tiền KH"}</Badge>
+                        )}
+                      </td>
+                      <td>
+                        <strong style={{ color: isChi ? "#b45309" : "var(--primary-dark)" }}>
+                          {docCode}
+                        </strong>
+                        {p.MaCNCode && docCode !== p.MaCNCode && (
+                          <div style={{ fontSize: 11, color: "var(--text-soft)" }}>Công nợ: {p.MaCNCode}</div>
+                        )}
+                      </td>
+                      <td><strong>{partyName}</strong></td>
+                      <td style={{ textAlign: "right", fontWeight: 700, color: isChi ? "#d97706" : "var(--success)" }}>
+                        {isChi ? "-" : "+"}{money.format(p.SoTien || 0)}
+                      </td>
+                      <td>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          {p.PhuongThuc === "Tiền mặt" ? "💵" : "💳"} {p.PhuongThuc || "Tiền mặt"}
+                        </span>
+                      </td>
+                      <td>{p.NgayThanhToan || (p.createdAt ? String(p.createdAt).slice(0, 10) : "—")}</td>
+                      <td style={{ textAlign: "center" }}>
+                        <Badge variant="green">{p.TrangThai || "Thành công"}</Badge>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!visiblePayments.length && (
+                  <tr>
+                    <td colSpan={8} style={{ padding: 0 }}>
+                      <EmptyState
+                        icon={BanknotesIcon}
+                        title="Không có giao dịch thanh toán nào"
+                        description={payments.length ? "Không có giao dịch nào khớp với bộ lọc tìm kiếm." : "Chưa có giao dịch thanh toán nào phát sinh."}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {visiblePayments.length > 0 && (
+            <Pagination
+              currentPage={page}
+              totalItems={visiblePayments.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          )}
+        </>
       )}
 
       <Modal
@@ -647,9 +991,90 @@ export function InvoicePage({ title }) {
               <div><span className="eyebrow">Mẹ &amp; Bé · Hóa đơn bán hàng</span><h2>{selectedInvoice.MaHD || selectedInvoice.id}</h2><p>{selectedInvoice.NgayLap} · Đơn hàng {selectedInvoice.MaDHCode || selectedInvoice.MaDH || "—"}</p></div>
               <StatusBadge status={selectedInvoice.TrangThai} />
             </div>
-            <div className="invoice-parties"><div><span>Khách hàng</span><strong>{customerFor(selectedInvoice)?.HoTen || selectedInvoice.MaKHCode || "Khách lẻ"}</strong><small>{customerFor(selectedInvoice)?.SDT || "Chưa có số điện thoại"}</small></div><div><span>Thanh toán</span><strong>{money.format(selectedInvoice.SoTienDaTra || 0)}</strong><small>Còn lại {money.format(selectedInvoice.SoTienConLai ?? selectedInvoice.TongTien ?? 0)}</small></div></div>
-            <div className="table-shell invoice-lines"><table><thead><tr><th>Sản phẩm</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>{(selectedInvoice.details || []).map((line, index) => <tr key={`${line.MaSP || line.productId}-${index}`}><td><div style={{ display: "flex", alignItems: "center", gap: 10 }}><ProductImage src={line.HinhAnh} alt={line.TenSP || line.MaSPCode} category={line.LoaiHang} size={34} /><strong>{line.TenSP || line.MaSPCode || line.MaSP || line.productId}</strong></div></td><td>{line.SoLuong || line.quantity}</td><td>{money.format(line.DonGia || line.price || 0)}</td><td><strong>{money.format(line.ThanhTien || (line.SoLuong || line.quantity) * (line.DonGia || line.price || 0))}</strong></td></tr>)}</tbody></table></div>
+            <div className="invoice-parties">
+              <div>
+                <span>Khách hàng</span>
+                <strong>{customerFor(selectedInvoice)?.HoTen || selectedInvoice.MaKHCode || "Khách lẻ"}</strong>
+                <small>{customerFor(selectedInvoice)?.SDT || "Chưa có số điện thoại"}</small>
+              </div>
+              <div>
+                <span>Thanh toán</span>
+                <strong>{money.format(selectedInvoice.SoTienDaTra || 0)}</strong>
+                <small>Còn lại {money.format(selectedInvoice.SoTienConLai ?? selectedInvoice.TongTien ?? 0)}</small>
+              </div>
+            </div>
+            <div className="table-shell invoice-lines">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Sản phẩm</th>
+                    <th>Số lượng</th>
+                    <th>Đơn giá</th>
+                    <th>Thành tiền</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectedInvoice.details || []).map((line, index) => (
+                    <tr key={`${line.MaSP || line.productId}-${index}`}>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <ProductImage src={line.HinhAnh} alt={line.TenSP || line.MaSPCode} category={line.LoaiHang} size={34} />
+                          <strong>{line.TenSP || line.MaSPCode || line.MaSP || line.productId}</strong>
+                        </div>
+                      </td>
+                      <td>{line.SoLuong || line.quantity}</td>
+                      <td>{money.format(line.DonGia || line.price || 0)}</td>
+                      <td><strong>{money.format(line.ThanhTien || (line.SoLuong || line.quantity) * (line.DonGia || line.price || 0))}</strong></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <div className="invoice-total"><span>Tổng cộng</span><strong>{money.format(selectedInvoice.TongTien || 0)}</strong></div>
+
+            {/* Lịch sử thanh toán của hóa đơn này (UC19) */}
+            <div style={{ marginTop: 18, borderTop: "1px dashed var(--border)", paddingTop: 14 }}>
+              <h4 style={{ fontSize: 13, fontWeight: 700, color: "var(--primary-dark)", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 6 }}>
+                💳 Lịch sử thanh toán của hóa đơn (UC19):
+                <span style={{ fontSize: 11, background: "var(--primary-light)", padding: "1px 6px", borderRadius: 10 }}>
+                  {invoicePayments.length} giao dịch
+                </span>
+              </h4>
+              {invoicePayments.length > 0 ? (
+                <div className="table-shell" style={{ margin: 0 }}>
+                  <table style={{ fontSize: 12 }}>
+                    <thead>
+                      <tr>
+                        <th>Mã TT</th>
+                        <th>Ngày thanh toán</th>
+                        <th>Phương thức</th>
+                        <th style={{ textAlign: "right" }}>Số tiền</th>
+                        <th style={{ textAlign: "center" }}>Trạng thái</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invoicePayments.map((p) => (
+                        <tr key={p.id}>
+                          <td><span className="prod-code-badge">{p.MaTT || p.id}</span></td>
+                          <td>{p.NgayThanhToan || (p.createdAt ? String(p.createdAt).slice(0, 10) : "—")}</td>
+                          <td>{p.PhuongThuc || "Tiền mặt"}</td>
+                          <td style={{ textAlign: "right", fontWeight: 700, color: "var(--success)" }}>
+                            {money.format(p.SoTien || 0)}
+                          </td>
+                          <td style={{ textAlign: "center" }}>
+                            <Badge variant="green">{p.TrangThai || "Đã thanh toán"}</Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", margin: "4px 0" }}>
+                  Chưa có giao dịch thanh toán nào được ghi nhận cho hóa đơn này.
+                </p>
+              )}
+            </div>
           </div>
         )}
       </Modal>

@@ -1,18 +1,22 @@
 import { nextBusinessCode } from "../shared/businessCode.js";
 
 const roleNames = {
+  QuanTriHeThong: "Quản trị hệ thống",
   QuanLy: "Quản lý",
   KeToan: "Kế toán",
   NhanVienBanHang: "Nhân viên bán hàng",
-  NhanVienKho: "Nhân viên kho",
+  ThuKho: "Thủ kho",
+  NhanVienKho: "Thủ kho",
   NhanVienMuaHang: "Nhân viên mua hàng",
 };
 const roleCodes = {
-  QuanLy: 1,
-  NhanVienBanHang: 2,
-  NhanVienKho: 3,
-  KeToan: 4,
-  NhanVienMuaHang: 5,
+  QuanTriHeThong: 1,
+  QuanLy: 2,
+  NhanVienBanHang: 3,
+  ThuKho: 4,
+  NhanVienKho: 4,
+  KeToan: 5,
+  NhanVienMuaHang: 6,
 };
 
 export function isLockedStatus(status) {
