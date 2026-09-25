@@ -3,6 +3,8 @@ import {
   PlusIcon,
   CubeIcon,
   MagnifyingGlassIcon,
+  CalendarDaysIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, saveRecord } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
@@ -12,30 +14,13 @@ import { ProductImage } from "../../components/ProductImage.jsx";
 import { StatusBadge } from "../../components/Badge.jsx";
 import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
+import { currentUserInfo } from "../../lib/permissions.js";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
   currency: "VND",
   maximumFractionDigits: 0,
 });
-
-function currentUserInfo() {
-  try {
-    const raw = localStorage.getItem("token");
-    if (!raw) return { name: "Quản trị viên", role: "admin", display: "Quản trị viên (Admin)" };
-    const parts = raw.split(".");
-    if (parts.length >= 2) {
-      const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-      const roleMap = { admin: "Admin", accountant: "Kế toán", sales: "Thu ngân / Bán hàng", warehouse: "Thủ kho" };
-      return {
-        name: payload.HoTen || payload.Username || "Người dùng",
-        role: payload.Role || "user",
-        display: `${payload.HoTen || payload.Username || "Người dùng"} (${roleMap[payload.Role] || payload.Role || "Nhân viên"})`,
-      };
-    }
-  } catch {}
-  return { name: "Quản trị viên", role: "admin", display: "Quản trị viên (Admin)" };
-}
 
 export function ReturnPage({ title }) {
   const [products, setProducts] = useState([]);
@@ -234,7 +219,8 @@ export function ReturnPage({ title }) {
         <select
           value={filterCustomer}
           onChange={(e) => setFilterCustomer(e.target.value)}
-          style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 13, background: "#fff" }}
+          className="filter-select"
+          aria-label="Lọc theo khách hàng"
         >
           <option value="">Tất cả khách hàng</option>
           {customers.map((c) => (
@@ -244,20 +230,22 @@ export function ReturnPage({ title }) {
           ))}
         </select>
 
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-soft)" }}>
-          <span>Từ:</span>
+        <div className="erp-date-range">
+          <CalendarDaysIcon aria-hidden="true" />
+          <span className="date-label">Từ:</span>
           <input
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+            title="Từ ngày"
           />
-          <span>Đến:</span>
+          <span className="date-sep">–</span>
+          <span className="date-label">Đến:</span>
           <input
             type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
-            style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+            title="Đến ngày"
           />
         </div>
 
@@ -271,8 +259,10 @@ export function ReturnPage({ title }) {
               setToDate("");
               setQuery("");
             }}
-            style={{ fontSize: 12, padding: "6px 12px" }}
+            style={{ height: 38, padding: "0 12px", display: "inline-flex", alignItems: "center", gap: 6 }}
+            title="Xóa bộ lọc"
           >
+            <XMarkIcon style={{ width: 16, height: 16 }} />
             Xóa lọc
           </button>
         )}

@@ -1,13 +1,10 @@
 import { amountToWords } from "./amountToWords.js";
+import { getStoreConfig, DEFAULT_STORE_CONFIG, getBrandLogoUrl } from "./storeConfig.js";
 
 const money = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 
 // Thông tin đơn vị in trên đầu phiếu thu / phiếu chi (theo mẫu 01-TT, 02-TT)
-export const CASH_VOUCHER_COMPANY = {
-  name: "CÔNG TY TNHH ĐỒ GỖ TRƯỜNG GIANG",
-  address: "Số 24 Ngọc Dại, Đại Mộ, Nam Từ Liêm, Hà Nội",
-  phone: "0916.596.689 - 0967.596.698",
-};
+export const CASH_VOUCHER_COMPANY = DEFAULT_STORE_CONFIG;
 
 function esc(value) {
   return String(value ?? "")
@@ -184,22 +181,26 @@ export function buildCashVoucherHtml(model) {
     ? `<div class="cv-line"><span>Đã nhận đủ số tiền (viết bằng chữ):</span><span class="fill">${dotted(amountToWords(model.amount))}</span><span></span></div>`
     : "";
 
+  const cfg = getStoreConfig();
+
   return `<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="utf-8" />
   <title>${esc(title)} ${esc(model.number)}</title>
+  ${typeof window !== "undefined" && window.location?.origin ? `<base href="${window.location.origin}/">` : ""}
   <style>${CASH_CSS}</style>
 </head>
 <body>
   <div class="cv">
     <div class="cv-top">
       <div class="cv-brand">
-        <div class="cv-logo">TG</div>
+        <img src="${getBrandLogoUrl()}" class="cv-logo-img" alt="Logo Mẹ & Bé" style="width:46px;height:46px;object-fit:contain;flex-shrink:0;" />
         <div class="cv-company">
-          ${esc(CASH_VOUCHER_COMPANY.name)}
-          <small><strong>Địa chỉ:</strong> ${esc(CASH_VOUCHER_COMPANY.address)}</small>
-          <small><strong>Điện thoại:</strong> ${esc(CASH_VOUCHER_COMPANY.phone)}</small>
+          ${esc(cfg.brandName || cfg.name || "CỬA HÀNG MẸ & BÉ")}
+          <small><strong>Địa chỉ:</strong> ${esc(cfg.address)}</small>
+          <small><strong>Hotline:</strong> ${esc(cfg.hotline || cfg.phone)} | <strong>Email:</strong> ${esc(cfg.email)}</small>
+          <small><strong>Website:</strong> ${esc(cfg.website || "www.cuahangmebe.vn")}</small>
         </div>
       </div>
       <div class="cv-form-no">

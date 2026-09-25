@@ -12,6 +12,7 @@ export function LoginPage() {
   const [error, setError] = useState("");
 
   const demoAccounts = [
+    { label: "🛡️ Quản trị HT", user: "quantri", pass: "123456" },
     { label: "👑 Quản lý", user: "admin", pass: "123456" },
     { label: "🧮 Kế toán", user: "ketoan", pass: "123456" },
     { label: "🛒 Bán hàng", user: "banhang", pass: "123456" },
@@ -53,10 +54,14 @@ export function LoginPage() {
     <main className="login-page">
       <div className="login-card">
         <header className="login-brand">
-          <span className="brand-mark" aria-hidden="true">MB</span>
+          <img
+            src="/logo.png"
+            alt="Logo Mẹ & Bé"
+            className="login-logo-img"
+          />
           <hgroup>
-            <strong>Mẹ &amp; Bé ERP</strong>
-            <small>Hệ thống Quản lý Doanh nghiệp</small>
+            <strong>Mẹ &amp; Bé</strong>
+            <small>Hệ thống quản lý Cửa hàng Mẹ và Bé</small>
           </hgroup>
         </header>
 

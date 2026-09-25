@@ -4,6 +4,7 @@ import { getDatabase } from "../../config/mongodb.js";
 import { getCodeDefinition, nextBusinessCode } from "./businessCode.js";
 import { replaceDetails } from "./detailCollections.js";
 import { isLockedStatus, roleCodes } from "../auth/accountEmployee.js";
+import { recordAudit } from "../audit/audit.service.js";
 
 
 function parseId(id) {
@@ -251,10 +252,35 @@ async function serializeRecord(tableName, document) {
 export function createCrudModule(routeName, tableName) {
   const router = Router();
 
-  router.get("/", async (_req, res, next) => {
+  router.get("/", async (req, res, next) => {
     try {
-      const data = await getDatabase().collection(tableName).find().sort({ createdAt: -1 }).toArray();
-      res.json({ table: tableName, data: await Promise.all(data.map((item) => serializeRecord(tableName, item))), message: `Danh sách ${routeName}` });
+      const collection = getDatabase().collection(tableName);
+      const hasPaging = req.query.page !== undefined || req.query.limit !== undefined;
+      const total = await collection.countDocuments();
+
+      const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+      const skip = (page - 1) * limit;
+
+      let cursor = collection.find().sort({ createdAt: -1 });
+      if (hasPaging) {
+        cursor = cursor.skip(skip).limit(limit);
+      }
+      const data = await cursor.toArray();
+      const totalPages = Math.ceil(total / limit) || 1;
+
+      const serializedData = await Promise.all(data.map((item) => serializeRecord(tableName, item)));
+      res.json({
+        table: tableName,
+        data: serializedData,
+        pagination: {
+          page: hasPaging ? page : 1,
+          limit: hasPaging ? limit : total,
+          total,
+          totalPages: hasPaging ? totalPages : 1,
+        },
+        message: `Danh sách ${routeName}`,
+      });
     } catch (error) {
       next(error);
     }
@@ -422,7 +448,18 @@ export function createCrudModule(routeName, tableName) {
         );
       }
       if (tableName === "DonDatHang") await replaceDetails(getDatabase(), "CT_DonDatHang", result.insertedId, document.items || document.details);
-      if (tableName === "KhuyenMai") await replaceDetails(getDatabase(), "CT_KhuyenMai", result.insertedId, document.details || document.items);
+      recordAudit({
+        userId: req.user?.id,
+        username: req.user?.username || "system",
+        role: req.user?.role || "System",
+        action: "CREATE",
+        module: routeName,
+        entity: tableName,
+        entityId: String(result.insertedId),
+        description: `Thêm mới ${routeName}: ${document.TenSP || document.HoTen || document.TenNCC || document.TenLoai || document.MaDH || document.MaHD || result.insertedId}`,
+        metadata: { id: result.insertedId },
+        ip: req.ip,
+      });
       res.status(201).json({ table: tableName, data: await serializeRecord(tableName, { _id: result.insertedId, ...document }), message: `Đã tạo ${routeName} thành công` });
     } catch (error) {
       next(error);
@@ -462,7 +499,18 @@ export function createCrudModule(routeName, tableName) {
           { $set: update },
           { returnDocument: "after" }
         );
-        if (!result) return res.status(404).json({ message: "Không tìm thấy công nợ" });
+        recordAudit({
+          userId: req.user?.id,
+          username: req.user?.username || "system",
+          role: req.user?.role || "System",
+          action: "UPDATE",
+          module: "debts",
+          entity: "CongNo",
+          entityId: String(id),
+          description: `Cập nhật công nợ (${id})`,
+          metadata: { id: String(id), soTienConLai, trangThai },
+          ip: req.ip,
+        });
         return res.json({
           table: "CongNo",
           data: await serializeRecord("CongNo", result),
@@ -599,6 +647,19 @@ export function createCrudModule(routeName, tableName) {
           { $set: { status: isLocked ? "Đã khóa" : "Hoạt động", updatedAt: new Date() } }
         );
       }
+
+      recordAudit({
+        userId: req.user?.id,
+        username: req.user?.username || "system",
+        role: req.user?.role || "System",
+        action: "UPDATE",
+        module: routeName,
+        entity: tableName,
+        entityId: String(id),
+        description: `Cập nhật ${routeName} (${id})`,
+        metadata: { id: String(id) },
+        ip: req.ip,
+      });
       res.json({ table: tableName, data: await serializeRecord(tableName, result), message: `Đã cập nhật ${routeName} thành công` });
     } catch (error) {
       next(error);
@@ -740,6 +801,18 @@ export function createCrudModule(routeName, tableName) {
 
       const result = await db.collection(tableName).deleteOne({ _id: id });
       if (!result.deletedCount) return res.status(404).json({ message: `Không tìm thấy ${routeName}` });
+      recordAudit({
+        userId: req.user?.id,
+        username: req.user?.username || "system",
+        role: req.user?.role || "System",
+        action: "DELETE",
+        module: routeName,
+        entity: tableName,
+        entityId: String(id),
+        description: `Xóa ${routeName} (${id})`,
+        metadata: { id: String(id) },
+        ip: req.ip,
+      });
       res.json({ table: tableName, id: req.params.id, softDeleted: false, message: `Đã xóa ${routeName} thành công.` });
     } catch (error) {
       next(error);

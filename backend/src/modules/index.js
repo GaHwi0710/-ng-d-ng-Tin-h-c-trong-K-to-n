@@ -4,12 +4,18 @@ import reportsRouter from "./reports/reports.route.js";
 import businessRouter from "./business/business.route.js";
 import accountsRouter from "./accounts/accounts.route.js";
 import rolesRouter from "./roles/roles.route.js";
+import auditRouter from "./audit/audit.route.js";
+import backupRouter from "./backup/backup.route.js";
+import emailRouter from "./email/email.route.js";
 
 export const modules = [
   { path: "/auth", router: authRouter },
+  { path: "/email", router: emailRouter },
   { path: "", router: businessRouter },
   { path: "/admin/accounts", router: accountsRouter },
   { path: "/admin/roles", router: rolesRouter },
+  { path: "/admin", router: auditRouter },
+  { path: "/admin", router: backupRouter },
   createCrudModule("customers", "KhachHang"),
   createCrudModule("suppliers", "NhaCungCap"),
   createCrudModule("products", "SanPham"),

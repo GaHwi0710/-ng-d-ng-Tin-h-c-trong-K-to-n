@@ -5,14 +5,20 @@ import { isLockedStatus } from "../../modules/auth/accountEmployee.js";
 const secret = process.env.JWT_SECRET || "baby-shop-development-secret";
 
 export async function requireAuth(req, res, next) {
+  let tokenStr = "";
   const header = req.headers.authorization;
+  if (header?.startsWith("Bearer ")) {
+    tokenStr = header.slice(7);
+  } else if (req.query?.token) {
+    tokenStr = String(req.query.token);
+  }
 
-  if (!header?.startsWith("Bearer ")) {
+  if (!tokenStr) {
     return res.status(401).json({ message: "Missing access token" });
   }
 
   try {
-    req.user = jwt.verify(header.slice(7), secret);
+    req.user = jwt.verify(tokenStr, secret);
     
     // Kiểm tra ngay xem tài khoản có bị khóa trong CSDL hay không
     if (req.user?.username) {

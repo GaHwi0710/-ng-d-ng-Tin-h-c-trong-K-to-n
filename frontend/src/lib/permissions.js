@@ -121,28 +121,66 @@ export function userCanAccessPath(path) {
 }
 
 export const ROLE_LABELS = {
+  admin: "Quản trị hệ thống",
   QuanTriHeThong: "Quản trị hệ thống",
   QuanLy: "Quản lý",
+  manager: "Quản lý",
   KeToan: "Kế toán",
+  accountant: "Kế toán",
   NhanVienBanHang: "Nhân viên bán hàng",
+  sales: "Nhân viên bán hàng",
   ThuKho: "Thủ kho",
+  warehouse: "Thủ kho",
   NhanVienKho: "Thủ kho",
   NhanVienMuaHang: "Nhân viên mua hàng",
+  purchase: "Nhân viên mua hàng",
 };
+
+/**
+ * Safely decodes base64-encoded UTF-8 strings (such as JWT payloads)
+ * without corrupting multi-byte characters like Vietnamese accents.
+ */
+export function decodeJwtPayload(token) {
+  try {
+    if (!token) return null;
+    const parts = String(token).split(".");
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const binary = atob(base64);
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    const decoded = new TextDecoder("utf-8").decode(bytes);
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+}
 
 export function currentUserInfo() {
   try {
-    const user = JSON.parse(localStorage.getItem("baby-shop-user") || "{}");
-    const roleName = ROLE_LABELS[user.role] || user.role || "Nhân viên";
+    let user = JSON.parse(localStorage.getItem("baby-shop-user") || "null");
+    if (!user || (!user.fullName && !user.name)) {
+      const rawToken = localStorage.getItem("token") || localStorage.getItem("baby-shop-token");
+      const payload = decodeJwtPayload(rawToken);
+      if (payload) {
+        user = {
+          fullName: payload.HoTen || payload.fullName || payload.name,
+          username: payload.Username || payload.username || payload.sub,
+          role: payload.Role || payload.role,
+        };
+      }
+    }
+    const roleKey = user?.role || "admin";
+    const roleName = ROLE_LABELS[roleKey] || roleKey || "Quản trị viên";
+    const name = user?.fullName || user?.name || user?.username || "Quản trị viên";
     return {
-      name: user.fullName || user.username || "Nhân viên",
-      role: user.role || "",
+      name,
+      role: roleKey,
       roleName,
-      username: user.username || "",
-      display: `${user.fullName || user.username || "Nhân viên"} · ${roleName}`,
+      username: user?.username || "admin",
+      display: `${name} (${roleName})`,
     };
   } catch {
-    return { name: "Nhân viên", roleName: "Nhân viên", display: "Nhân viên" };
+    return { name: "Quản trị viên", role: "admin", roleName: "Quản trị hệ thống", display: "Quản trị viên (Quản trị hệ thống)" };
   }
 }
 

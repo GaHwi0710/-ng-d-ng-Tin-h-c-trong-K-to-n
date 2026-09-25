@@ -1,4 +1,9 @@
-import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronDoubleLeftIcon,
+  ChevronDoubleRightIcon,
+} from "@heroicons/react/24/outline";
 
 export function Pagination({
   currentPage = 1,
@@ -6,7 +11,7 @@ export function Pagination({
   pageSize = 10,
   onPageChange,
   onPageSizeChange,
-  pageSizeOptions = [10, 20, 50],
+  pageSizeOptions = [10, 20, 50, 100],
 }) {
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const safePage = Math.min(Math.max(1, currentPage), totalPages);
@@ -67,8 +72,20 @@ export function Pagination({
             type="button"
             className="erp-page-btn nav-btn"
             disabled={safePage <= 1}
+            onClick={() => onPageChange?.(1)}
+            aria-label="Trang đầu"
+            title="Về trang đầu"
+          >
+            <ChevronDoubleLeftIcon className="ic" aria-hidden="true" />
+          </button>
+
+          <button
+            type="button"
+            className="erp-page-btn nav-btn"
+            disabled={safePage <= 1}
             onClick={() => onPageChange?.(safePage - 1)}
             aria-label="Trang trước"
+            title="Trang trước"
           >
             <ChevronLeftIcon className="ic" aria-hidden="true" />
           </button>
@@ -97,8 +114,20 @@ export function Pagination({
             disabled={safePage >= totalPages}
             onClick={() => onPageChange?.(safePage + 1)}
             aria-label="Trang kế tiếp"
+            title="Trang kế tiếp"
           >
             <ChevronRightIcon className="ic" aria-hidden="true" />
+          </button>
+
+          <button
+            type="button"
+            className="erp-page-btn nav-btn"
+            disabled={safePage >= totalPages}
+            onClick={() => onPageChange?.(totalPages)}
+            aria-label="Trang cuối"
+            title="Đến trang cuối"
+          >
+            <ChevronDoubleRightIcon className="ic" aria-hidden="true" />
           </button>
         </div>
       )}

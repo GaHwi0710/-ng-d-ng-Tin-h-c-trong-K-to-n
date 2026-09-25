@@ -5,6 +5,7 @@ import { passwordMatches, hashPassword } from "./password.js";
 import { isLockedStatus } from "./accountEmployee.js";
 import { getRolePermissions } from "../shared/permissions.js";
 import { requireAuth } from "../../common/middlewares/auth.middleware.js";
+import { recordAudit } from "../audit/audit.service.js";
 
 const router = Router();
 const secret = process.env.JWT_SECRET || "baby-shop-development-secret";
@@ -91,6 +92,16 @@ router.post("/login", (req, res) => {
       permissions = null;
     }
 
+    recordAudit({
+      userId: validAccount.id,
+      username: validAccount.username,
+      role: validAccount.role,
+      action: "LOGIN",
+      module: "auth",
+      description: `Đăng nhập thành công với vai trò ${roleName || validAccount.role}`,
+      ip: req.ip,
+    });
+
     res.json({
       token: jwt.sign(
         {
@@ -107,7 +118,15 @@ router.post("/login", (req, res) => {
   })().catch((error) => res.status(500).json({ message: error.message }));
 });
 
-router.post("/logout", (_req, res) => {
+router.post("/logout", (req, res) => {
+  recordAudit({
+    username: req.user?.username || "user",
+    role: req.user?.role || "user",
+    action: "LOGOUT",
+    module: "auth",
+    description: "Đăng xuất khỏi hệ thống",
+    ip: req.ip,
+  });
   res.json({ message: "Đăng xuất thành công" });
 });
 
@@ -189,6 +208,16 @@ const handleChangePassword = async (req, res) => {
       { _id: user._id },
       { $set: { passwordHash: newHash, updatedAt: new Date() } }
     );
+
+    recordAudit({
+      userId: req.user?.id || user._id?.toString(),
+      username: req.user?.username || user.username,
+      role: req.user?.role || user.role,
+      action: "CHANGE_PASSWORD",
+      module: "auth",
+      description: `Đổi mật khẩu tài khoản ${req.user?.username || user.username} thành công`,
+      ip: req.ip,
+    });
 
     return res.json({
       success: true,

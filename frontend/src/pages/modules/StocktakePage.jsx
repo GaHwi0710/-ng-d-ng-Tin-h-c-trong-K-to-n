@@ -10,6 +10,7 @@ import {
   MagnifyingGlassIcon,
   PlusIcon,
   PrinterIcon,
+  UserIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, postRequest, getRequest } from "../../lib/api.js";
 import { toast } from "../../components/Toast.jsx";
@@ -20,36 +21,8 @@ import { LOW_STOCK_THRESHOLD } from "../../lib/constants.js";
 import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
 import { Modal } from "../../components/Modal.jsx";
-
-function currentUserInfo() {
-  try {
-    const raw = localStorage.getItem("token") || localStorage.getItem("baby-shop-token");
-    if (!raw) return { name: "Quản trị viên", role: "admin", display: "Quản trị viên (Admin)" };
-    const parts = raw.split(".");
-    if (parts.length >= 2) {
-      const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-      const roleMap = {
-        admin: "Quản lý",
-        QuanLy: "Quản lý",
-        QuanTriHeThong: "Quản trị HT",
-        accountant: "Kế toán",
-        KeToan: "Kế toán",
-        sales: "Bán hàng",
-        NhanVienBanHang: "Bán hàng",
-        warehouse: "Thủ kho",
-        ThuKho: "Thủ kho",
-        NhanVienKho: "Thủ kho",
-        NhanVienMuaHang: "Mua hàng",
-      };
-      return {
-        name: payload.HoTen || payload.fullName || payload.username || payload.Username || "Người dùng",
-        role: payload.role || payload.Role || "user",
-        display: `${payload.HoTen || payload.fullName || payload.username || payload.Username || "Người dùng"} (${roleMap[payload.role || payload.Role] || payload.role || "Nhân viên"})`,
-      };
-    }
-  } catch {}
-  return { name: "Quản trị viên", role: "admin", display: "Quản trị viên (Admin)" };
-}
+import { currentUserInfo } from "../../lib/permissions.js";
+import { getStoreConfig, getBrandLogoUrl } from "../../lib/storeConfig.js";
 
 export function StocktakePage({ title }) {
   const [activeTab, setActiveTab] = useState("new"); // "new" | "list" | "adjustments"
@@ -139,16 +112,22 @@ export function StocktakePage({ title }) {
     return filteredProducts.slice(start, start + pageSize);
   }, [filteredProducts, page, pageSize]);
 
-  // UC21: Lưu phiếu kiểm kê (KHÔNG tự động cập nhật tồn kho)
+  // Lưu phiếu kiểm kê (KHÔNG tự động cập nhật tồn kho)
   async function submitStocktake() {
     try {
+      if (!products || !products.length) {
+        toast("Danh sách sản phẩm trống hoặc chưa tải xong. Vui lòng thử lại!");
+        return;
+      }
       const items = products.map((product) => {
+        const prodId = product.id || product._id || product.MaSP;
         const sys = Number(product.stock ?? product.SoLuongTon ?? 0);
-        const act = Number(actual[product.id] ?? sys);
+        const userVal = actual[product.id] ?? actual[product._id] ?? actual[prodId];
+        const act = userVal !== undefined && userVal !== "" ? Number(userVal) : sys;
         return {
-          productId: product.id,
-          actual: act,
-          reason: lineReasons[product.id] || "",
+          productId: prodId,
+          actual: Math.max(0, Math.round(Number.isNaN(act) ? sys : act)),
+          reason: lineReasons[product.id] || lineReasons[product._id] || lineReasons[prodId] || "",
         };
       });
 
@@ -165,17 +144,18 @@ export function StocktakePage({ title }) {
       loadData();
       setActiveTab("list");
     } catch (error) {
+      console.error("Stocktake error:", error);
       toast(error.message || "Lỗi khi lưu phiếu kiểm kê");
     }
   }
 
-  // UC22: Mở modal xác nhận điều chỉnh tồn kho cho 1 phiếu kiểm kê
+  // Mở modal xác nhận điều chỉnh tồn kho cho 1 phiếu kiểm kê
   function openAdjustModal(record) {
     setAdjustModal(record);
     setAdjustReason(`Điều chỉnh tồn kho theo phiếu kiểm kê ${record.MaKK || record.id}`);
   }
 
-  // UC22: Xác nhận cập nhật tồn kho
+  // Xác nhận cập nhật tồn kho
   async function handleConfirmAdjust() {
     if (!adjustModal) return;
     setAdjusting(true);
@@ -201,6 +181,7 @@ export function StocktakePage({ title }) {
       String(val ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c]));
     const code = record.MaKK || record.id;
     const dateStr = record.NgayKiemKe || new Date(record.createdAt || Date.now()).toLocaleDateString("vi-VN");
+    const store = getStoreConfig();
 
     const lines = (record.details || []).map((line, index) => {
       const diff = Number(line.ChenhLech || 0);
@@ -272,8 +253,16 @@ export function StocktakePage({ title }) {
   <div class="doc-container">
     <div class="doc-header">
       <div class="brand-left">
-        <h2>CỬA HÀNG MẸ &amp; BÉ BABY SHOP</h2>
-        <div class="brand-meta">Kho chính · Đ/c: Số 123 Đường Cầu Giấy, Hà Nội · Hotline: 0988.123.456</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <img src="${getBrandLogoUrl()}" alt="Logo Mẹ & Bé" style="width:38px;height:38px;object-fit:contain;" onerror="this.style.display='none'" />
+          <div>
+            <h2 style="margin:0;font-size:16px;">${escapeHtml(store.brandName || store.name || "CỬA HÀNG MẸ & BÉ")}</h2>
+            <div class="brand-meta" style="margin-top:2px;font-size:11px;line-height:1.4;">
+              <div>📍 <strong>Địa chỉ:</strong> ${escapeHtml(store.address)}</div>
+              <div>☎ <strong>Hotline:</strong> ${escapeHtml(store.hotline || store.phone)} | ✉ <strong>Email:</strong> ${escapeHtml(store.email)} | 🌐 <strong>Website:</strong> ${escapeHtml(store.website || "www.cuahangmebe.vn")}</div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="meta-right">
         <div><strong>Mã phiếu:</strong> ${escapeHtml(code)}</div>
@@ -340,16 +329,43 @@ export function StocktakePage({ title }) {
       <header className="page-header">
         <hgroup>
           <h1 id="stocktake-heading">{title}</h1>
-          <p>Đối chiếu tồn kho hệ thống với thực tế (UC21) và xác nhận điều chỉnh tồn kho (UC22).</p>
+          <p>Đối chiếu tồn kho hệ thống với thực tế và xác nhận điều chỉnh tồn kho.</p>
         </hgroup>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 13, background: "#f1f5f9", padding: "6px 12px", borderRadius: 6, color: "#475569", fontWeight: 500 }}>
-            👤 Người kiểm: <strong>{currentUserInfo().display}</strong>
-          </span>
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 14px",
+              background: "#F8FAFC",
+              border: "1px solid #E2E8F0",
+              borderRadius: 8,
+              fontSize: 13,
+              color: "#475569",
+            }}
+          >
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 22,
+                height: 22,
+                borderRadius: "50%",
+                background: "#E2E8F0",
+                color: "#334155",
+              }}
+            >
+              <UserIcon style={{ width: 13, height: 13 }} />
+            </span>
+            <span>Người kiểm:</span>
+            <strong style={{ color: "#0F172A", fontWeight: 600 }}>{currentUserInfo().display}</strong>
+          </div>
           {activeTab === "new" && (
             <button className="btn btn-primary" type="button" onClick={submitStocktake}>
               <CheckCircleIcon className="btn-icon" aria-hidden="true" />
-              Lưu kết quả kiểm kê (UC21)
+              Lưu kết quả kiểm kê
             </button>
           )}
         </div>
@@ -375,7 +391,7 @@ export function StocktakePage({ title }) {
           }}
         >
           <ClipboardDocumentCheckIcon style={{ width: 17, height: 17 }} />
-          <span>Kiểm kê kho mới (UC21)</span>
+          <span>Kiểm kê kho mới</span>
         </button>
 
         <button
@@ -417,7 +433,7 @@ export function StocktakePage({ title }) {
           }}
         >
           <AdjustmentsVerticalIcon style={{ width: 17, height: 17 }} />
-          <span>Lịch sử điều chỉnh tồn kho (UC22)</span>
+          <span>Lịch sử điều chỉnh tồn kho</span>
           <span style={{ padding: "2px 7px", borderRadius: 10, fontSize: 11, background: activeTab === "adjustments" ? "var(--primary)" : "#e2e8f0", color: activeTab === "adjustments" ? "#fff" : "#475569" }}>
             {adjustments.length}
           </span>
@@ -428,7 +444,7 @@ export function StocktakePage({ title }) {
       {loadError && <div className="alert danger" role="alert" style={{ marginBottom: 16 }}>⚠️ {loadError}</div>}
 
       {/* ============================================================== */}
-      {/* TAB 1: KIỂM KÊ KHO MỚI (UC21)                                  */}
+      {/* TAB 1: KIỂM KÊ KHO MỚI                                         */}
       {/* ============================================================== */}
       {activeTab === "new" && (
         <>
@@ -626,7 +642,7 @@ export function StocktakePage({ title }) {
           <div style={{ marginTop: 20, textAlign: "right" }}>
             <button className="btn btn-primary btn-lg" type="button" onClick={submitStocktake}>
               <CheckCircleIcon className="btn-icon" aria-hidden="true" />
-              Lưu kết quả kiểm kê (UC21)
+              Lưu kết quả kiểm kê
             </button>
           </div>
         </>
@@ -707,7 +723,7 @@ export function StocktakePage({ title }) {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 3: LỊCH SỬ ĐIỀU CHỈNH TỒN KHO (UC22)                       */}
+      {/* TAB 3: LỊCH SỬ ĐIỀU CHỈNH TỒN KHO                              */}
       {/* ============================================================== */}
       {activeTab === "adjustments" && (
         <section className="panel" style={{ marginTop: 8 }}>
@@ -768,7 +784,7 @@ export function StocktakePage({ title }) {
       )}
 
       {/* ============================================================== */}
-      {/* MODAL: XÁC NHẬN ĐIỀU CHỈNH TỒN KHO (UC22)                      */}
+      {/* MODAL: XÁC NHẬN ĐIỀU CHỈNH TỒN KHO                             */}
       {/* ============================================================== */}
       <Modal
         open={adjustModal !== null}

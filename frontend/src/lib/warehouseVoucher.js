@@ -1,4 +1,5 @@
 import { amountToWords } from "./amountToWords.js";
+import { getStoreConfig, getBrandLogoUrl } from "./storeConfig.js";
 
 const money = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 
@@ -63,13 +64,17 @@ export function buildWarehouseVoucherModel({
     ? record.LyDoNhap || (supplier ? `Nhập hàng từ ${supplier.TenNCC}` : "Nhập hàng vào kho")
     : record.LyDoXuat || record.reason || "Bán hàng cho khách";
 
+  const cfg = getStoreConfig();
+
   return {
     isReceipt,
-    company: "Cửa hàng Mẹ & Bé",
-    slogan: "Đồng hành cùng bé yêu",
-    address: "123 Nguyễn Văn Cừ, Long Biên, Hà Nội",
-    phone: "0987 654 321",
-    email: "mebe@cuahang.vn",
+    company: cfg.brandName || cfg.name || "Cửa hàng Mẹ & Bé",
+    slogan: cfg.subtitle || "Hệ thống quản lý Cửa hàng Mẹ và Bé",
+    address: cfg.address,
+    phone: cfg.phone,
+    hotline: cfg.hotline || cfg.phone,
+    email: cfg.email,
+    website: cfg.website,
     date,
     number: record.MaPN || record.MaPX || record.id || "",
     supplierName: supplier?.TenNCC || record.NguoiLienQuan || "",
@@ -319,6 +324,7 @@ export function buildWarehouseVoucherHtml(model) {
 <head>
   <meta charset="utf-8"/>
   <title>${esc(title)} - ${esc(model.number)}</title>
+  ${typeof window !== "undefined" && window.location?.origin ? `<base href="${window.location.origin}/">` : ""}
   <style>${VOUCHER_CSS}</style>
 </head>
 <body>
@@ -326,15 +332,14 @@ export function buildWarehouseVoucherHtml(model) {
     <!-- Header (Reference 1) -->
     <header class="doc-header">
       <div class="brand-left">
-        <div class="brand-logo-circle ${logoClass}">
-          ${isReceipt ? "📥" : "📤"}
-        </div>
+        <img src="${getBrandLogoUrl()}" class="voucher-logo-img" alt="Logo Mẹ & Bé" style="width:46px;height:46px;object-fit:contain;flex-shrink:0;" />
         <div class="brand-info">
           <h2>${esc(model.company)}</h2>
           <div class="slogan">${esc(model.slogan)}</div>
           <div class="brand-meta">
-            <div>📍 Địa chỉ: ${esc(model.address)}</div>
-            <div>☎ Điện thoại: ${esc(model.phone)} | ✉ Email: ${esc(model.email)}</div>
+            <div>📍 <strong>Địa chỉ:</strong> ${esc(model.address)}</div>
+            <div>☎ <strong>Hotline:</strong> ${esc(model.hotline || model.phone)} | ✉ <strong>Email:</strong> ${esc(model.email)}</div>
+            <div>🌐 <strong>Website:</strong> ${esc(model.website || "www.cuahangmebe.vn")}</div>
           </div>
         </div>
       </div>

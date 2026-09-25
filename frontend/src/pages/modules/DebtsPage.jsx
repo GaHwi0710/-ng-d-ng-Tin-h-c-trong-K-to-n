@@ -190,7 +190,7 @@ export function DebtsPage({ title, description }) {
       <header className="page-header">
         <hgroup>
           <h1 id="debts-page-heading">{title || "Quản lý Công nợ"}</h1>
-          <p>{description || "Theo dõi công nợ khách hàng (phải thu - UC15) và công nợ nhà cung cấp (phải trả)."}</p>
+          <p>{description || "Theo dõi công nợ khách hàng (phải thu) và công nợ nhà cung cấp (phải trả)."}</p>
         </hgroup>
       </header>
 
@@ -215,7 +215,7 @@ export function DebtsPage({ title, description }) {
           }}
         >
           <UserGroupIcon style={{ width: 18, height: 18 }} />
-          <span>Công nợ Khách hàng (Phải thu - UC15)</span>
+          <span>Công nợ Khách hàng (Phải thu)</span>
           <span
             style={{
               padding: "2px 8px",
@@ -282,7 +282,7 @@ export function DebtsPage({ title, description }) {
         <span>
           {activeTab === "customer" ? (
             <>
-              <strong>Lưu ý nghiệp vụ (UC15):</strong> Công nợ khách hàng được tự động sinh khi bán hàng chọn phương thức <em>Ghi nợ</em> tại quầy POS hoặc lập hóa đơn chưa thanh toán. Nhấn <strong>Thu nợ</strong> để ghi nhận thanh toán và tự động xuất Phiếu thu.
+              <strong>Lưu ý nghiệp vụ:</strong> Công nợ khách hàng được tự động sinh khi bán hàng chọn phương thức <em>Ghi nợ</em> tại quầy POS hoặc lập hóa đơn chưa thanh toán. Nhấn <strong>Thu nợ</strong> để ghi nhận thanh toán và tự động xuất Phiếu thu.
             </>
           ) : (
             <>
@@ -342,14 +342,8 @@ export function DebtsPage({ title, description }) {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid var(--border)",
-              background: "#fff",
-              fontSize: 13,
-              fontWeight: 500,
-            }}
+            className="filter-select"
+            aria-label="Lọc theo tình trạng công nợ"
           >
             <option value="all">Tất cả tình trạng</option>
             <option value="Còn nợ">Còn nợ</option>
@@ -504,7 +498,7 @@ export function DebtsPage({ title, description }) {
       {/* Modal Thu/Trả Nợ */}
       <Modal
         open={payModalOpen}
-        title={activeTab === "customer" ? "Ghi nhận thu nợ Khách hàng (UC15)" : "Ghi nhận trả nợ cho Nhà cung cấp"}
+        title={activeTab === "customer" ? "Ghi nhận thu nợ Khách hàng" : "Ghi nhận trả nợ cho Nhà cung cấp"}
         onClose={() => setPayModalOpen(false)}
         onSubmit={handleConfirmPay}
         submitLabel={paying ? "Đang xử lý..." : activeTab === "customer" ? "Xác nhận thu nợ" : "Xác nhận thanh toán"}

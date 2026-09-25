@@ -414,14 +414,8 @@ export function ProductsPage({ title, description }) {
             <select
               value={stockStatus}
               onChange={(e) => setStockStatus(e.target.value)}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid var(--border)",
-                background: "#fff",
-                fontSize: 13,
-                fontWeight: 500,
-              }}
+              className="filter-select"
+              aria-label="Lọc theo tình trạng tồn kho"
             >
               <option value="all">Tất cả tình trạng</option>
               <option value="in">Còn nhiều hàng (&gt;10)</option>
@@ -435,14 +429,8 @@ export function ProductsPage({ title, description }) {
             <select
               value={prodStatus}
               onChange={(e) => setProdStatus(e.target.value)}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid var(--border)",
-                background: "#fff",
-                fontSize: 13,
-                fontWeight: 500,
-              }}
+              className="filter-select"
+              aria-label="Lọc theo trạng thái kinh doanh"
             >
               <option value="all">Tất cả trạng thái</option>
               <option value="Đang bán">Đang bán</option>
@@ -1011,6 +999,39 @@ export function ProductsPage({ title, description }) {
                 }
                 return <span className="badge badge-green" style={{ fontWeight: 700 }}>✓ Còn hạn tốt (Còn {diffDays} ngày)</span>;
               })()}
+            </div>
+          </div>
+
+          {/* Mã vạch Barcode / SKU */}
+          <div style={{ marginTop: 12, background: "var(--surface-sunken, #f8fafc)", padding: "12px 14px", borderRadius: 8, border: "1px solid var(--border, #e2e8f0)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--text-soft)", textTransform: "uppercase", fontWeight: 600 }}>
+                Mã vạch (Barcode / SKU)
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "monospace", color: "#0F172A", marginTop: 4 }}>
+                {viewingProduct.Barcode || `893${String(viewingProduct.MaSP || viewingProduct.id).replace(/\D/g, "").padStart(9, "0") || "000000001"}`}
+              </div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <svg width="96" height="28" viewBox="0 0 96 28" aria-label="Barcode">
+                <rect x="2" y="0" width="3" height="28" fill="#0F172A" />
+                <rect x="7" y="0" width="2" height="28" fill="#0F172A" />
+                <rect x="11" y="0" width="4" height="28" fill="#0F172A" />
+                <rect x="18" y="0" width="2" height="28" fill="#0F172A" />
+                <rect x="23" y="0" width="3" height="28" fill="#0F172A" />
+                <rect x="28" y="0" width="1" height="28" fill="#0F172A" />
+                <rect x="32" y="0" width="4" height="28" fill="#0F172A" />
+                <rect x="39" y="0" width="2" height="28" fill="#0F172A" />
+                <rect x="44" y="0" width="3" height="28" fill="#0F172A" />
+                <rect x="50" y="0" width="2" height="28" fill="#0F172A" />
+                <rect x="55" y="0" width="4" height="28" fill="#0F172A" />
+                <rect x="62" y="0" width="1" height="28" fill="#0F172A" />
+                <rect x="66" y="0" width="3" height="28" fill="#0F172A" />
+                <rect x="72" y="0" width="2" height="28" fill="#0F172A" />
+                <rect x="77" y="0" width="4" height="28" fill="#0F172A" />
+                <rect x="84" y="0" width="2" height="28" fill="#0F172A" />
+                <rect x="89" y="0" width="3" height="28" fill="#0F172A" />
+              </svg>
             </div>
           </div>
 

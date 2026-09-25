@@ -11,6 +11,7 @@ import {
   ShoppingBagIcon,
   UserPlusIcon,
   PrinterIcon,
+  UserIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, saveRecord } from "../../lib/api.js";
 import { ProductImage } from "../../components/ProductImage.jsx";
@@ -21,8 +22,8 @@ import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { getMemberTier } from "./CustomersPage.jsx";
 import { getCategoryIcon } from "./ProductsPage.jsx";
-import { LOW_STOCK_THRESHOLD } from "../../lib/constants.js";
 import { currentUserInfo } from "../../lib/permissions.js";
+import { getStoreConfig, getVietQrUrl, getBrandLogoUrl } from "../../lib/storeConfig.js";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -56,6 +57,30 @@ export function SalesPOSPage({ title }) {
   const [showRedeemModalSales, setShowRedeemModalSales] = useState(false);
   const [salesRedeemCode, setSalesRedeemCode] = useState("BAC50K");
   const [paymentMethod, setPaymentMethod] = useState("Tiền mặt");
+
+  // Input refs for keyboard navigation (F2: Product Search, F4: Customer, F8: Voucher)
+  const prodSearchInputRef = useRef(null);
+  const custSearchInputRef = useRef(null);
+  const promoInputRef = useRef(null);
+
+  useEffect(() => {
+    function handlePOSKeyDown(e) {
+      if (e.key === "F2") {
+        e.preventDefault();
+        prodSearchInputRef.current?.focus();
+        prodSearchInputRef.current?.select();
+      } else if (e.key === "F4") {
+        e.preventDefault();
+        setCustDropdownOpen(true);
+        setTimeout(() => custSearchInputRef.current?.focus(), 60);
+      } else if (e.key === "F8") {
+        e.preventDefault();
+        promoInputRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", handlePOSKeyDown);
+    return () => window.removeEventListener("keydown", handlePOSKeyDown);
+  }, []);
 
   useEffect(() => {
     const loadCustomers = () => {
@@ -407,6 +432,7 @@ export function SalesPOSPage({ title }) {
     const discountVal = inv.GiamGia || 0;
     const totalVal = inv.TongTien || 0;
     const invCode = inv.MaHD || inv.id;
+    const store = getStoreConfig();
 
     printWindow.document.write(`<!doctype html>
 <html lang="vi">
@@ -564,17 +590,20 @@ export function SalesPOSPage({ title }) {
     body { width: 100%; margin: 0; }
   }
 </style>
+  ${typeof window !== "undefined" && window.location?.origin ? `<base href="${window.location.origin}/">` : ""}
 </head>
 <body>
   <div class="receipt-scallop-top"></div>
   
   <div class="receipt-header">
-    <div class="receipt-logo">👶</div>
-    <div class="receipt-brand">Cửa hàng Mẹ &amp; Bé</div>
-    <div class="receipt-slogan">Đồng hành cùng bé yêu</div>
+    <img src="${getBrandLogoUrl()}" class="receipt-logo-img" alt="Logo Mẹ & Bé" style="width:38px;height:38px;object-fit:contain;margin-bottom:4px;" onerror="this.style.display='none'" />
+    <div class="receipt-brand">${escapeHtml(store.brandName || store.name || "Cửa hàng Mẹ & Bé")}</div>
+    <div class="receipt-slogan">${escapeHtml(store.subtitle || "Hệ thống quản lý Cửa hàng Mẹ và Bé")}</div>
     <div class="receipt-meta">
-      <div>Đ/c: 123 Nguyễn Văn Cừ, Long Biên, Hà Nội</div>
-      <div>ĐT: 0987 654 321 | MST: 0109876543</div>
+      <div><strong>Địa chỉ:</strong> ${escapeHtml(store.address)}</div>
+      <div><strong>Hotline:</strong> ${escapeHtml(store.hotline || store.phone)}${store.taxCode ? ` | <strong>MST:</strong> ${escapeHtml(store.taxCode)}` : ""}</div>
+      <div><strong>Email:</strong> ${escapeHtml(store.email)}</div>
+      <div><strong>Website:</strong> ${escapeHtml(store.website || "www.cuahangmebe.vn")}</div>
     </div>
   </div>
 
@@ -656,19 +685,33 @@ export function SalesPOSPage({ title }) {
         </hgroup>
         <div
           style={{
-            background: "var(--surface-sunken, #f1f5f9)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            padding: "8px 14px",
-            fontSize: 13,
-            color: "var(--text-soft)",
-            display: "flex",
-            gap: 8,
+            display: "inline-flex",
             alignItems: "center",
+            gap: 8,
+            padding: "6px 14px",
+            background: "#F8FAFC",
+            border: "1px solid #E2E8F0",
+            borderRadius: 8,
+            fontSize: 13,
+            color: "#475569",
           }}
         >
-          <span>👤 Thu ngân:</span>
-          <strong style={{ color: "var(--primary-dark)" }}>{currentUserInfo().display}</strong>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 22,
+              height: 22,
+              borderRadius: "50%",
+              background: "#E2E8F0",
+              color: "#334155",
+            }}
+          >
+            <UserIcon style={{ width: 13, height: 13 }} />
+          </span>
+          <span>Thu ngân:</span>
+          <strong style={{ color: "#0F172A", fontWeight: 600 }}>{currentUserInfo().display}</strong>
         </div>
       </header>
 
@@ -690,15 +733,20 @@ export function SalesPOSPage({ title }) {
         {/* Product selection Catalog */}
         <div className="pos-catalog-panel">
           <div className="pos-catalog-header">
-            <div className="invoice-search" style={{ flex: 1 }}>
+            <div className="invoice-search" style={{ flex: 1, position: "relative" }}>
               <MagnifyingGlassIcon aria-hidden="true" />
               <input
+                ref={prodSearchInputRef}
                 className="search-input"
                 type="search"
-                placeholder="Tìm nhanh mặt hàng theo tên hoặc mã SP..."
+                placeholder="Tìm nhanh mặt hàng theo tên hoặc mã SP (F2)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ paddingRight: 42 }}
               />
+              <kbd className="erp-kbd" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)" }} title="Phím tắt F2">
+                F2
+              </kbd>
             </div>
           </div>
 
@@ -788,12 +836,13 @@ export function SalesPOSPage({ title }) {
               </button>
             </div>
             <div className="sales-cust-search" style={{ width: "100%", marginBottom: 10 }}>
-              <div className="sales-cust-input-wrap">
+              <div className="sales-cust-input-wrap" style={{ position: "relative" }}>
                 <MagnifyingGlassIcon style={{ width: 16, height: 16, color: "var(--text-faint)" }} />
                 <input
+                  ref={custSearchInputRef}
                   className="sales-cust-input"
                   type="text"
-                  placeholder="Tìm theo tên, SĐT, mã KH..."
+                  placeholder="Tìm theo tên, SĐT, mã KH (F4)..."
                   value={custSearchQuery}
                   onChange={e => {
                     const val = e.target.value;
@@ -804,6 +853,7 @@ export function SalesPOSPage({ title }) {
                       setCustDropdownOpen(true);
                     }
                   }}
+                  style={{ paddingRight: 40 }}
                   onFocus={() => {
                     if (custSearchQuery.trim()) {
                       setCustDropdownOpen(true);
@@ -1126,13 +1176,15 @@ export function SalesPOSPage({ title }) {
 
           {/* Promo code input */}
           <div style={{ margin: "10px 0", padding: "10px", background: "var(--surface-sunken, #f8fafc)", borderRadius: 8, border: "1px solid var(--border)" }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-soft)", display: "block", marginBottom: 6 }}>
-              🏷️ Mã khuyến mãi / Voucher giảm giá:
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-soft)", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <span>🏷️ Mã khuyến mãi / Voucher:</span>
+              <kbd className="erp-kbd" style={{ fontSize: 10 }}>F8</kbd>
             </span>
             <div style={{ display: "flex", gap: 6 }}>
               <input
+                ref={promoInputRef}
                 type="text"
-                placeholder="Nhập mã (VD: KMALL10, BAC50K)"
+                placeholder="Nhập mã (VD: KMALL10, BAC50K)..."
                 value={promoInput}
                 onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
                 style={{
@@ -1195,7 +1247,7 @@ export function SalesPOSPage({ title }) {
             </div>
           )}
 
-          {/* Phương thức thanh toán (UC13, UC15, UC17, UC19) */}
+          {/* Phương thức thanh toán */}
           <div style={{ marginTop: 12, padding: "10px", background: "var(--surface-sunken, #f8fafc)", borderRadius: 8, border: "1px solid var(--border)" }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-soft)", display: "block", marginBottom: 6 }}>
               💳 Phương thức thanh toán:
@@ -1240,6 +1292,28 @@ export function SalesPOSPage({ title }) {
               <small style={{ color: "#d97706", fontWeight: 600, display: "block", marginTop: 6, fontSize: 11.5 }}>
                 ℹ️ Đơn hàng sẽ được ghi nợ vào công nợ của khách hàng {selectedCustomer?.HoTen}
               </small>
+            )}
+            {paymentMethod === "Chuyển khoản" && (
+              <div style={{ marginTop: 10, padding: 12, background: "#ffffff", borderRadius: 8, border: "1px solid #cbd5e1", textAlign: "center" }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "var(--primary-dark)", display: "block", marginBottom: 6 }}>
+                  📱 Quét mã VietQR để thanh toán:
+                </span>
+                <div style={{ display: "inline-block", background: "#f8fafc", padding: 6, borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                  <img
+                    src={getVietQrUrl({
+                      amount: finalTotal,
+                      content: `POS ${selectedCustomer?.HoTen || "KHACH LE"}`,
+                    })}
+                    alt="VietQR Code"
+                    style={{ width: 140, height: 140, objectFit: "contain", display: "block", margin: "0 auto" }}
+                  />
+                </div>
+                <div style={{ fontSize: 11.5, color: "#475569", marginTop: 6, lineHeight: 1.4 }}>
+                  <div>Ngân hàng: <strong>{getStoreConfig().bankName || "MB Bank"}</strong></div>
+                  <div>Số TK: <strong>{getStoreConfig().bankAccount}</strong></div>
+                  <div>Số tiền: <strong style={{ color: "var(--primary)" }}>{money.format(finalTotal)}</strong></div>
+                </div>
+              </div>
             )}
             {paymentMethod === "Tiền mặt" && (
               <small style={{ color: "#16a34a", fontWeight: 600, display: "block", marginTop: 6, fontSize: 11.5 }}>

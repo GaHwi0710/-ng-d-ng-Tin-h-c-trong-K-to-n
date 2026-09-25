@@ -9,6 +9,10 @@ import {
   BanknotesIcon,
   CheckCircleIcon,
   ClockIcon,
+  CalendarDaysIcon,
+  XMarkIcon,
+  EnvelopeIcon,
+  QrCodeIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, saveRecord } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
@@ -19,6 +23,7 @@ import { StatCard } from "../../components/StatCard.jsx";
 import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
 import { amountToWords } from "../../lib/amountToWords.js";
+import { getStoreConfig, getVietQrUrl, getBrandLogoUrl } from "../../lib/storeConfig.js";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -45,6 +50,11 @@ export function InvoicePage({ title }) {
   const [filterCustomer, setFilterCustomer] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+
+  // Bonus 8: Email Invoice modal
+  const [emailModalInvoice, setEmailModalInvoice] = useState(null);
+  const [customerEmailInput, setCustomerEmailInput] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   const loadData = () => {
     listRecords("invoices").then(setInvoices).catch(() => []);
@@ -202,6 +212,7 @@ export function InvoicePage({ title }) {
     const isPaid = invoice.TrangThai === "Đã thanh toán";
     const paymentMethod = invoice.HinhThucThanhToan || invoice.paymentMethod || "Tiền mặt";
     const code = invoice.MaHD || invoice.id;
+    const store = getStoreConfig();
 
     const printWindow = window.open("", "_blank", "width=880,height=920");
     if (!printWindow) return;
@@ -448,13 +459,14 @@ export function InvoicePage({ title }) {
   <div class="doc-container">
     <header class="doc-header">
       <div class="brand-left">
-        <div class="brand-logo-circle">👶</div>
+        <img src="${getBrandLogoUrl()}" alt="Logo Mẹ & Bé" style="width:44px;height:44px;object-fit:contain;flex-shrink:0;" onerror="this.style.display='none'" />
         <div class="brand-info">
-          <h2>Cửa hàng Mẹ &amp; Bé</h2>
-          <div class="slogan">Đồng hành cùng bé yêu</div>
+          <h2>${escapeHtml(store.brandName || store.name || "Cửa hàng Mẹ & Bé")}</h2>
+          <div class="slogan">${escapeHtml(store.subtitle || "Hệ thống quản lý Cửa hàng Mẹ và Bé")}</div>
           <div class="brand-meta">
-            <div>📍 Địa chỉ: 123 Nguyễn Văn Cừ, Long Biên, Hà Nội</div>
-            <div>☎ Điện thoại: 0987 654 321 | ✉ Email: mebe@cuahang.vn</div>
+            <div>📍 <strong>Địa chỉ:</strong> ${escapeHtml(store.address)}</div>
+            <div>☎ <strong>Hotline:</strong> ${escapeHtml(store.hotline || store.phone)}${store.taxCode ? ` | MST: ${escapeHtml(store.taxCode)}` : ""}</div>
+            <div>✉ <strong>Email:</strong> ${escapeHtml(store.email)} | 🌐 <strong>Website:</strong> ${escapeHtml(store.website || "www.cuahangmebe.vn")}</div>
           </div>
         </div>
       </div>
@@ -600,6 +612,37 @@ export function InvoicePage({ title }) {
     }
   }
 
+  async function handleSendEmail(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!emailModalInvoice) return;
+    const email = (customerEmailInput || "").trim();
+    if (!email || !email.includes("@")) {
+      toast("Vui lòng nhập địa chỉ email hợp lệ");
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      const res = await fetch("/api/email/invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoiceId: emailModalInvoice.id || emailModalInvoice._id,
+          email,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "Gửi email thất bại");
+      }
+      toast(data.message || `Đã gửi hóa đơn điện tử đến ${email}`);
+      setEmailModalInvoice(null);
+    } catch (error) {
+      toast(error.message || "Lỗi khi gửi email hóa đơn");
+    } finally {
+      setSendingEmail(false);
+    }
+  }
+
   return (
     <section aria-labelledby="invoice-heading">
       <header className="page-header">
@@ -612,7 +655,7 @@ export function InvoicePage({ title }) {
         </button>
       </header>
 
-      {/* Tab Switcher: Hóa đơn vs Lịch sử thanh toán (UC19) */}
+      {/* Tab Switcher: Hóa đơn vs Lịch sử thanh toán */}
       <div style={{ display: "flex", gap: 10, margin: "14px 0 16px", borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
         <button
           type="button"
@@ -666,7 +709,7 @@ export function InvoicePage({ title }) {
           }}
         >
           <BanknotesIcon style={{ width: 18, height: 18 }} />
-          <span>Lịch sử thanh toán (UC19)</span>
+          <span>Lịch sử thanh toán</span>
           <span
             style={{
               padding: "2px 8px",
@@ -700,7 +743,8 @@ export function InvoicePage({ title }) {
               <select
                 value={filterCustomer}
                 onChange={(e) => setFilterCustomer(e.target.value)}
-                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+                className="filter-select"
+                aria-label="Lọc theo khách hàng"
               >
                 <option value="all">Tất cả khách hàng</option>
                 {customers.map((c) => (
@@ -708,29 +752,34 @@ export function InvoicePage({ title }) {
                 ))}
               </select>
 
-              <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12.5 }}>
-                <span style={{ color: "var(--text-soft)" }}>Từ:</span>
+              <div className="erp-date-range">
+                <CalendarDaysIcon aria-hidden="true" />
+                <span className="date-label">Từ:</span>
                 <input
                   type="date"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
-                  style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                  title="Từ ngày"
                 />
-                <span style={{ color: "var(--text-soft)" }}>Đến:</span>
+                <span className="date-sep">–</span>
+                <span className="date-label">Đến:</span>
                 <input
                   type="date"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
-                  style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                  title="Đến ngày"
                 />
               </div>
 
               {(filterCustomer !== "all" || fromDate || toDate) && (
                 <button
                   type="button"
-                  className="btn btn-sm"
+                  className="btn btn-outline btn-sm"
                   onClick={() => { setFilterCustomer("all"); setFromDate(""); setToDate(""); }}
+                  style={{ height: 38, padding: "0 12px", display: "inline-flex", alignItems: "center", gap: 6 }}
+                  title="Xóa bộ lọc"
                 >
+                  <XMarkIcon style={{ width: 16, height: 16 }} />
                   Xóa lọc
                 </button>
               )}
@@ -770,6 +819,20 @@ export function InvoicePage({ title }) {
                     <td>
                       <div className="row-actions">
                         <button className="icon-btn" type="button" title="Xem chi tiết" aria-label="Xem chi tiết" onClick={() => setSelectedInvoice(invoice)}><EyeIcon className="ic" aria-hidden="true" /></button>
+                        <button className="icon-btn" type="button" title="In hóa đơn A4" aria-label="In hóa đơn A4" onClick={() => printInvoice(invoice)}><PrinterIcon className="ic" aria-hidden="true" /></button>
+                        <button
+                          className="icon-btn"
+                          type="button"
+                          title="Gửi hóa đơn qua Email"
+                          aria-label="Gửi hóa đơn qua Email"
+                          onClick={() => {
+                            const cust = customerFor(invoice);
+                            setEmailModalInvoice(invoice);
+                            setCustomerEmailInput(cust?.Email || "");
+                          }}
+                        >
+                          <EnvelopeIcon className="ic" aria-hidden="true" />
+                        </button>
                         {invoice.TrangThai !== "Đã thanh toán" && <button className="btn btn-accent btn-sm" type="button" onClick={() => { setPayModal(invoice); setPayAmount(Number(invoice.SoTienConLai ?? invoice.TongTien)); }}>Thu tiền</button>}
                       </div>
                     </td>
@@ -844,7 +907,8 @@ export function InvoicePage({ title }) {
               <select
                 value={payFilterType}
                 onChange={(e) => setPayFilterType(e.target.value)}
-                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+                className="filter-select"
+                aria-label="Lọc theo loại giao dịch"
               >
                 <option value="all">Tất cả giao dịch (Thu &amp; Chi)</option>
                 <option value="thu">Thu từ khách hàng (+)</option>
@@ -854,36 +918,42 @@ export function InvoicePage({ title }) {
               <select
                 value={payFilterMethod}
                 onChange={(e) => setPayFilterMethod(e.target.value)}
-                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+                className="filter-select"
+                aria-label="Lọc theo phương thức"
               >
                 <option value="all">Tất cả phương thức</option>
                 <option value="Tiền mặt">Tiền mặt</option>
                 <option value="Chuyển khoản">Chuyển khoản</option>
               </select>
 
-              <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12.5 }}>
-                <span style={{ color: "var(--text-soft)" }}>Từ:</span>
+              <div className="erp-date-range">
+                <CalendarDaysIcon aria-hidden="true" />
+                <span className="date-label">Từ:</span>
                 <input
                   type="date"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
-                  style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                  title="Từ ngày"
                 />
-                <span style={{ color: "var(--text-soft)" }}>Đến:</span>
+                <span className="date-sep">–</span>
+                <span className="date-label">Đến:</span>
                 <input
                   type="date"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
-                  style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                  title="Đến ngày"
                 />
               </div>
 
               {(payFilterType !== "all" || payFilterMethod !== "all" || fromDate || toDate) && (
                 <button
                   type="button"
-                  className="btn btn-sm"
+                  className="btn btn-outline btn-sm"
                   onClick={() => { setPayFilterType("all"); setPayFilterMethod("all"); setFromDate(""); setToDate(""); }}
+                  style={{ height: 38, padding: "0 12px", display: "inline-flex", alignItems: "center", gap: 6 }}
+                  title="Xóa bộ lọc"
                 >
+                  <XMarkIcon style={{ width: 16, height: 16 }} />
                   Xóa lọc
                 </button>
               )}
@@ -989,7 +1059,22 @@ export function InvoicePage({ title }) {
           <div className="invoice-detail">
             <div className="invoice-detail-head">
               <div><span className="eyebrow">Mẹ &amp; Bé · Hóa đơn bán hàng</span><h2>{selectedInvoice.MaHD || selectedInvoice.id}</h2><p>{selectedInvoice.NgayLap} · Đơn hàng {selectedInvoice.MaDHCode || selectedInvoice.MaDH || "—"}</p></div>
-              <StatusBadge status={selectedInvoice.TrangThai} />
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => {
+                    const cust = customerFor(selectedInvoice);
+                    setEmailModalInvoice(selectedInvoice);
+                    setCustomerEmailInput(cust?.Email || "");
+                  }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                >
+                  <EnvelopeIcon style={{ width: 16, height: 16 }} />
+                  Gửi Email
+                </button>
+                <StatusBadge status={selectedInvoice.TrangThai} />
+              </div>
             </div>
             <div className="invoice-parties">
               <div>
@@ -1032,10 +1117,10 @@ export function InvoicePage({ title }) {
             </div>
             <div className="invoice-total"><span>Tổng cộng</span><strong>{money.format(selectedInvoice.TongTien || 0)}</strong></div>
 
-            {/* Lịch sử thanh toán của hóa đơn này (UC19) */}
+            {/* Lịch sử thanh toán của hóa đơn này */}
             <div style={{ marginTop: 18, borderTop: "1px dashed var(--border)", paddingTop: 14 }}>
               <h4 style={{ fontSize: 13, fontWeight: 700, color: "var(--primary-dark)", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 6 }}>
-                💳 Lịch sử thanh toán của hóa đơn (UC19):
+                💳 Lịch sử thanh toán của hóa đơn:
                 <span style={{ fontSize: 11, background: "var(--primary-light)", padding: "1px 6px", borderRadius: 10 }}>
                   {invoicePayments.length} giao dịch
                 </span>
@@ -1131,6 +1216,94 @@ export function InvoicePage({ title }) {
             <option>Ví điện tử</option>
           </select>
         </div>
+
+        {payMethod === "Chuyển khoản" && payModal && (
+          <div style={{
+            marginTop: 14,
+            padding: 12,
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+            background: "var(--surface-alt, #f8fafc)",
+            textAlign: "center"
+          }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: "var(--primary-dark)", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <QrCodeIcon style={{ width: 18, height: 18, color: "var(--primary)" }} />
+              Quét mã VietQR chuyển khoản nhanh
+            </div>
+            <img
+              src={getVietQrUrl({
+                amount: Number(payAmount) || 0,
+                content: `TT ${payModal.MaHD || payModal.id}`,
+              })}
+              alt="VietQR Thanh toán"
+              style={{
+                width: 170,
+                height: 170,
+                objectFit: "contain",
+                margin: "0 auto",
+                borderRadius: 8,
+                border: "1px solid #e2e8f0",
+                background: "#fff",
+                padding: 6,
+                display: "block",
+              }}
+            />
+            <div style={{ fontSize: 11.5, color: "var(--text-soft)", marginTop: 6 }}>
+              Số tiền: <strong style={{ color: "var(--primary-dark)" }}>{money.format(Number(payAmount) || 0)}</strong> · Nội dung: <strong>TT {payModal.MaHD || payModal.id}</strong>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Bonus 8: Modal Gửi Hóa đơn qua Email */}
+      <Modal
+        open={emailModalInvoice !== null}
+        title={`Gửi hóa đơn điện tử qua Email · ${emailModalInvoice?.MaHD || emailModalInvoice?.id || ""}`}
+        onClose={() => setEmailModalInvoice(null)}
+        onSubmit={handleSendEmail}
+        submitLabel={sendingEmail ? "Đang gửi..." : "Gửi Email ngay"}
+        loading={sendingEmail}
+      >
+        <div className="field">
+          <label htmlFor="customer-email" style={{ fontWeight: 600 }}>
+            Địa chỉ Email người nhận <span style={{ color: "#ef4444" }}>*</span>
+          </label>
+          <input
+            id="customer-email"
+            type="email"
+            placeholder="khachhang@example.com"
+            value={customerEmailInput}
+            onChange={(e) => setCustomerEmailInput(e.target.value)}
+            required
+            autoFocus
+          />
+          <p style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 4 }}>
+            Hệ thống sẽ gửi hóa đơn điện tử chi tiết bao gồm bảng sản phẩm, số tiền và thông tin cửa hàng đến email khách hàng.
+          </p>
+        </div>
+        {emailModalInvoice && (
+          <div style={{
+            padding: 12,
+            background: "var(--surface-alt, #f8fafc)",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            fontSize: 12.5,
+            marginTop: 10
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ color: "var(--text-soft)" }}>Mã hóa đơn:</span>
+              <strong>{emailModalInvoice.MaHD || emailModalInvoice.id}</strong>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ color: "var(--text-soft)" }}>Khách hàng:</span>
+              <strong>{customerFor(emailModalInvoice)?.HoTen || emailModalInvoice.MaKHCode || "Khách lẻ"}</strong>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "var(--text-soft)" }}>Tổng thanh toán:</span>
+              <strong style={{ color: "var(--primary-dark)" }}>{money.format(emailModalInvoice.TongTien || 0)}</strong>
+            </div>
+          </div>
+        )}
       </Modal>
     </section>
   );

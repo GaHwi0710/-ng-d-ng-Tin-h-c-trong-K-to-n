@@ -10,6 +10,7 @@ import {
   ShoppingCartIcon,
   ArrowDownTrayIcon,
   XMarkIcon,
+  CalendarDaysIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, saveRecord, deleteRecord, postRequest, getRequest } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
@@ -613,7 +614,8 @@ export function PurchaseOrderPage({ title }) {
             <select
               value={filterSupplier}
               onChange={(e) => setFilterSupplier(e.target.value)}
-              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+              className="filter-select"
+              aria-label="Lọc theo nhà cung cấp"
             >
               <option value="all">Tất cả nhà cung cấp</option>
               {suppliers.map((s) => (
@@ -623,7 +625,8 @@ export function PurchaseOrderPage({ title }) {
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+              className="filter-select"
+              aria-label="Lọc theo trạng thái"
             >
               <option value="all">Tất cả trạng thái</option>
               <option value="Đang chờ nhập">Đang chờ nhập</option>
@@ -634,28 +637,33 @@ export function PurchaseOrderPage({ title }) {
               <option value="Hoàn thành">Hoàn thành</option>
               <option value="Đã hủy">Đã hủy</option>
             </select>
-            <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12.5 }}>
-              <span style={{ color: "var(--text-soft)" }}>Từ:</span>
+            <div className="erp-date-range">
+              <CalendarDaysIcon aria-hidden="true" />
+              <span className="date-label">Từ:</span>
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                title="Từ ngày"
               />
-              <span style={{ color: "var(--text-soft)" }}>Đến:</span>
+              <span className="date-sep">–</span>
+              <span className="date-label">Đến:</span>
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                title="Đến ngày"
               />
             </div>
             {(filterSupplier !== "all" || filterStatus !== "all" || fromDate || toDate) && (
               <button
                 type="button"
-                className="btn btn-sm"
+                className="btn btn-outline btn-sm"
                 onClick={() => { setFilterSupplier("all"); setFilterStatus("all"); setFromDate(""); setToDate(""); }}
+                style={{ height: 38, padding: "0 12px", display: "inline-flex", alignItems: "center", gap: 6 }}
+                title="Xóa bộ lọc"
               >
+                <XMarkIcon style={{ width: 16, height: 16 }} />
                 Xóa lọc
               </button>
             )}

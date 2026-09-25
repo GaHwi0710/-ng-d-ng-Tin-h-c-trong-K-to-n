@@ -4,6 +4,7 @@ import { getDatabase, withTransaction } from "../../config/mongodb.js";
 import { requirePermission } from "../shared/permissions.js";
 import { nextBusinessCode } from "../shared/businessCode.js";
 import { replaceDetails } from "../shared/detailCollections.js";
+import { recordAudit } from "../audit/audit.service.js";
 
 const router = Router();
 const today = () => new Date().toISOString().slice(0, 10);
@@ -300,6 +301,18 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
         }
       }
       return serialize({ _id: result.insertedId, ...document });
+    });
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username || "system",
+      role: req.user?.role || "System",
+      action: "PURCHASE",
+      module: "goods-receipts",
+      entity: "PhieuNhap",
+      entityId: String(created?.id || created?._id),
+      description: `Nhập kho chứng từ ${created?.MaPN || created?.id} (${created?.TongTien || 0}đ)`,
+      metadata: { MaPN: created?.MaPN, total: created?.TongTien },
+      ip: req.ip,
     });
     res.status(201).json({ data: created, message: "Đã nhập kho và cập nhật tồn kho" });
   } catch (error) { next(error); }
@@ -624,6 +637,19 @@ router.post("/sales-orders", requirePermission("sales-orders", "tao"), async (re
       }
       return { order: serialize({ _id: orderResult.insertedId, ...order }), invoice: serialize({ _id: invoiceResult.insertedId, ...invoice }) };
     });
+
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username,
+      role: req.user?.role,
+      action: "CREATE_INVOICE",
+      module: "sales",
+      entity: "HoaDon",
+      entityId: created?.invoice?.MaHD,
+      description: `Lập hóa đơn bán lẻ ${created?.invoice?.MaHD || ""} - Tổng tiền: ${(created?.invoice?.TongTien || 0).toLocaleString("vi-VN")} đ`,
+      ip: req.ip,
+    });
+
     res.status(201).json({ data: created, message: "Đã lập đơn hàng và hóa đơn" });
   } catch (error) { next(error); }
 });
@@ -877,6 +903,19 @@ router.post("/debts/:id/pay", requirePermission("debts", "sua"), async (req, res
 
       const updatedDebt = await debtCol.findOne({ _id: debt._id }, { session });
       return serialize(updatedDebt);
+    });
+
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username || "system",
+      role: req.user?.role || "System",
+      action: "DEBT_PAYMENT",
+      module: "debts",
+      entity: "CongNo",
+      entityId: String(result?.id || result?._id || req.params.id),
+      description: `Thanh toán công nợ: ${amount.toLocaleString("vi-VN")} ₫`,
+      metadata: { debtId: req.params.id, amount },
+      ip: req.ip,
     });
 
     res.json({
@@ -1209,6 +1248,19 @@ router.post("/stocktakes", requirePermission("stocktakes", "tao"), async (req, r
       return { ...serialize({ _id: result.insertedId, ...document }), _id: result.insertedId.toString() };
     });
 
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username || "system",
+      role: req.user?.role || "System",
+      action: "STOCKTAKE",
+      module: "stocktakes",
+      entity: "KiemKe",
+      entityId: String(created?._id || created?.id),
+      description: `Lập phiếu kiểm kê kho (${created?.MaKK})`,
+      metadata: { MaKK: created?.MaKK, soMucLech: created?.SoMucLech, tongChenhLech: created?.TongChenhLech },
+      ip: req.ip,
+    });
+
     res.status(201).json({
       data: created,
       message: hasDiscrepancy
@@ -1328,6 +1380,18 @@ router.post("/stocktakes/:id/adjust", requirePermission("stocktakes", "sua"), as
       await getDatabase().collection("DieuChinhKho").insertOne(historyDoc, { session });
 
       return historyDoc;
+    });
+
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username,
+      role: req.user?.role,
+      action: "STOCK_ADJUSTMENT",
+      module: "inventory",
+      entity: "KiemKe",
+      entityId: stocktake.MaKK,
+      description: `Xác nhận điều chỉnh tồn kho theo phiếu kiểm kê ${stocktake.MaKK} (${adjustedDoc?.SoMatHangDieuChinh || 0} mặt hàng)`,
+      ip: req.ip,
     });
 
     res.json({

@@ -49,6 +49,8 @@ export const DEFAULT_ROLE_PERMISSIONS = {
   QuanTriHeThong: Object.fromEntries(PERMISSION_MODULES.map((m) => [m.key, FULL])),
   // Quản lý: Toàn quyền mọi chức năng, giám sát và xem báo cáo
   QuanLy: Object.fromEntries(PERMISSION_MODULES.map((m) => [m.key, FULL])),
+  admin: Object.fromEntries(PERMISSION_MODULES.map((m) => [m.key, FULL])),
+  manager: Object.fromEntries(PERMISSION_MODULES.map((m) => [m.key, FULL])),
 };
 
 for (const [roleKey, writeModules] of Object.entries(STAFF_WRITE)) {
@@ -102,7 +104,12 @@ export function requirePermission(moduleKey, action) {
     try {
       const roleKey = req.user?.role;
       if (!roleKey) return res.status(401).json({ message: "Chưa xác thực" });
-      if (roleKey === "QuanLy" || roleKey === "QuanTriHeThong") return next();
+      if (
+        roleKey === "QuanLy" ||
+        roleKey === "QuanTriHeThong" ||
+        roleKey === "admin" ||
+        roleKey === "manager"
+      ) return next();
       const perms = await getRolePermissions(getDatabase(), roleKey);
       if (!perms?.[moduleKey]?.includes(action)) {
         return res.status(403).json({ message: "Permission denied" });

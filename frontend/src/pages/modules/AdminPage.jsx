@@ -710,8 +710,9 @@ export function AdminPage({ title, description, path }) {
                         >
                           {isSystem ? "⚙ Vai trò hệ thống" : "✎ Vai trò tùy chỉnh"}
                         </span>
-                        <span className="cat-card-badge" style={{ background: "var(--surface-sunken, #f1f5f9)", color: "var(--text-soft)" }}>
-                          👤 {role.SoNguoiDung || 0} tài khoản
+                        <span className="cat-card-badge" style={{ background: "var(--surface-sunken, #f1f5f9)", color: "var(--text-soft)", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          <UsersIcon style={{ width: 13, height: 13 }} />
+                          {role.SoNguoiDung || 0} tài khoản
                         </span>
                       </div>
                     </div>

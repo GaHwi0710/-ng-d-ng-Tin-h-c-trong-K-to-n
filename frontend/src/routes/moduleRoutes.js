@@ -1,4 +1,4 @@
-const manager = ["QuanLy"];
+const manager = ["QuanLy", "QuanTriHeThong"];
 const sales = ["QuanLy", "NhanVienBanHang"];
 const warehouse = ["QuanLy", "NhanVienKho"];
 const salesWarehouse = ["QuanLy", "NhanVienBanHang", "NhanVienKho"];
@@ -20,10 +20,12 @@ export const moduleRoutes = [
   { path: "/returns", title: "Trả hàng", description: "Ghi nhận và xử lý hàng trả lại từ khách.", allowedRoles: sales },
   { path: "/cash-receipts", title: "Phiếu thu", description: "Ghi nhận thu tiền mặt theo mẫu số 01-TT.", allowedRoles: ["QuanLy", "KeToan", "NhanVienBanHang"] },
   { path: "/cash-payments", title: "Phiếu chi", description: "Ghi nhận chi tiền mặt theo mẫu số 02-TT.", allowedRoles: accounting },
-  { path: "/debts", title: "Công nợ NCC", description: "Theo dõi và quản lý công nợ phát sinh từ phiếu nhập kho nhà cung cấp.", allowedRoles: accounting },
+  { path: "/debts", title: "Công nợ", description: "Theo dõi và quản lý công nợ hai chiều khách hàng và nhà cung cấp.", allowedRoles: accounting },
   { path: "/promotions", title: "Khuyến mãi", description: "Tạo và quản lý chương trình khuyến mãi.", allowedRoles: ["QuanLy", "NhanVienBanHang"] },
   { path: "/reports", title: "Báo cáo", description: "Thống kê doanh thu, nhập xuất kho và công nợ.", allowedRoles: accounting },
   { path: "/admin/employees", title: "Nhân viên", description: "Quản lý thông tin nhân viên cửa hàng.", allowedRoles: manager },
   { path: "/admin/roles", title: "Phân quyền", description: "Quản lý vai trò và quyền hạn truy cập.", allowedRoles: manager },
   { path: "/admin/accounts", title: "QL người dùng", description: "Quản lý tài khoản đăng nhập và nhân sự hệ thống.", allowedRoles: manager },
+  { path: "/admin/audit-logs", title: "Nhật ký kiểm toán", description: "Theo dõi và giám sát toàn bộ hoạt động hệ thống.", allowedRoles: ["QuanLy", "QuanTriHeThong"] },
+  { path: "/admin/backup", title: "Sao lưu dữ liệu", description: "Sao lưu và tải về các snapshot cơ sở dữ liệu an toàn.", allowedRoles: ["QuanLy", "QuanTriHeThong"] },
 ];

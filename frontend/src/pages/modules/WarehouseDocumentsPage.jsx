@@ -7,6 +7,8 @@ import {
   MagnifyingGlassIcon,
   ArchiveBoxIcon,
   ArchiveBoxArrowDownIcon,
+  CalendarDaysIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, saveRecord } from "../../lib/api.js";
 import {
@@ -353,9 +355,9 @@ export function WarehouseDocumentsPage({ type, title }) {
     <section className="module-detail" aria-labelledby="doc-heading">
       <header className="document-header">
         <hgroup>
-          <h1 id="doc-heading">
-            <span className="brand-mark" aria-hidden="true" style={{ display: "inline-grid", width: 28, height: 28, fontSize: 10, borderRadius: 7, verticalAlign: "middle", marginRight: 8 }}>MB</span>
-            {title} — Mẹ &amp; Bé
+          <h1 id="doc-heading" style={{ display: "flex", alignItems: "center" }}>
+            <img src="/logo.png" alt="Logo Mẹ & Bé" style={{ width: 28, height: 28, objectFit: "contain", verticalAlign: "middle", marginRight: 10, flexShrink: 0 }} />
+            <span>{title} — Cửa hàng Mẹ &amp; Bé</span>
           </h1>
           <p>Lập chứng từ và cập nhật tồn kho theo nghiệp vụ.</p>
         </hgroup>
@@ -751,7 +753,8 @@ export function WarehouseDocumentsPage({ type, title }) {
               <select
                 value={filterSupplier}
                 onChange={(e) => setFilterSupplier(e.target.value)}
-                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+                className="filter-select"
+                aria-label="Lọc theo nhà cung cấp"
               >
                 <option value="all">Tất cả nhà cung cấp</option>
                 {suppliers.map((s) => (
@@ -762,7 +765,8 @@ export function WarehouseDocumentsPage({ type, title }) {
               <select
                 value={filterReason}
                 onChange={(e) => setFilterReason(e.target.value)}
-                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13 }}
+                className="filter-select"
+                aria-label="Lọc theo lý do xuất"
               >
                 <option value="all">Tất cả lý do xuất</option>
                 <option value="Bán hàng">Bán hàng</option>
@@ -771,28 +775,33 @@ export function WarehouseDocumentsPage({ type, title }) {
                 <option value="Điều chỉnh kiểm kê thiếu">Điều chỉnh kiểm kê thiếu</option>
               </select>
             )}
-            <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12.5 }}>
-              <span style={{ color: "var(--text-soft)" }}>Từ:</span>
+            <div className="erp-date-range">
+              <CalendarDaysIcon aria-hidden="true" />
+              <span className="date-label">Từ:</span>
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                title="Từ ngày"
               />
-              <span style={{ color: "var(--text-soft)" }}>Đến:</span>
+              <span className="date-sep">–</span>
+              <span className="date-label">Đến:</span>
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 12 }}
+                title="Đến ngày"
               />
             </div>
             {(filterSupplier !== "all" || filterReason !== "all" || fromDate || toDate || searchQuery) && (
               <button
                 type="button"
-                className="btn btn-sm"
+                className="btn btn-outline btn-sm"
                 onClick={() => { setFilterSupplier("all"); setFilterReason("all"); setFromDate(""); setToDate(""); setSearchQuery(""); }}
+                style={{ height: 38, padding: "0 12px", display: "inline-flex", alignItems: "center", gap: 6 }}
+                title="Xóa bộ lọc"
               >
+                <XMarkIcon style={{ width: 16, height: 16 }} />
                 Xóa lọc
               </button>
             )}

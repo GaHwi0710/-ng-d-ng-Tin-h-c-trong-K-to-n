@@ -23,6 +23,7 @@ import { LineChart, DonutChart, VerticalBarChart } from "../../components/Charts
 import { Badge, StatusBadge } from "../../components/Badge.jsx";
 import { SkeletonCard } from "../../components/SkeletonLoader.jsx";
 import { toast } from "../../components/Toast.jsx";
+import { exportToExcel, exportToPdf } from "../../lib/exportUtils.js";
 import { LOW_STOCK_THRESHOLD } from "../../lib/constants.js";
 
 const money = new Intl.NumberFormat("vi-VN", {
@@ -83,7 +84,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
   const [loadErrors, setLoadErrors] = useState([]);
   const [fetching, setFetching] = useState(false);
 
-  // Comprehensive Filter States (Requirement F1 & UC24)
+  // Comprehensive Filter States (Requirement F1)
   const initialPresetDates = getPresetDates("thisMonth");
   const [datePreset, setDatePreset] = useState("thisMonth");
   const [dateFrom, setDateFrom] = useState(initialPresetDates.from);
@@ -95,7 +96,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterKey, setFilterKey] = useState(0);
 
-  // UC23: Báo cáo doanh thu theo Ngày / Tháng / Năm
+  // Báo cáo doanh thu theo Ngày / Tháng / Năm
   const [revenueGroupBy, setRevenueGroupBy] = useState("day"); // "day" | "month" | "year"
   const [selectedRevenueYear, setSelectedRevenueYear] = useState(new Date().getFullYear().toString());
 
@@ -104,6 +105,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
     const dates = getPresetDates(preset);
     setDateFrom(dates.from);
     setDateTo(dates.to);
+    setFilterKey((k) => k + 1);
   }
 
   function handleResetFilters() {
@@ -211,7 +213,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
         if (cats.status === "fulfilled") setDbCategories(cats.value);
       }
     ).finally(() => setFetching(false));
-  }, [filterKey, revenueGroupBy, selectedRevenueYear]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterKey, dateFrom, dateTo, filterCategory, filterProduct, filterSupplier, filterCustomer, filterStatus, revenueGroupBy, selectedRevenueYear]);
 
   async function handlePrint(type) {
     if (!data) return;
@@ -244,13 +246,27 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
           });
           break;
         case "warehouse":
-          printReport("warehouse", { receipts, issues });
+          printReport("warehouse", { receipts, issues, dateFrom, dateTo });
           break;
         case "debts":
-          printReport("debts", { debts, customers, suppliers });
+          printReport("debts", {
+            debts,
+            customerDebts: customerDebtsList,
+            supplierDebts: supplierDebtsList,
+            customers,
+            suppliers,
+            dateFrom,
+            dateTo,
+          });
           break;
         case "cash-flow":
-          printReport("cash-flow", { cashFlow, dateFrom, dateTo });
+          printReport("cash-flow", {
+            cashFlow,
+            invoices: revenueInvoices,
+            receipts,
+            dateFrom,
+            dateTo,
+          });
           break;
       }
     } catch (err) {
@@ -261,7 +277,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
     }
   }
 
-  // --- REVENUE DATA PREPARATION (Reference 2 - Screen 1 & UC23) ---
+  // --- REVENUE DATA PREPARATION (Reference 2 - Screen 1) ---
   const revenueInvoices = useMemo(() => {
     if (data?.revenue?.data && Array.isArray(data.revenue.data) && data.revenue.data.length > 0) {
       return data.revenue.data;
@@ -311,7 +327,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
     return [...catMap.entries()].map(([label, value]) => ({ label, value }));
   }, [productRevenueMap]);
 
-  // Revenue Line / Trend Data for UC23
+  // Revenue Line / Trend Data
   const revenueChartData = useMemo(() => {
     if (revenueBreakdown.length > 0) {
       return revenueBreakdown.map((b) => ({
@@ -405,7 +421,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
 
   // --- INVENTORY DATA PREPARATION (Reference 3 - Screen 1) ---
   const inventoryProducts = useMemo(() => {
-    if (data?.inventory?.data && Array.isArray(data.inventory.data) && data.inventory.data.length > 0) {
+    if (data?.inventory?.data && Array.isArray(data.inventory.data)) {
       return data.inventory.data;
     }
     return products;
@@ -436,7 +452,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
 
   const lowStockProductsCount = data?.inventory?.lowStockCount !== undefined
     ? data.inventory.lowStockCount
-    : inventoryProducts.filter((p) => Number(p.stock || 0) <= LOW_STOCK_THRESHOLD).length;
+    : inventoryProducts.filter((p) => Number(p.TonCuoi ?? p.stock ?? 0) <= LOW_STOCK_THRESHOLD).length;
 
   const inStockRate = data?.inventory?.inStockRate !== undefined
     ? data.inventory.inStockRate
@@ -447,7 +463,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
     const map = new Map();
     for (const p of inventoryProducts) {
       const cat = p.LoaiHang || "Khác";
-      const val = Number(p.stock || 0) * Number(p.GiaNhap || p.GiaBan || 0);
+      const val = Number(p.TonCuoi ?? p.stock ?? 0) * Number(p.GiaNhap || p.GiaBan || 0);
       map.set(cat, (map.get(cat) || 0) + val);
     }
     return [...map.entries()]
@@ -544,6 +560,146 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
     "cash-flow": { title: "Báo cáo thu – chi", desc: "Theo dõi dòng tiền thu, chi và tồn quỹ theo kỳ kế toán" },
   };
 
+  function handleExportData() {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (activeTab === "revenue") {
+      const headers = ["STT", "Thời gian", "Số hóa đơn", "Doanh thu (đ)", "Đã thanh toán (đ)", "Còn nợ (đ)", "Tỷ trọng (%)"];
+      const rows = revenueBreakdown.map((item, idx) => [
+        idx + 1,
+        item.period,
+        item.ordersCount,
+        item.revenue,
+        item.paid,
+        item.unpaid,
+        totalRevenue > 0 ? ((item.revenue / totalRevenue) * 100).toFixed(1) + "%" : "0%",
+      ]);
+      const summary = ["Tổng cộng", `Toàn kỳ (${revenueBreakdown.length} kỳ)`, totalOrdersCount, totalRevenue, totalPaid, totalUnpaid, "100%"];
+      exportToExcel(`DoanhThu_${todayStr}`, `BÁO CÁO TỔNG HỢP DOANH THU THEO KỲ (${dateFrom} - ${dateTo})`, headers, rows, summary);
+      toast("Đã xuất file Excel Báo cáo Doanh thu thành công");
+    } else if (activeTab === "inventory") {
+      const headers = ["STT", "Mã SP", "Tên sản phẩm", "Loại hàng", "ĐVT", "Tồn đầu", "Nhập trong kỳ", "Xuất trong kỳ", "Tồn cuối", "Đơn giá vốn", "Giá trị tồn kho"];
+      const rows = inventoryProducts.map((p, idx) => [
+        idx + 1,
+        p.MaSP || p.code || "—",
+        p.TenSP || p.name || "—",
+        p.LoaiHang || "—",
+        p.DonViTinh || p.DVT || "Cái",
+        p.TonDau ?? 0,
+        p.NhapTrongKy ?? 0,
+        p.XuatTrongKy ?? 0,
+        p.TonCuoi ?? p.stock ?? 0,
+        p.GiaNhap || 0,
+        (p.TonCuoi ?? p.stock ?? 0) * (p.GiaNhap || 0),
+      ]);
+      const summary = ["Tổng cộng", "", `${inventoryProducts.length} mặt hàng`, "", "", totalBeginningStock, totalImportStock, totalExportStock, totalEndingStock, "", totalInventoryValue];
+      exportToExcel(`TonKho_${todayStr}`, `BÁO CÁO TỔNG HỢP TỒN KHO THEO KỲ (${dateFrom} - ${dateTo})`, headers, rows, summary);
+      toast("Đã xuất file Excel Báo cáo Tồn kho thành công");
+    } else if (activeTab === "debts") {
+      const headers = ["Mã đối tượng", "Tên đối tượng", "Loại công nợ", "Số tiền (đ)", "Đã thanh toán (đ)", "Còn lại (đ)", "Trạng thái"];
+      const allDebts = [...(customerDebtsList || []), ...(supplierDebtsList || [])];
+      const rows = allDebts.map((d) => [
+        d.MaKHCode || d.MaNCCCode || "—",
+        d.TenKH || d.TenNCC || "—",
+        d.LoaiCongNo || "—",
+        d.SoTien || 0,
+        d.SoTienDaTra || 0,
+        d.SoTienConLai || 0,
+        d.TrangThai || "—",
+      ]);
+      exportToExcel(`CongNo_${todayStr}`, `BÁO CÁO CÔNG NỢ CHI TIẾT (${dateFrom} - ${dateTo})`, headers, rows);
+      toast("Đã xuất file Excel Báo cáo Công nợ thành công");
+    } else if (activeTab === "warehouse") {
+      const headers = ["STT", "Mã chứng từ", "Loại", "Ngày lập", "Người liên quan", "Số SP", "Tổng tiền (đ)"];
+      const rows = warehouseTransactions.map((tx, idx) => [
+        idx + 1,
+        tx.code || tx.id || "—",
+        tx.typeLabel || (tx.type === "import" ? "Nhập kho" : "Xuất kho"),
+        tx.date ? String(tx.date).slice(0, 10) : "—",
+        tx.person || "—",
+        tx.detailsCount || 0,
+        tx.total || 0,
+      ]);
+      const totalWarehouseVal = warehouseTransactions.reduce((sum, tx) => sum + Number(tx.total || 0), 0);
+      const summary = ["Tổng cộng", `${warehouseTransactions.length} chứng từ`, "", "", "", "", totalWarehouseVal];
+      exportToExcel(`ChungTuKho_${todayStr}`, `BÁO CÁO NHẬP - XUẤT KHO (${dateFrom} - ${dateTo})`, headers, rows, summary);
+      toast("Đã xuất file Excel Báo cáo Nhập - Xuất kho thành công");
+    } else {
+      toast("Đã sẵn sàng xuất dữ liệu cho phân hệ này");
+    }
+  }
+
+  async function handleExportPdf() {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    try {
+      toast("Đang khởi tạo file PDF...");
+      if (activeTab === "revenue") {
+        const headers = ["STT", "Thời gian", "Số HĐ", "Doanh thu (đ)", "Đã thu (đ)", "Còn nợ (đ)", "Tỷ trọng"];
+        const rows = revenueBreakdown.map((item, idx) => [
+          idx + 1,
+          item.period,
+          item.ordersCount,
+          item.revenue,
+          item.paid,
+          item.unpaid,
+          totalRevenue > 0 ? ((item.revenue / totalRevenue) * 100).toFixed(1) + "%" : "0%",
+        ]);
+        const summary = ["Tổng cộng", `Toàn kỳ (${revenueBreakdown.length} kỳ)`, totalOrdersCount, totalRevenue, totalPaid, totalUnpaid, "100%"];
+        await exportToPdf(`BaoCaoDoanhThu_${todayStr}.pdf`, `BÁO CÁO TỔNG HỢP DOANH THU THEO KỲ (${dateFrom} - ${dateTo})`, headers, rows, summary);
+        toast("Đã xuất file PDF Báo cáo Doanh thu thành công!");
+      } else if (activeTab === "inventory") {
+        const headers = ["STT", "Mã SP", "Tên sản phẩm", "ĐVT", "Tồn đầu", "Nhập kỳ", "Xuất kỳ", "Tồn cuối", "Giá vốn (đ)", "Trị giá tồn (đ)"];
+        const rows = inventoryProducts.map((p, idx) => [
+          idx + 1,
+          p.MaSP || p.code || "—",
+          p.TenSP || p.name || "—",
+          p.DonViTinh || p.DVT || "Cái",
+          p.TonDau ?? 0,
+          p.NhapTrongKy ?? 0,
+          p.XuatTrongKy ?? 0,
+          p.TonCuoi ?? p.stock ?? 0,
+          p.GiaNhap || 0,
+          (p.TonCuoi ?? p.stock ?? 0) * (p.GiaNhap || 0),
+        ]);
+        const summary = ["Tổng cộng", "", `${inventoryProducts.length} mặt hàng`, "", totalBeginningStock, totalImportStock, totalExportStock, totalEndingStock, "", totalInventoryValue];
+        await exportToPdf(`BaoCaoTonKho_${todayStr}.pdf`, `BÁO CÁO TỔNG HỢP TỒN KHO THEO KỲ (${dateFrom} - ${dateTo})`, headers, rows, summary);
+        toast("Đã xuất file PDF Báo cáo Tồn kho thành công!");
+      } else if (activeTab === "warehouse") {
+        const headers = ["STT", "Mã chứng từ", "Loại", "Ngày lập", "Người liên quan", "Số SP", "Tổng tiền (đ)"];
+        const rows = warehouseTransactions.map((tx, idx) => [
+          idx + 1,
+          tx.code || tx.id || "—",
+          tx.typeLabel || (tx.type === "import" ? "Nhập kho" : "Xuất kho"),
+          tx.date ? String(tx.date).slice(0, 10) : "—",
+          tx.person || "—",
+          tx.detailsCount || 0,
+          tx.total || 0,
+        ]);
+        const totalWarehouseVal = warehouseTransactions.reduce((sum, tx) => sum + Number(tx.total || 0), 0);
+        const summary = ["Tổng cộng", `${warehouseTransactions.length} chứng từ`, "", "", "", "", totalWarehouseVal];
+        await exportToPdf(`BaoCaoNhapXuat_${todayStr}.pdf`, `BÁO CÁO NHẬP - XUẤT KHO (${dateFrom} - ${dateTo})`, headers, rows, summary);
+        toast("Đã xuất file PDF Báo cáo Nhập - Xuất kho thành công!");
+      } else if (activeTab === "debts") {
+        const headers = ["Mã ĐT", "Tên đối tượng", "Loại nợ", "Tổng nợ (đ)", "Đã trả (đ)", "Còn nợ (đ)", "Trạng thái"];
+        const allDebts = [...(customerDebtsList || []), ...(supplierDebtsList || [])];
+        const rows = allDebts.map((d) => [
+          d.MaKHCode || d.MaNCCCode || "—",
+          d.TenKH || d.TenNCC || "—",
+          d.LoaiCongNo || "—",
+          d.SoTien || 0,
+          d.SoTienDaTra || 0,
+          d.SoTienConLai || 0,
+          d.TrangThai || "—",
+        ]);
+        await exportToPdf(`BaoCaoCongNo_${todayStr}.pdf`, `BÁO CÁO CÔNG NỢ CHI TIẾT (${dateFrom} - ${dateTo})`, headers, rows);
+        toast("Đã xuất file PDF Báo cáo Công nợ thành công!");
+      } else {
+        toast("Đã sẵn sàng xuất PDF cho phân hệ này");
+      }
+    } catch (err) {
+      toast("Lỗi xuất PDF: " + err.message);
+    }
+  }
+
   return (
     <section aria-labelledby="report-heading">
       {/* Top Header with Breadcrumbs & Action */}
@@ -562,20 +718,44 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
           </p>
         </hgroup>
 
-        {/* Print Button */}
-        <div style={{ position: "relative" }}>
+        {/* Action Buttons: Export Excel + Export PDF + Print A4 */}
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <button
             className="btn btn-outline"
             type="button"
-            onClick={() => setPrintMenuOpen((o) => !o)}
+            onClick={handleExportData}
+            title="Xuất bảng dữ liệu hiện tại ra Excel (.xls)"
             style={{ display: "flex", alignItems: "center", gap: 8 }}
           >
-            <PrinterIcon style={{ width: 16, height: 16, color: "#475569" }} aria-hidden="true" />
-            <span>In chứng từ</span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
+            <ArrowDownTrayIcon style={{ width: 16, height: 16, color: "var(--primary)" }} aria-hidden="true" />
+            <span>Xuất Excel</span>
           </button>
+
+          <button
+            className="btn btn-outline"
+            type="button"
+            onClick={handleExportPdf}
+            title="Tải trực tiếp file báo cáo PDF (.pdf)"
+            style={{ display: "flex", alignItems: "center", gap: 8 }}
+          >
+            <DocumentTextIcon style={{ width: 16, height: 16, color: "var(--primary)" }} aria-hidden="true" />
+            <span>Xuất PDF</span>
+          </button>
+
+          {/* Print Button */}
+          <div style={{ position: "relative" }}>
+            <button
+              className="btn btn-outline"
+              type="button"
+              onClick={() => setPrintMenuOpen((o) => !o)}
+              style={{ display: "flex", alignItems: "center", gap: 8 }}
+            >
+              <PrinterIcon style={{ width: 16, height: 16, color: "#475569" }} aria-hidden="true" />
+              <span>In chứng từ</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
 
           {printMenuOpen && (
             <>
@@ -634,7 +814,8 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
             </>
           )}
         </div>
-      </header>
+      </div>
+    </header>
 
       {/* Tabs Navigation (Reference 2 & 3) */}
       <nav className="report-tab-bar" aria-label="Phân hệ báo cáo">
@@ -697,9 +878,9 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
             ))}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <CalendarDaysIcon style={{ width: 16, height: 16, color: "#64748B" }} aria-hidden="true" />
-            <span style={{ fontSize: 12, color: "#64748B" }}>Từ:</span>
+          <div className="erp-date-range">
+            <CalendarDaysIcon aria-hidden="true" />
+            <span className="date-label">Từ:</span>
             <input
               type="date"
               value={dateFrom}
@@ -707,15 +888,10 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                 setDateFrom(e.target.value);
                 setDatePreset("custom");
               }}
-              style={{
-                padding: "4px 8px",
-                fontSize: 12.5,
-                border: "1px solid #CBD5E1",
-                borderRadius: 6,
-                background: "#F8FAFC",
-              }}
+              title="Từ ngày"
             />
-            <span style={{ fontSize: 12, color: "#64748B" }}>Đến:</span>
+            <span className="date-sep">–</span>
+            <span className="date-label">Đến:</span>
             <input
               type="date"
               value={dateTo}
@@ -723,13 +899,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                 setDateTo(e.target.value);
                 setDatePreset("custom");
               }}
-              style={{
-                padding: "4px 8px",
-                fontSize: 12.5,
-                border: "1px solid #CBD5E1",
-                borderRadius: 6,
-                background: "#F8FAFC",
-              }}
+              title="Đến ngày"
             />
           </div>
         </div>
@@ -742,7 +912,8 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
-              style={{ padding: "5px 10px", fontSize: 12.5, borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff", maxWidth: 160 }}
+              className="filter-select"
+              style={{ maxWidth: 170 }}
             >
               <option value="all">Tất cả danh mục</option>
               {dbCategories.map((c) => (
@@ -757,7 +928,8 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
             <select
               value={filterProduct}
               onChange={(e) => setFilterProduct(e.target.value)}
-              style={{ padding: "5px 10px", fontSize: 12.5, borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff", maxWidth: 170 }}
+              className="filter-select"
+              style={{ maxWidth: 180 }}
             >
               <option value="all">Tất cả sản phẩm</option>
               {products.map((p) => (
@@ -772,7 +944,8 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
             <select
               value={filterSupplier}
               onChange={(e) => setFilterSupplier(e.target.value)}
-              style={{ padding: "5px 10px", fontSize: 12.5, borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff", maxWidth: 160 }}
+              className="filter-select"
+              style={{ maxWidth: 170 }}
             >
               <option value="all">Tất cả NCC</option>
               {suppliers.map((s) => (
@@ -787,7 +960,8 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
             <select
               value={filterCustomer}
               onChange={(e) => setFilterCustomer(e.target.value)}
-              style={{ padding: "5px 10px", fontSize: 12.5, borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff", maxWidth: 160 }}
+              className="filter-select"
+              style={{ maxWidth: 170 }}
             >
               <option value="all">Tất cả khách hàng</option>
               {customers.map((c) => (
@@ -802,7 +976,8 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              style={{ padding: "5px 10px", fontSize: 12.5, borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff" }}
+              className="filter-select"
+              style={{ maxWidth: 160 }}
             >
               <option value="all">Tất cả trạng thái</option>
               <option value="Đã thanh toán">Đã thanh toán</option>
@@ -842,11 +1017,11 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 1: BÁO CÁO DOANH THU (UC23 - Theo Ngày / Tháng / Năm)
+          TAB 1: BÁO CÁO DOANH THU (Theo Ngày / Tháng / Năm)
           ───────────────────────────────────────────────────────────── */}
       {activeTab === "revenue" && (
         <>
-          {/* UC23 Mode Switcher */}
+          {/* Mode Switcher */}
           <div
             style={{
               display: "flex",
@@ -863,7 +1038,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
           >
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>
-                📊 Chế độ tổng hợp UC23:
+                📊 Chế độ tổng hợp doanh thu:
               </span>
               {[
                 { id: "day", label: "📅 Theo ngày", desc: "Chi tiết theo từng ngày phát sinh" },
@@ -980,12 +1155,12 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
             </article>
           </div>
 
-          {/* BẢNG TỔNG HỢP DOANH THU THEO KỲ UC23 */}
+          {/* BẢNG TỔNG HỢP DOANH THU THEO KỲ */}
           <article className="card" style={{ marginBottom: 18 }}>
             <header className="section-head">
               <div>
                 <h3 style={{ margin: 0 }}>
-                  Bảng tổng hợp doanh thu {revenueGroupBy === "year" ? "theo năm" : revenueGroupBy === "month" ? `theo tháng (${selectedRevenueYear})` : "theo ngày"} (UC23)
+                  Bảng tổng hợp doanh thu {revenueGroupBy === "year" ? "theo năm" : revenueGroupBy === "month" ? `theo tháng (${selectedRevenueYear})` : "theo ngày"}
                 </h3>
                 <p style={{ margin: "2px 0 0", fontSize: 12.5, color: "#64748B" }}>
                   Tổng hợp doanh thu, tình trạng thu tiền và tỷ trọng đóng góp theo kỳ

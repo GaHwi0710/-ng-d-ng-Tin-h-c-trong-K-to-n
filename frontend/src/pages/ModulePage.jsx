@@ -12,6 +12,7 @@ import {
   CheckCircleIcon,
   CubeIcon,
   ExclamationTriangleIcon,
+  ArrowDownTrayIcon,
 } from "@heroicons/react/24/outline";
 import { deleteRecord, getReport, listRecords, saveRecord } from "../lib/api.js";
 import {
@@ -23,6 +24,8 @@ import { Modal } from "../components/Modal.jsx";
 import { toast } from "../components/Toast.jsx";
 import { Badge, StatusBadge } from "../components/Badge.jsx";
 import { FilterChips } from "../components/FilterChips.jsx";
+import { Pagination } from "../components/Pagination.jsx";
+import { exportToExcel } from "../lib/exportUtils.js";
 import { StatCard } from "../components/StatCard.jsx";
 import { ProductImage } from "../components/ProductImage.jsx";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
@@ -43,6 +46,8 @@ import { SalesPOSPage } from "./modules/SalesPOSPage.jsx";
 import { InvoicePage } from "./modules/InvoicePage.jsx";
 import { ReportPage } from "./modules/ReportPage.jsx";
 import { InventoryPage } from "./modules/InventoryPage.jsx";
+import { AuditLogPage } from "./modules/AuditLogPage.jsx";
+import { BackupPage } from "./modules/BackupPage.jsx";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -270,6 +275,12 @@ function RecordsPage({ title, description, resource }) {
   const [catFilter, setCatFilter] = useState("all");
   const [lookups, setLookups] = useState({ suppliers: [], categories: [] });
   const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, catFilter]);
 
   useEffect(() => {
     listRecords(resource).then(setRecords);
@@ -285,14 +296,41 @@ function RecordsPage({ title, description, resource }) {
   }, [resource]);
 
   const visible = useMemo(() => {
-    let filtered = records.filter((item) =>
-      JSON.stringify(item).toLowerCase().includes(query.toLowerCase())
-    );
+    const q = query.trim().toLowerCase();
+    let filtered = records;
+    if (q) {
+      filtered = filtered.filter((item) =>
+        JSON.stringify(item).toLowerCase().includes(q)
+      );
+    }
     if (resource === "products" && catFilter !== "all") {
       filtered = filtered.filter((item) => item.LoaiHang === catFilter);
     }
     return filtered;
   }, [records, query, resource, catFilter]);
+
+  const paginated = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return visible.slice(start, start + pageSize);
+  }, [visible, page, pageSize]);
+
+  function handleExportExcel() {
+    if (!visible.length) {
+      toast("Không có dữ liệu để xuất");
+      return;
+    }
+    const headers = config.columns.map(([, label]) => label);
+    const rows = visible.map((item) =>
+      config.columns.map(([field]) => displayValue(item[field], field))
+    );
+    exportToExcel(
+      `${resource}_${new Date().toISOString().slice(0, 10)}`,
+      title.toUpperCase(),
+      headers,
+      rows
+    );
+    toast("Đã xuất file Excel thành công");
+  }
 
   const categoryChips = useMemo(() => {
     if (resource !== "products") return [];
@@ -361,10 +399,22 @@ function RecordsPage({ title, description, resource }) {
           <h1 id="page-heading">{title}</h1>
           <p>{description}</p>
         </hgroup>
-        <button className="btn btn-primary" type="button" onClick={() => openModal()}>
-          <PlusIcon className="btn-icon" aria-hidden="true" />
-          Thêm mới
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className="btn btn-outline"
+            type="button"
+            onClick={handleExportExcel}
+            title="Xuất bảng dữ liệu ra Excel"
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <ArrowDownTrayIcon style={{ width: 16, height: 16, color: "var(--primary)" }} />
+            Xuất Excel
+          </button>
+          <button className="btn btn-primary" type="button" onClick={() => openModal()}>
+            <PlusIcon className="btn-icon" aria-hidden="true" />
+            Thêm mới
+          </button>
+        </div>
       </header>
 
       <nav className="toolbar" aria-label="Tìm kiếm và lọc">
@@ -398,7 +448,7 @@ function RecordsPage({ title, description, resource }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((item) => (
+            {paginated.map((item) => (
               <tr key={item.id}>
                 {config.columns.map(([field]) => (
                   <td key={field}>
@@ -457,6 +507,15 @@ function RecordsPage({ title, description, resource }) {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        currentPage={page}
+        totalItems={visible.length}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+        pageSizeOptions={[10, 20, 50, 100]}
+      />
 
       {/* Edit/Create Modal */}
       <Modal
@@ -581,6 +640,10 @@ export function ModulePage({ title, description }) {
     return <PromotionsPage title={title} description={description} />;
   if (pathname === "/reports")
     return <ReportPage title={title} />;
+  if (pathname === "/admin/audit-logs")
+    return <AuditLogPage title={title} />;
+  if (pathname === "/admin/backup")
+    return <BackupPage title={title} />;
   if (pathname.startsWith("/admin"))
     return <AdminPage title={title} description={description} path={pathname} />;
 
