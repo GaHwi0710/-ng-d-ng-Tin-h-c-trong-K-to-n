@@ -18,6 +18,7 @@ import { StatCard } from "../../components/StatCard.jsx";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
+import { userCan } from "../../lib/permissions.js";
 
 export function getMemberTier(points = 0) {
   const pts = Number(points) || 0;
@@ -216,10 +217,12 @@ export function CustomersPage({ title, description }) {
           <h1 id="customers-page-heading">{title}</h1>
           <p>{description || "Quản lý hồ sơ khách hàng, phân hạng thành viên và điểm thưởng tích lũy."}</p>
         </hgroup>
-        <button className="btn btn-primary" type="button" onClick={openCreate}>
-          <PlusIcon className="btn-icon" aria-hidden="true" />
-          Thêm khách hàng
-        </button>
+        {userCan("customers", "tao") && (
+          <button className="btn btn-primary" type="button" onClick={openCreate}>
+            <PlusIcon className="btn-icon" aria-hidden="true" />
+            Thêm khách hàng
+          </button>
+        )}
       </header>
 
       {/* Member Voucher Tier Policy Banner */}
@@ -421,22 +424,26 @@ export function CustomersPage({ title, description }) {
                   </td>
                   <td style={{ textAlign: "center" }}>
                     <div className="row-actions" style={{ justifyContent: "center" }}>
-                      <button
-                        type="button"
-                        className="icon-sm-btn"
-                        title="Chỉnh sửa"
-                        onClick={() => openEdit(cust)}
-                      >
-                        <PencilSquareIcon className="ic" />
-                      </button>
-                      <button
-                        type="button"
-                        className="icon-sm-btn del"
-                        title={isInactive ? "Xóa vĩnh viễn" : "Xóa hoặc ngưng hoạt động"}
-                        onClick={() => handleDelete(cust.id, cust.HoTen)}
-                      >
-                        <TrashIcon className="ic" />
-                      </button>
+                      {userCan("customers", "sua") && (
+                        <button
+                          type="button"
+                          className="icon-sm-btn"
+                          title="Chỉnh sửa"
+                          onClick={() => openEdit(cust)}
+                        >
+                          <PencilSquareIcon className="ic" />
+                        </button>
+                      )}
+                      {userCan("customers", "xoa") && (
+                        <button
+                          type="button"
+                          className="icon-sm-btn del"
+                          title={isInactive ? "Xóa vĩnh viễn" : "Xóa hoặc ngưng hoạt động"}
+                          onClick={() => handleDelete(cust.id, cust.HoTen)}
+                        >
+                          <TrashIcon className="ic" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

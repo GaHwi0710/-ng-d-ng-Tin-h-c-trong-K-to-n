@@ -25,6 +25,8 @@ export const PERMISSION_MODULES = [
   { key: "promotions", label: "Khuyến mãi", group: "Báo cáo & KM", path: "/promotions" },
   { key: "debts", label: "Công nợ", group: "Báo cáo & KM", path: "/debts" },
   { key: "reports", label: "Báo cáo thống kê", group: "Báo cáo & KM", path: "/reports" },
+  { key: "audit-logs", label: "Nhật ký kiểm toán", group: "Quản trị", path: "/admin/audit-logs" },
+  { key: "backup", label: "Sao lưu dữ liệu", group: "Quản trị", path: "/admin/backup" },
   { key: "admin-employees", label: "Nhân viên", group: "Quản trị", path: "/admin/employees" },
   { key: "admin-roles", label: "Phân quyền", group: "Quản trị", path: "/admin/roles" },
   { key: "admin-accounts", label: "QL người dùng", group: "Quản trị", path: "/admin/accounts" },
@@ -33,15 +35,28 @@ export const PERMISSION_MODULES = [
 const FULL = [...ACTIONS];
 const READ = ["xem"];
 
-// Nguyên tắc đồng bộ dữ liệu: MỌI vai trò đều XEM được toàn bộ dữ liệu nghiệp vụ
-// (cùng 1 database, số liệu như nhau ở mọi tài khoản — doanh thu, hóa đơn, tồn kho...).
-// Riêng các thao tác GHI (tạo/sửa/xóa) bị siết chặt theo đúng nghiệp vụ từng vai trò.
-const STAFF_WRITE = {
-  NhanVienBanHang: ["customers", "sales-orders", "invoices", "payments", "returns", "promotions", "cash-receipts"],
-  ThuKho: ["products", "product-categories", "goods-receipts", "goods-issues", "inventory", "stocktakes"],
-  NhanVienKho: ["products", "product-categories", "goods-receipts", "goods-issues", "inventory", "stocktakes"],
-  KeToan: ["invoices", "payments", "debts", "reports", "cash-receipts", "cash-payments"],
-  NhanVienMuaHang: ["suppliers", "purchase-orders", "goods-receipts"],
+// Phân quyền chi tiết theo đúng chức năng nghiệp vụ của từng vai trò (chặn xem/sửa các module ngoài phạm vi)
+const STAFF_PERMISSIONS = {
+  NhanVienBanHang: {
+    write: ["customers", "sales-orders", "invoices", "payments", "returns", "promotions", "cash-receipts"],
+    read: ["dashboard", "products", "product-categories", "inventory"],
+  },
+  ThuKho: {
+    write: ["products", "product-categories", "goods-receipts", "goods-issues", "inventory", "stocktakes"],
+    read: ["dashboard", "purchase-orders", "sales-orders", "returns"],
+  },
+  NhanVienKho: {
+    write: ["products", "product-categories", "goods-receipts", "goods-issues", "inventory", "stocktakes"],
+    read: ["dashboard", "purchase-orders", "sales-orders", "returns"],
+  },
+  KeToan: {
+    write: ["invoices", "payments", "debts", "reports", "cash-receipts", "cash-payments"],
+    read: ["dashboard", "customers", "suppliers", "products", "purchase-orders", "goods-receipts", "sales-orders", "returns", "inventory"],
+  },
+  NhanVienMuaHang: {
+    write: ["suppliers", "purchase-orders", "goods-receipts"],
+    read: ["dashboard", "products", "product-categories", "inventory", "debts"],
+  },
 };
 
 export const DEFAULT_ROLE_PERMISSIONS = {
@@ -53,13 +68,13 @@ export const DEFAULT_ROLE_PERMISSIONS = {
   manager: Object.fromEntries(PERMISSION_MODULES.map((m) => [m.key, FULL])),
 };
 
-for (const [roleKey, writeModules] of Object.entries(STAFF_WRITE)) {
+for (const [roleKey, config] of Object.entries(STAFF_PERMISSIONS)) {
   DEFAULT_ROLE_PERMISSIONS[roleKey] = Object.fromEntries(
-    PERMISSION_MODULES.map((m) => [
-      m.key,
-      // Quản trị hệ thống: nhân viên thường không có
-      m.group === "Quản trị" ? [] : writeModules.includes(m.key) ? FULL : READ,
-    ])
+    PERMISSION_MODULES.map((m) => {
+      if (config.write.includes(m.key)) return [m.key, FULL];
+      if (config.read.includes(m.key)) return [m.key, READ];
+      return [m.key, []]; // Không có quyền
+    })
   );
 }
 
@@ -98,21 +113,19 @@ export async function getRolePermissions(db, roleKey) {
   return perms;
 }
 
-// Middleware kiểm tra 1 quyền cụ thể. Quản lý luôn được qua.
+// Middleware kiểm tra 1 quyền cụ thể theo ma trận quyền trong MongoDB.
 export function requirePermission(moduleKey, action) {
   return async (req, res, next) => {
     try {
       const roleKey = req.user?.role;
       if (!roleKey) return res.status(401).json({ message: "Chưa xác thực" });
-      if (
-        roleKey === "QuanLy" ||
-        roleKey === "QuanTriHeThong" ||
-        roleKey === "admin" ||
-        roleKey === "manager"
-      ) return next();
+      
+      // Quản trị hệ thống có toàn quyền bypass
+      if (roleKey === "QuanTriHeThong") return next();
+
       const perms = await getRolePermissions(getDatabase(), roleKey);
       if (!perms?.[moduleKey]?.includes(action)) {
-        return res.status(403).json({ message: "Permission denied" });
+        return res.status(403).json({ message: "Bạn không có quyền thực hiện chức năng này." });
       }
       next();
     } catch (error) {

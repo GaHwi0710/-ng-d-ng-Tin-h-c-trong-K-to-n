@@ -66,6 +66,8 @@ export const PERMISSION_GROUPS = [
       { key: "admin-employees", label: "Nhân viên" },
       { key: "admin-roles", label: "Phân quyền" },
       { key: "admin-accounts", label: "QL người dùng" },
+      { key: "audit-logs", label: "Nhật ký kiểm toán" },
+      { key: "backup", label: "Sao lưu dữ liệu" },
     ],
   },
 ];
@@ -93,6 +95,8 @@ export const PATH_PERMISSION_KEY = {
   "/admin/employees": "admin-employees",
   "/admin/roles": "admin-roles",
   "/admin/accounts": "admin-accounts",
+  "/admin/audit-logs": "audit-logs",
+  "/admin/backup": "backup",
 };
 
 export function getUserPermissions() {
@@ -106,17 +110,24 @@ export function getUserPermissions() {
 
 // Vai trò có được thực hiện `action` trên module hay không
 export function userCan(moduleKey, action = "xem") {
+  const user = JSON.parse(localStorage.getItem("baby-shop-user") || "{}");
+  if (user?.role === "QuanTriHeThong") return true;
+
   const perms = getUserPermissions();
-  if (!perms) return true; // chưa có dữ liệu quyền -> không chặn (fallback an toàn)
+  if (!perms) return false;
   return (perms[moduleKey] || []).includes(action);
 }
 
 // Vai trò có bất kỳ quyền nào trên module (để hiện/ẩn mục menu)
 export function userCanAccessPath(path) {
+  if (path === "/dashboard") return true;
+  const user = JSON.parse(localStorage.getItem("baby-shop-user") || "{}");
+  if (user?.role === "QuanTriHeThong") return true;
+
   const moduleKey = PATH_PERMISSION_KEY[path];
-  if (!moduleKey || moduleKey === "dashboard") return true;
+  if (!moduleKey) return false;
   const perms = getUserPermissions();
-  if (!perms) return true;
+  if (!perms) return false;
   return (perms[moduleKey] || []).length > 0;
 }
 

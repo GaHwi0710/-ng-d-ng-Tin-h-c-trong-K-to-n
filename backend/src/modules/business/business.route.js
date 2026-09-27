@@ -1687,7 +1687,7 @@ router.post("/customers/:id/redeem-voucher", requirePermission("customers", "sua
     await getDatabase().collection("KhachHang").updateOne(
       { _id: custId },
       {
-        $inc: { DiemTichLuy: -points },
+    $inc: { DiemTichLuy: -points },
         $push: { VouchersDaDoi: newVoucher },
         $set: { updatedAt: new Date() },
       }
@@ -1700,6 +1700,122 @@ router.post("/customers/:id/redeem-voucher", requirePermission("customers", "sua
       voucherCode,
       pointsDeducted: points,
       remainingPoints: updated.DiemTichLuy
+    });
+  } catch (error) { next(error); }
+});
+
+// ── YC4: Xác nhận Phiếu thu ──────────────────────────────────────────────────
+// POST /cash-receipts/:id/confirm
+router.post("/cash-receipts/:id/confirm", requirePermission("cash-receipts", "sua"), async (req, res, next) => {
+  try {
+    const receiptId = id(req.params.id);
+    const col = getDatabase().collection("PhieuThu");
+
+    const receipt = await col.findOne(
+      receiptId ? { _id: receiptId } : { $or: [{ MaPT: req.params.id }, { id: req.params.id }] }
+    );
+    if (!receipt) return res.status(404).json({ message: "Không tìm thấy phiếu thu" });
+
+    // Idempotency: đã xác nhận rồi thì không làm gì thêm
+    if (receipt.TrangThai === "CONFIRMED") {
+      return res.json({
+        data: serialize(receipt),
+        message: "Phiếu thu đã được xác nhận trước đó.",
+        alreadyConfirmed: true,
+      });
+    }
+
+    const confirmedBy = req.user?.username || req.user?.fullName || "system";
+    const confirmedAt = new Date();
+
+    await col.updateOne(
+      { _id: receipt._id },
+      {
+        $set: {
+          TrangThai: "CONFIRMED",
+          confirmedAt,
+          confirmedBy,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username || "system",
+      role: req.user?.role || "System",
+      action: "CONFIRM",
+      module: "cash-receipts",
+      entity: "PhieuThu",
+      entityId: String(receipt._id),
+      description: `Xác nhận phiếu thu ${receipt.MaPT || receipt._id} - ${(receipt.SoTien || 0).toLocaleString("vi-VN")} ₫`,
+      metadata: { MaPT: receipt.MaPT, SoTien: receipt.SoTien, confirmedBy },
+      ip: req.ip,
+    });
+
+    const updated = await col.findOne({ _id: receipt._id });
+    res.json({
+      data: serialize(updated),
+      voucher: serialize(updated),
+      message: `Đã xác nhận phiếu thu ${receipt.MaPT || ""}. Chứng từ không thể chỉnh sửa hoặc xóa sau khi xác nhận.`,
+    });
+  } catch (error) { next(error); }
+});
+
+// ── YC4: Xác nhận Phiếu chi ──────────────────────────────────────────────────
+// POST /cash-payments/:id/confirm
+router.post("/cash-payments/:id/confirm", requirePermission("cash-payments", "sua"), async (req, res, next) => {
+  try {
+    const paymentId = id(req.params.id);
+    const col = getDatabase().collection("PhieuChi");
+
+    const payment = await col.findOne(
+      paymentId ? { _id: paymentId } : { $or: [{ MaPC: req.params.id }, { id: req.params.id }] }
+    );
+    if (!payment) return res.status(404).json({ message: "Không tìm thấy phiếu chi" });
+
+    // Idempotency: đã xác nhận rồi thì không làm gì thêm
+    if (payment.TrangThai === "CONFIRMED") {
+      return res.json({
+        data: serialize(payment),
+        message: "Phiếu chi đã được xác nhận trước đó.",
+        alreadyConfirmed: true,
+      });
+    }
+
+    const confirmedBy = req.user?.username || req.user?.fullName || "system";
+    const confirmedAt = new Date();
+
+    await col.updateOne(
+      { _id: payment._id },
+      {
+        $set: {
+          TrangThai: "CONFIRMED",
+          confirmedAt,
+          confirmedBy,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username || "system",
+      role: req.user?.role || "System",
+      action: "CONFIRM",
+      module: "cash-payments",
+      entity: "PhieuChi",
+      entityId: String(payment._id),
+      description: `Xác nhận phiếu chi ${payment.MaPC || payment._id} - ${(payment.SoTien || 0).toLocaleString("vi-VN")} ₫`,
+      metadata: { MaPC: payment.MaPC, SoTien: payment.SoTien, confirmedBy },
+      ip: req.ip,
+    });
+
+    const updated = await col.findOne({ _id: payment._id });
+    res.json({
+      data: serialize(updated),
+      voucher: serialize(updated),
+      message: `Đã xác nhận phiếu chi ${payment.MaPC || ""}. Chứng từ không thể chỉnh sửa hoặc xóa sau khi xác nhận.`,
     });
   } catch (error) { next(error); }
 });

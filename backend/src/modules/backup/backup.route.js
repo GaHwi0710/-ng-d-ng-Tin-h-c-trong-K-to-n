@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { ObjectId } from "mongodb";
 import { getDatabase } from "../../config/mongodb.js";
 import { recordAudit } from "../audit/audit.service.js";
+import { requirePermission } from "../shared/permissions.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,7 +48,7 @@ const BACKUP_COLLECTIONS = [
 /**
  * Lập bản sao lưu (Backup) cơ sở dữ liệu
  */
-router.post("/backup", async (req, res) => {
+router.post("/backup", requirePermission("backup", "tao"), async (req, res) => {
   try {
     const db = getDatabase();
     const backupData = {};
@@ -112,7 +113,7 @@ router.post("/backup", async (req, res) => {
 /**
  * Danh sách các bản sao lưu hiện có
  */
-router.get("/backup/list", (req, res) => {
+router.get("/backup/list", requirePermission("backup", "xem"), (req, res) => {
   try {
     if (!fs.existsSync(BACKUPS_DIR)) {
       return res.json({ backups: [] });
@@ -139,7 +140,7 @@ router.get("/backup/list", (req, res) => {
 /**
  * Tải file sao lưu về máy
  */
-router.get("/backup/download/:filename", (req, res) => {
+router.get("/backup/download/:filename", requirePermission("backup", "xem"), (req, res) => {
   try {
     const rawFilename = path.basename(req.params.filename);
     if (!rawFilename.endsWith(".json")) {
@@ -160,7 +161,7 @@ router.get("/backup/download/:filename", (req, res) => {
 /**
  * Xem trước thông tin bản sao lưu trước khi xác nhận phục hồi
  */
-router.post("/backup/restore/preview", async (req, res) => {
+router.post("/backup/restore/preview", requirePermission("backup", "sua"), async (req, res) => {
   try {
     let snapshot = req.body.snapshot;
     if (!snapshot && req.body.filename) {
@@ -201,7 +202,7 @@ router.post("/backup/restore/preview", async (req, res) => {
 /**
  * Phục hồi cơ sở dữ liệu từ bản sao lưu an toàn
  */
-router.post("/backup/restore", async (req, res) => {
+router.post("/backup/restore", requirePermission("backup", "sua"), async (req, res) => {
   try {
     // 1. Kiểm tra xác nhận
     if (!req.body.confirm) {
@@ -326,6 +327,11 @@ router.post("/backup/restore", async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: "Lỗi phục hồi dữ liệu: " + err.message });
   }
+});
+
+// Chặn xóa bản sao lưu qua API trực tiếp
+router.delete("/backup*", (_req, res) => {
+  return res.status(403).json({ message: "Không được phép xóa bản sao lưu qua API trực tiếp." });
 });
 
 export default router;

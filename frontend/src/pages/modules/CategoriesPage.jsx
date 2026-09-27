@@ -15,6 +15,7 @@ import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { EmptyState } from "../../components/EmptyState.jsx";
+import { userCan } from "../../lib/permissions.js";
 
 const AVAILABLE_ICONS = ["🍼", "👶", "👕", "🥣", "🧸", "🧴", "🚲", "🚼", "🛴", "🍎", "👟", "🛏️", "📚", "🏷️"];
 
@@ -176,10 +177,12 @@ export function CategoriesPage({ title, description }) {
           <h1 id="categories-page-heading">{title}</h1>
           <p>{description || "Phân loại mặt hàng giúp quản lý kho, sắp xếp danh mục bán lẻ và phân tích doanh thu."}</p>
         </hgroup>
-        <button className="btn btn-primary" type="button" onClick={openCreate}>
-          <PlusIcon className="btn-icon" aria-hidden="true" />
-          Thêm loại hàng mới
-        </button>
+        {userCan("product-categories", "tao") && (
+          <button className="btn btn-primary" type="button" onClick={openCreate}>
+            <PlusIcon className="btn-icon" aria-hidden="true" />
+            Thêm loại hàng mới
+          </button>
+        )}
       </header>
 
       {/* Stats */}
@@ -234,22 +237,26 @@ export function CategoriesPage({ title, description }) {
                   <span className="cat-card-badge">{skuCount} sản phẩm</span>
                 </div>
                 <div className="row-actions">
-                  <button
-                    type="button"
-                    className="icon-sm-btn"
-                    title="Chỉnh sửa"
-                    onClick={() => openEdit(cat)}
-                  >
-                    <PencilSquareIcon className="ic" />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-sm-btn del"
-                    title="Xóa"
-                    onClick={() => handleDelete(cat.id, cat.TenLoai)}
-                  >
-                    <TrashIcon className="ic" />
-                  </button>
+                  {userCan("product-categories", "sua") && (
+                    <button
+                      type="button"
+                      className="icon-sm-btn"
+                      title="Chỉnh sửa"
+                      onClick={() => openEdit(cat)}
+                    >
+                      <PencilSquareIcon className="ic" />
+                    </button>
+                  )}
+                  {userCan("product-categories", "xoa") && (
+                    <button
+                      type="button"
+                      className="icon-sm-btn del"
+                      title="Xóa"
+                      onClick={() => handleDelete(cat.id, cat.TenLoai)}
+                    >
+                      <TrashIcon className="ic" />
+                    </button>
+                  )}
                 </div>
               </div>
 

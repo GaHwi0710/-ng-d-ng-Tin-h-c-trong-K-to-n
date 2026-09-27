@@ -4634,45 +4634,6 @@ tbody td {
   cursor: not-allowed;
 }
 
-.login-demo-section {
-  margin-top: 22px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border, #e2e8f0);
-}
-
-.login-demo-title {
-  font-size: 11.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-weight: 600;
-  color: var(--text-faint, #64748b);
-  margin-bottom: 10px;
-}
-
-.login-demo-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.login-demo-chip {
-  padding: 5px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--border, #cbd5e1);
-  background: #f8fafc;
-  color: var(--text, #334155);
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.login-demo-chip:hover {
-  background: var(--primary, #3D7068);
-  color: #fff;
-  border-color: var(--primary, #3D7068);
-}
-
 /* ---------- Utility & Animations ---------- */
 @keyframes spin {
   from { transform: rotate(0deg); }

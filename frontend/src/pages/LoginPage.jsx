@@ -11,21 +11,6 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const demoAccounts = [
-    { label: "🛡️ Quản trị HT", user: "quantri", pass: "123456" },
-    { label: "👑 Quản lý", user: "admin", pass: "123456" },
-    { label: "🧮 Kế toán", user: "ketoan", pass: "123456" },
-    { label: "🛒 Bán hàng", user: "banhang", pass: "123456" },
-    { label: "📦 Thủ kho", user: "kho", pass: "123456" },
-    { label: "🚚 Mua hàng", user: "muahang", pass: "123456" },
-  ];
-
-  function fillDemo(u, p) {
-    setUsername(u);
-    setPassword(p);
-    setError("");
-  }
-
   async function submit(event) {
     event.preventDefault();
     if (!username.trim()) {
@@ -78,7 +63,7 @@ export function LoginPage() {
                 id="login-username"
                 name="username"
                 className="login-input"
-                placeholder="Ví dụ: admin hoặc ketoan"
+                placeholder="Nhập tên đăng nhập"
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -138,23 +123,6 @@ export function LoginPage() {
             )}
           </button>
         </form>
-
-        {/* Demo Fast Login Pills */}
-        <div className="login-demo-section">
-          <div className="login-demo-title">⚡ Chọn nhanh tài khoản phân quyền:</div>
-          <div className="login-demo-grid">
-            {demoAccounts.map((acc) => (
-              <button
-                key={acc.user}
-                type="button"
-                className="login-demo-chip"
-                onClick={() => fillDemo(acc.user, acc.pass)}
-              >
-                {acc.label}
-              </button>
-            ))}
-          </div>
-        </div>
 
         <div style={{ marginTop: 20, textAlign: "center", fontSize: 11.5, color: "var(--text-faint)", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
           <ShieldCheckIcon style={{ width: 15, height: 15, color: "#16a34a" }} />

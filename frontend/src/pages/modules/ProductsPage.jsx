@@ -23,6 +23,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import { LOW_STOCK_THRESHOLD } from "../../lib/constants.js";
 import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
+import { userCan } from "../../lib/permissions.js";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -366,10 +367,12 @@ export function ProductsPage({ title, description }) {
           <h1 id="products-page-heading">{title}</h1>
           <p>{description || "Quản lý danh mục sản phẩm, bảng giá nhập - bán, theo dõi tồn kho và định mức."}</p>
         </hgroup>
-        <button className="btn btn-primary" type="button" onClick={openCreate}>
-          <PlusIcon className="btn-icon" aria-hidden="true" />
-          Thêm sản phẩm mới
-        </button>
+        {userCan("products", "tao") && (
+          <button className="btn btn-primary" type="button" onClick={openCreate}>
+            <PlusIcon className="btn-icon" aria-hidden="true" />
+            Thêm sản phẩm mới
+          </button>
+        )}
       </header>
 
       {/* Stats */}
@@ -569,22 +572,26 @@ export function ProductsPage({ title, description }) {
                       >
                         <EyeIcon className="ic" />
                       </button>
-                      <button
-                        type="button"
-                        className="icon-sm-btn"
-                        title="Chỉnh sửa"
-                        onClick={() => openEdit(p)}
-                      >
-                        <PencilSquareIcon className="ic" />
-                      </button>
-                      <button
-                        type="button"
-                        className="icon-sm-btn del"
-                        title="Xóa"
-                        onClick={() => handleDelete(p.id, p.TenSP)}
-                      >
-                        <TrashIcon className="ic" />
-                      </button>
+                      {userCan("products", "sua") && (
+                        <button
+                          type="button"
+                          className="icon-sm-btn"
+                          title="Chỉnh sửa"
+                          onClick={() => openEdit(p)}
+                        >
+                          <PencilSquareIcon className="ic" />
+                        </button>
+                      )}
+                      {userCan("products", "xoa") && (
+                        <button
+                          type="button"
+                          className="icon-sm-btn del"
+                          title="Xóa"
+                          onClick={() => handleDelete(p.id, p.TenSP)}
+                        >
+                          <TrashIcon className="ic" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

@@ -1602,7 +1602,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
           <div className="report-grid-2col">
             <article className="card">
               <header className="section-head">
-                <h3 style={{ margin: 0 }}>Cơ cấu công nợ phải thu (Khách hàng)</h3>
+                <h3 style={{ margin: 0 }}>Hóa đơn chưa thu tiền (từ hóa đơn bán hàng)</h3>
               </header>
               <DonutChart
                 data={customerDebtsDonut}
@@ -1629,7 +1629,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
             {/* Table 1: Phải thu */}
             <article className="card">
               <header className="section-head">
-                <h3 style={{ margin: 0 }}>Chi tiết công nợ phải thu</h3>
+                <h3 style={{ margin: 0 }}>Hóa đơn chưa thu tiền</h3>
               </header>
               <div className="table-shell">
                 <table>
@@ -1664,7 +1664,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                     {!customerDebtsList.length && (
                       <tr>
                         <td colSpan={4} style={{ textAlign: "center", color: "#94A3B8", padding: 24 }}>
-                          Không có công nợ phải thu
+                          Không có hóa đơn chưa thanh toán
                         </td>
                       </tr>
                     )}

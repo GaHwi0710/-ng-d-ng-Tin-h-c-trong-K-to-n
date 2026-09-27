@@ -8,14 +8,17 @@ import {
   WalletIcon,
   DocumentCurrencyDollarIcon,
   ScaleIcon,
+  CheckCircleIcon,
 } from "@heroicons/react/24/outline";
-import { listRecords, saveRecord, deleteRecord } from "../../lib/api.js";
+import { listRecords, saveRecord, deleteRecord, postRequest } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatCard } from "../../components/StatCard.jsx";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
+import { Badge } from "../../components/Badge.jsx";
+import { userCan } from "../../lib/permissions.js";
 import { amountToWords } from "../../lib/amountToWords.js";
 import { buildCashVoucherModel, printCashVoucher } from "../../lib/cashVoucher.js";
 
@@ -41,6 +44,7 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
   const [monthFilter, setMonthFilter] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [confirmDeleteDialog, setConfirmDeleteDialog] = useState({ open: false, id: null, code: "" });
   const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null, code: "" });
   const [formData, setFormData] = useState(emptyForm());
   const [loading, setLoading] = useState(true);
@@ -175,8 +179,8 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
   }
 
   async function executeDelete() {
-    const { id, code } = confirmDialog;
-    setConfirmDialog({ open: false, id: null, code: "" });
+    const { id, code } = confirmDeleteDialog;
+    setConfirmDeleteDialog({ open: false, id: null, code: "" });
     try {
       await deleteRecord(resource, id);
       setRecords((prev) => prev.filter((item) => item.id !== id));
@@ -185,6 +189,32 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
       toast(`Đã xóa ${isThu ? "phiếu thu" : "phiếu chi"} ${code}`);
     } catch (err) {
       toast(err?.message || "Lỗi khi xóa phiếu");
+    }
+  }
+
+  function handleConfirm(record) {
+    setConfirmDialog({ open: true, id: record.id, code: codeOf(record) });
+  }
+
+  async function executeConfirm() {
+    const { id, code } = confirmDialog;
+    setConfirmDialog({ open: false, id: null, code: '' });
+    try {
+      const endpoint = isThu ? `cash-receipts/${id}/confirm` : `cash-payments/${id}/confirm`;
+      await postRequest(endpoint, {});
+      // Cập nhật state local
+      setRecords(prev => prev.map(item => 
+        item.id === id ? { ...item, TrangThai: 'CONFIRMED' } : item
+      ));
+      if (isThu) setReceipts(prev => prev.map(item => 
+        item.id === id ? { ...item, TrangThai: 'CONFIRMED' } : item
+      ));
+      else setPayments(prev => prev.map(item => 
+        item.id === id ? { ...item, TrangThai: 'CONFIRMED' } : item
+      ));
+      toast(`Đã xác nhận ${isThu ? 'phiếu thu' : 'phiếu chi'} ${code} thành công`);
+    } catch (err) {
+      toast(err?.message || 'Lỗi khi xác nhận phiếu');
     }
   }
 
@@ -206,10 +236,12 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
           <h1 id="cash-voucher-heading">{title}</h1>
           <p>{description || `Ghi nhận ${isThu ? "các khoản thu" : "các khoản chi"} tiền mặt theo mẫu số ${isThu ? "01-TT" : "02-TT"}.`}</p>
         </hgroup>
-        <button className="btn btn-primary" type="button" onClick={openCreate}>
-          <PlusIcon className="btn-icon" aria-hidden="true" />
-          Lập {isThu ? "phiếu thu" : "phiếu chi"}
-        </button>
+        {userCan(resource, "tao") && (
+          <button className="btn btn-primary" type="button" onClick={openCreate}>
+            <PlusIcon className="btn-icon" aria-hidden="true" />
+            Lập {isThu ? "phiếu thu" : "phiếu chi"}
+          </button>
+        )}
       </header>
 
       {loading && (
@@ -284,6 +316,7 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
               <th>{isThu ? "Người nộp tiền" : "Người nhận tiền"}</th>
               <th>Lý do {isThu ? "nộp" : "chi"}</th>
               <th style={{ textAlign: "right", width: 140 }}>Số tiền</th>
+              <th style={{ width: 130, textAlign: 'center' }}>Trạng thái</th>
               <th style={{ width: 130, textAlign: "center" }}>Thao tác</th>
             </tr>
           </thead>
@@ -315,29 +348,52 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
                   </strong>
                   <small style={{ display: "block", color: "var(--text-faint)", fontStyle: "italic" }}>{amountToWords(Number(record.SoTien) || 0)}</small>
                 </td>
+                <td style={{ textAlign: 'center' }}>
+                  <Badge variant={record.TrangThai === 'CONFIRMED' ? 'green' : 'amber'}>
+                    {record.TrangThai === 'CONFIRMED' ? 'Đã xác nhận' : 'Chưa xác nhận'}
+                  </Badge>
+                </td>
                 <td style={{ textAlign: "center" }}>
                   <div className="row-actions" style={{ justifyContent: "center" }}>
-                    <button type="button" className="icon-sm-btn" title="In phiếu" onClick={() => handlePrint(record)}>
-                      <PrinterIcon className="ic" />
-                    </button>
-                    <button type="button" className="icon-sm-btn" title="Chỉnh sửa" onClick={() => openEdit(record)}>
-                      <PencilSquareIcon className="ic" />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-sm-btn del"
-                      title="Xóa phiếu"
-                      onClick={() => setConfirmDialog({ open: true, id: record.id, code: codeOf(record) })}
-                    >
-                      <TrashIcon className="ic" />
-                    </button>
+                    {record.TrangThai === 'CONFIRMED' ? (
+                      <button type="button" className="icon-sm-btn" title="In phiếu" onClick={() => handlePrint(record)}>
+                        <PrinterIcon className="ic" />
+                      </button>
+                    ) : (
+                      <>
+                        <button type="button" className="icon-sm-btn" title="In phiếu" onClick={() => handlePrint(record)}>
+                          <PrinterIcon className="ic" />
+                        </button>
+                        {userCan(resource, "sua") && (
+                          <button type="button" className="icon-sm-btn" title="Chỉnh sửa" onClick={() => openEdit(record)}>
+                            <PencilSquareIcon className="ic" />
+                          </button>
+                        )}
+                        {userCan(resource, "sua") && (
+                          <button type="button" className="btn btn-outline btn-sm" title="Xác nhận chứng từ" onClick={() => handleConfirm(record)} style={{ color: '#16a34a', borderColor: '#16a34a', gap: 4 }}>
+                            <CheckCircleIcon style={{ width: 15, height: 15 }} />
+                            <span>Xác nhận</span>
+                          </button>
+                        )}
+                        {userCan(resource, "xoa") && (
+                          <button
+                            type="button"
+                            className="icon-sm-btn del"
+                            title="Xóa phiếu"
+                            onClick={() => setConfirmDeleteDialog({ open: true, id: record.id, code: codeOf(record) })}
+                          >
+                            <TrashIcon className="ic" />
+                          </button>
+                        )}
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>
             ))}
             {!visible.length && (
               <tr>
-                <td colSpan={7} style={{ padding: 0 }}>
+                <td colSpan={8} style={{ padding: 0 }}>
                   <EmptyState
                     icon={isThu ? WalletIcon : DocumentCurrencyDollarIcon}
                     title={isThu ? "Chưa có phiếu thu phù hợp" : "Chưa có phiếu chi phù hợp"}
@@ -464,11 +520,20 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
       </Modal>
 
       <ConfirmDialog
-        open={confirmDialog.open}
+        open={confirmDeleteDialog.open}
         title={`Xóa ${isThu ? "phiếu thu" : "phiếu chi"}`}
-        itemName={confirmDialog.code}
+        itemName={confirmDeleteDialog.code}
         onConfirm={executeDelete}
-        onCancel={() => setConfirmDialog({ open: false, id: null, code: "" })}
+        onCancel={() => setConfirmDeleteDialog({ open: false, id: null, code: "" })}
+      />
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={`Xác nhận ${isThu ? 'phiếu thu' : 'phiếu chi'}`}
+        message={`Bạn có chắc chắn muốn xác nhận chứng từ này?\nSau khi xác nhận, chứng từ sẽ không thể chỉnh sửa hoặc xóa.`}
+        onConfirm={executeConfirm}
+        onCancel={() => setConfirmDialog({ open: false, id: null, code: '' })}
+        confirmLabel="Xác nhận"
       />
     </section>
   );

@@ -15,6 +15,7 @@ import { toast } from "../../components/Toast.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
 import { SkeletonRow } from "../../components/SkeletonLoader.jsx";
 import { Modal } from "../../components/Modal.jsx";
+import { userCan } from "../../lib/permissions.js";
 
 export function BackupPage({ title = "Sao lưu dữ liệu" }) {
   const [backups, setBackups] = useState([]);
@@ -263,25 +264,29 @@ export function BackupPage({ title = "Sao lưu dữ liệu" }) {
             <ArrowPathIcon className={`btn-icon ${loading ? "spinning" : ""}`} />
             Làm mới
           </button>
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={() => document.getElementById("restore-file-input")?.click()}
-            disabled={creating || restoring}
-            title="Tải lên file JSON backup từ máy tính để phục hồi"
-          >
-            <ArrowUpTrayIcon className="btn-icon" />
-            Phục hồi từ file...
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setConfirmModalOpen(true)}
-            disabled={creating || restoring}
-          >
-            <DocumentDuplicateIcon className="btn-icon" />
-            Tạo bản sao lưu ngay
-          </button>
+          {userCan("backup", "sua") && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => document.getElementById("restore-file-input")?.click()}
+              disabled={creating || restoring}
+              title="Tải lên file JSON backup từ máy tính để phục hồi"
+            >
+              <ArrowUpTrayIcon className="btn-icon" />
+              Phục hồi từ file...
+            </button>
+          )}
+          {userCan("backup", "tao") && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setConfirmModalOpen(true)}
+              disabled={creating || restoring}
+            >
+              <DocumentDuplicateIcon className="btn-icon" />
+              Tạo bản sao lưu ngay
+            </button>
+          )}
         </div>
       </header>
 
@@ -384,16 +389,18 @@ export function BackupPage({ title = "Sao lưu dữ liệu" }) {
                         <ArrowDownTrayIcon style={{ width: 14, height: 14 }} />
                         Tải về
                       </button>
-                      <button
-                        type="button"
-                        className="btn btn-outline btn-sm"
-                        onClick={() => openRestoreForFile(b.filename)}
-                        title="Phục hồi cơ sở dữ liệu từ bản sao lưu này"
-                        style={{ height: 32, padding: "0 10px", display: "inline-flex", alignItems: "center", gap: 6, color: "#d97706", borderColor: "#fcd34d" }}
-                      >
-                        <ArrowPathIcon style={{ width: 14, height: 14 }} />
-                        Phục hồi
-                      </button>
+                      {userCan("backup", "sua") && (
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          onClick={() => openRestoreForFile(b.filename)}
+                          title="Phục hồi cơ sở dữ liệu từ bản sao lưu này"
+                          style={{ height: 32, padding: "0 10px", display: "inline-flex", alignItems: "center", gap: 6, color: "#d97706", borderColor: "#fcd34d" }}
+                        >
+                          <ArrowPathIcon style={{ width: 14, height: 14 }} />
+                          Phục hồi
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

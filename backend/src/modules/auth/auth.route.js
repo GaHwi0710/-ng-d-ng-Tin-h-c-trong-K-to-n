@@ -10,23 +10,13 @@ import { recordAudit } from "../audit/audit.service.js";
 const router = Router();
 const secret = process.env.JWT_SECRET || "baby-shop-development-secret";
 
-const defaultAccounts = {
-  [process.env.ADMIN_USERNAME || "admin"]: {
-    id: "admin",
-    username: process.env.ADMIN_USERNAME || "admin",
-    fullName: process.env.ADMIN_FULL_NAME || "Quản trị viên",
-    role: "QuanLy",
-    password: process.env.ADMIN_PASSWORD || "admin123",
-  },
-  maianh: { id: "maianh", username: "maianh", fullName: "Nguyễn Mai Anh", role: "NhanVienBanHang", password: "maianh123" },
-  vanhung: { id: "vanhung", username: "vanhung", fullName: "Trần Văn Hùng", role: "NhanVienKho", password: "vanhung123" },
-  ketoan: { id: "ketoan", username: "ketoan", fullName: "Lê Thị Kế Toán", role: "KeToan", password: "ketoan123" },
-  muahang: { id: "muahang", username: "muahang", fullName: "Phạm Văn Mua Hàng", role: "NhanVienMuaHang", password: "muahang123" },
-};
-
 router.post("/login", (req, res) => {
   const rawUsername = String(req.body.username || "").trim();
   const password = String(req.body.password || "");
+
+  if (!rawUsername || !password) {
+    return res.status(400).json({ message: "Vui lòng nhập tên đăng nhập và mật khẩu" });
+  }
 
   (async () => {
     let account = null;
@@ -38,11 +28,17 @@ router.post("/login", (req, res) => {
       employee = await db.collection("NhanVien").findOne({
         $or: [{ username: rawUsername }, { MaNV: rawUsername }],
       });
-    } catch {
-      // Database not connected
+    } catch (dbError) {
+      console.error("Database error during login:", dbError?.message);
+      return res.status(503).json({ message: "Không thể kết nối cơ sở dữ liệu. Vui lòng thử lại sau." });
     }
 
-    // 1. Kiểm tra trạng thái Khóa / Ngưng hoạt động
+    // 1. Kiểm tra tài khoản có tồn tại trong DB không
+    if (!account) {
+      return res.status(401).json({ message: "Tên đăng nhập hoặc mật khẩu không chính xác" });
+    }
+
+    // 2. Kiểm tra trạng thái Khóa / Ngưng hoạt động
     const isLocked = isLockedStatus(account?.status) || isLockedStatus(employee?.TrangThai);
     if (isLocked) {
       return res.status(403).json({
@@ -50,35 +46,17 @@ router.post("/login", (req, res) => {
       });
     }
 
-    // 2. Xác thực tài khoản và mật khẩu
-    let validAccount = null;
-
-    if (account) {
-      if (passwordMatches(password, account.passwordHash)) {
-        validAccount = {
-          id: account._id?.toString() || account.id || rawUsername,
-          username: account.username,
-          fullName: account.fullName || employee?.HoTen || rawUsername,
-          role: account.role || "NhanVienBanHang",
-        };
-      }
-    } else if (defaultAccounts[rawUsername]) {
-      const def = defaultAccounts[rawUsername];
-      if (password === def.password) {
-        validAccount = {
-          id: def.id,
-          username: def.username,
-          fullName: def.fullName,
-          role: def.role,
-        };
-      }
+    // 3. Xác thực mật khẩu với bản ghi DB
+    if (!passwordMatches(password, account.passwordHash)) {
+      return res.status(401).json({ message: "Tên đăng nhập hoặc mật khẩu không chính xác" });
     }
 
-    if (!validAccount) {
-      return res.status(401).json({
-        message: "Tên đăng nhập hoặc mật khẩu không chính xác",
-      });
-    }
+    const validAccount = {
+      id: account._id?.toString() || account.id || rawUsername,
+      username: account.username,
+      fullName: account.fullName || employee?.HoTen || rawUsername,
+      role: account.role || "NhanVienBanHang",
+    };
 
     // Gửi kèm ma trận quyền chi tiết của vai trò để frontend lọc menu/chức năng
     let permissions = null;

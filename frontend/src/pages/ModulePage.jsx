@@ -26,6 +26,7 @@ import { Badge, StatusBadge } from "../components/Badge.jsx";
 import { FilterChips } from "../components/FilterChips.jsx";
 import { Pagination } from "../components/Pagination.jsx";
 import { exportToExcel } from "../lib/exportUtils.js";
+import { userCan } from "../lib/permissions.js";
 import { StatCard } from "../components/StatCard.jsx";
 import { ProductImage } from "../components/ProductImage.jsx";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
@@ -410,10 +411,12 @@ function RecordsPage({ title, description, resource }) {
             <ArrowDownTrayIcon style={{ width: 16, height: 16, color: "var(--primary)" }} />
             Xuất Excel
           </button>
-          <button className="btn btn-primary" type="button" onClick={() => openModal()}>
-            <PlusIcon className="btn-icon" aria-hidden="true" />
-            Thêm mới
-          </button>
+          {userCan(resource, "tao") && (
+            <button className="btn btn-primary" type="button" onClick={() => openModal()}>
+              <PlusIcon className="btn-icon" aria-hidden="true" />
+              Thêm mới
+            </button>
+          )}
         </div>
       </header>
 
@@ -472,15 +475,17 @@ function RecordsPage({ title, description, resource }) {
                 ))}
                 <td>
                   <div className="row-actions">
-                    <button
-                      className="icon-sm-btn"
-                      type="button"
-                      onClick={() => openModal(item)}
-                      aria-label={`Sửa ${item[config.key] || item.id}`}
-                    >
-                      <PencilSquareIcon className="ic" aria-hidden="true" />
-                    </button>
-                    {resource !== "products" && resource !== "debts" && (
+                    {userCan(resource, "sua") && (
+                      <button
+                        className="icon-sm-btn"
+                        type="button"
+                        onClick={() => openModal(item)}
+                        aria-label={`Sửa ${item[config.key] || item.id}`}
+                      >
+                        <PencilSquareIcon className="ic" aria-hidden="true" />
+                      </button>
+                    )}
+                    {resource !== "products" && resource !== "debts" && userCan(resource, "xoa") && (
                       <button
                         className="icon-sm-btn del"
                         type="button"

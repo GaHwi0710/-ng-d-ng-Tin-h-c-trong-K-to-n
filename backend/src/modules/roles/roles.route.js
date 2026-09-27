@@ -6,7 +6,9 @@ import {
   PERMISSION_MODULES,
   DEFAULT_ROLE_PERMISSIONS,
   invalidateRoleCache,
+  requirePermission,
 } from "../shared/permissions.js";
+import { recordAudit } from "../audit/audit.service.js";
 
 const router = Router();
 const SYSTEM_ROLE_KEYS = Object.keys(DEFAULT_ROLE_PERMISSIONS);
@@ -33,7 +35,7 @@ function serialize(role) {
   return { id: _id.toString(), ...data };
 }
 
-router.get("/", async (_req, res, next) => {
+router.get("/", requirePermission("admin-roles", "xem"), async (_req, res, next) => {
   try {
     const db = getDatabase();
     const [roles, usersByRole] = await Promise.all([
@@ -51,7 +53,7 @@ router.get("/", async (_req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.post("/", async (req, res, next) => {
+router.post("/", requirePermission("admin-roles", "tao"), async (req, res, next) => {
   try {
     const db = getDatabase();
     const TenVaiTro = String(req.body.TenVaiTro || "").trim();
@@ -73,11 +75,25 @@ router.post("/", async (req, res, next) => {
     };
     const result = await db.collection("VaiTro").insertOne(document);
     invalidateRoleCache(document.MaKey);
+
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username || "admin",
+      role: req.user?.role || "QuanTriHeThong",
+      action: "ROLE_PERMISSION_CHANGE",
+      module: "roles",
+      entity: "VaiTro",
+      entityId: String(result.insertedId),
+      description: `Tạo vai trò mới "${TenVaiTro}" kèm phân quyền ban đầu`,
+      metadata: { roleName: TenVaiTro, roleKey: document.MaKey, permissions: document.QuyenHan },
+      ip: req.ip,
+    });
+
     res.status(201).json({ data: serialize({ _id: result.insertedId, ...document }), message: "Đã tạo vai trò mới" });
   } catch (error) { next(error); }
 });
 
-router.put("/:id", async (req, res, next) => {
+router.put("/:id", requirePermission("admin-roles", "sua"), async (req, res, next) => {
   try {
     const db = getDatabase();
     const _id = parseId(req.params.id);
@@ -97,12 +113,30 @@ router.put("/:id", async (req, res, next) => {
 
     await db.collection("VaiTro").updateOne({ _id }, { $set: update });
     invalidateRoleCache(role.MaKey);
+
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username || "admin",
+      role: req.user?.role || "QuanTriHeThong",
+      action: "ROLE_PERMISSION_CHANGE",
+      module: "roles",
+      entity: "VaiTro",
+      entityId: String(_id),
+      description: `Cập nhật vai trò "${role.TenVaiTro}" (thay đổi ma trận phân quyền)`,
+      metadata: {
+        roleKey: role.MaKey,
+        roleName: role.TenVaiTro,
+        updatedPermissions: update.QuyenHan,
+      },
+      ip: req.ip,
+    });
+
     const fresh = await db.collection("VaiTro").findOne({ _id });
     res.json({ data: serialize(fresh), message: "Đã cập nhật vai trò và quyền hạn" });
   } catch (error) { next(error); }
 });
 
-router.delete("/:id", async (req, res, next) => {
+router.delete("/:id", requirePermission("admin-roles", "xoa"), async (req, res, next) => {
   try {
     const db = getDatabase();
     const _id = parseId(req.params.id);
@@ -117,6 +151,20 @@ router.delete("/:id", async (req, res, next) => {
     }
     await db.collection("VaiTro").deleteOne({ _id });
     invalidateRoleCache(role.MaKey);
+
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username || "admin",
+      role: req.user?.role || "QuanTriHeThong",
+      action: "DELETE",
+      module: "roles",
+      entity: "VaiTro",
+      entityId: String(_id),
+      description: `Xóa vai trò "${role.TenVaiTro}" (${role.MaKey})`,
+      metadata: { roleKey: role.MaKey, roleName: role.TenVaiTro },
+      ip: req.ip,
+    });
+
     res.json({ message: "Đã xóa vai trò" });
   } catch (error) { next(error); }
 });

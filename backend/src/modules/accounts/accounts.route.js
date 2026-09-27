@@ -3,6 +3,8 @@ import { ObjectId } from "mongodb";
 import { getDatabase } from "../../config/mongodb.js";
 import { hashPassword } from "../auth/password.js";
 import { syncEmployee, isLockedStatus } from "../auth/accountEmployee.js";
+import { recordAudit } from "../audit/audit.service.js";
+import { requirePermission } from "../shared/permissions.js";
 
 const router = Router();
 const builtinRoles = ["QuanTriHeThong", "QuanLy", "KeToan", "NhanVienBanHang", "ThuKho", "NhanVienKho", "NhanVienMuaHang"];
@@ -35,7 +37,7 @@ function validateAccount(body, requirePassword = true) {
   return null;
 }
 
-router.get("/", async (_req, res, next) => {
+router.get("/", requirePermission("admin-accounts", "xem"), async (_req, res, next) => {
   try {
     const db = getDatabase();
     const usersData = await db.collection("Users").find({}, { projection: { passwordHash: 0 } }).sort({ createdAt: -1 }).toArray();
@@ -63,7 +65,7 @@ router.get("/", async (_req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.post("/", async (req, res, next) => {
+router.post("/", requirePermission("admin-accounts", "tao"), async (req, res, next) => {
   try {
     const validation = validateAccount(req.body);
     if (validation) return res.status(400).json({ message: validation });
@@ -94,6 +96,19 @@ router.post("/", async (req, res, next) => {
     const result = await users.insertOne(account);
     await syncEmployee(getDatabase(), account);
 
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username || "admin",
+      role: req.user?.role || "QuanTriHeThong",
+      action: "CREATE",
+      module: "accounts",
+      entity: "Users",
+      entityId: String(result.insertedId),
+      description: `Tạo tài khoản người dùng "${account.username}" (Họ tên: ${account.fullName}, Vai trò: ${account.role})`,
+      metadata: { username: account.username, role: account.role, fullName: account.fullName },
+      ip: req.ip,
+    });
+
     res.status(201).json({
       data: publicAccount({ _id: result.insertedId, ...account }),
       message: "Đã tạo nhân viên & tài khoản thành công",
@@ -101,7 +116,7 @@ router.post("/", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.put("/:id", async (req, res, next) => {
+router.put("/:id", requirePermission("admin-accounts", "sua"), async (req, res, next) => {
   try {
     const accountId = parseId(req.params.id);
     if (!accountId) return res.status(400).json({ message: "ID tài khoản không hợp lệ" });
@@ -160,11 +175,33 @@ router.put("/:id", async (req, res, next) => {
     if (!result) return res.status(404).json({ message: "Không tìm thấy tài khoản" });
 
     await syncEmployee(getDatabase(), { ...existing, ...update }, existing.username);
+
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username || "admin",
+      role: req.user?.role || "QuanTriHeThong",
+      action: update.role !== existing.role ? "ROLE_PERMISSION_CHANGE" : "UPDATE",
+      module: "accounts",
+      entity: "Users",
+      entityId: String(accountId),
+      description: update.role !== existing.role
+        ? `Thay đổi vai trò của "${existing.username}" từ ${existing.role} sang ${update.role}`
+        : `Cập nhật thông tin tài khoản "${existing.username}"`,
+      metadata: {
+        username: existing.username,
+        oldRole: existing.role,
+        newRole: update.role,
+        oldStatus: existing.status,
+        newStatus: update.status,
+      },
+      ip: req.ip,
+    });
+
     res.json({ data: publicAccount(result), message: "Đã cập nhật thông tin thành công" });
   } catch (error) { next(error); }
 });
 
-router.patch("/:id/toggle-lock", async (req, res, next) => {
+router.patch("/:id/toggle-lock", requirePermission("admin-accounts", "sua"), async (req, res, next) => {
   try {
     const accountId = parseId(req.params.id);
     if (!accountId) return res.status(400).json({ message: "ID tài khoản không hợp lệ" });
@@ -195,6 +232,19 @@ router.patch("/:id/toggle-lock", async (req, res, next) => {
     await users.updateOne({ _id: accountId }, { $set: { status: newStatus, updatedAt: new Date() } });
     await syncEmployee(getDatabase(), { ...existing, status: newStatus }, existing.username);
 
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username || "admin",
+      role: req.user?.role || "QuanTriHeThong",
+      action: "UPDATE",
+      module: "accounts",
+      entity: "Users",
+      entityId: String(accountId),
+      description: `${newStatus === "Đã khóa" ? "Khóa" : "Mở khóa"} tài khoản "${existing.username}"`,
+      metadata: { username: existing.username, status: newStatus },
+      ip: req.ip,
+    });
+
     res.json({
       success: true,
       status: newStatus,
@@ -203,7 +253,7 @@ router.patch("/:id/toggle-lock", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.delete("/:id", async (req, res, next) => {
+router.delete("/:id", requirePermission("admin-accounts", "xoa"), async (req, res, next) => {
   try {
     const accountId = parseId(req.params.id);
     if (!accountId) return res.status(400).json({ message: "ID tài khoản không hợp lệ" });
@@ -230,6 +280,19 @@ router.delete("/:id", async (req, res, next) => {
       { username: existing.username },
       { $set: { TrangThai: "Đã nghỉ việc", updatedAt: new Date() } }
     );
+
+    recordAudit({
+      userId: req.user?.id,
+      username: req.user?.username || "admin",
+      role: req.user?.role || "QuanTriHeThong",
+      action: "DELETE",
+      module: "accounts",
+      entity: "Users",
+      entityId: String(accountId),
+      description: `Xóa tài khoản người dùng "${existing.username}" (${existing.role})`,
+      metadata: { username: existing.username, role: existing.role },
+      ip: req.ip,
+    });
 
     res.json({ message: "Đã xóa tài khoản" });
   } catch (error) { next(error); }

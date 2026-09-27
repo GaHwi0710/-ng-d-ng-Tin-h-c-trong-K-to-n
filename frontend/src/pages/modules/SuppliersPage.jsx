@@ -18,6 +18,7 @@ import { StatCard } from "../../components/StatCard.jsx";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
+import { userCan } from "../../lib/permissions.js";
 
 export function SuppliersPage({ title, description }) {
   const navigate = useNavigate();
@@ -156,10 +157,12 @@ export function SuppliersPage({ title, description }) {
           <h1 id="suppliers-page-heading">{title}</h1>
           <p>{description || "Đối tác cung ứng hàng hóa cho cửa hàng, thông tin đầu mối và hợp đồng nhập kho."}</p>
         </hgroup>
-        <button className="btn btn-primary" type="button" onClick={openCreate}>
-          <PlusIcon className="btn-icon" aria-hidden="true" />
-          Thêm nhà cung cấp
-        </button>
+        {userCan("suppliers", "tao") && (
+          <button className="btn btn-primary" type="button" onClick={openCreate}>
+            <PlusIcon className="btn-icon" aria-hidden="true" />
+            Thêm nhà cung cấp
+          </button>
+        )}
       </header>
 
       {/* Stats */}
@@ -281,34 +284,40 @@ export function SuppliersPage({ title, description }) {
                     </span>
                   </td>
                   <td style={{ textAlign: "center" }}>
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      title="Lập đơn đặt hàng mới cho NCC này"
-                      onClick={() => navigate("/purchase-orders")}
-                    >
-                      <ShoppingCartIcon className="btn-icon" />
-                      Đặt hàng
-                    </button>
+                    {userCan("purchase-orders", "tao") && (
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        title="Lập đơn đặt hàng mới cho NCC này"
+                        onClick={() => navigate("/purchase-orders")}
+                      >
+                        <ShoppingCartIcon className="btn-icon" />
+                        Đặt hàng
+                      </button>
+                    )}
                   </td>
                   <td style={{ textAlign: "center" }}>
                     <div className="row-actions" style={{ justifyContent: "center" }}>
-                      <button
-                        type="button"
-                        className="icon-sm-btn"
-                        title="Chỉnh sửa"
-                        onClick={() => openEdit(supp)}
-                      >
-                        <PencilSquareIcon className="ic" />
-                      </button>
-                      <button
-                        type="button"
-                        className="icon-sm-btn del"
-                        title={isInactive ? "Xóa vĩnh viễn" : "Xóa hoặc ngưng hoạt động"}
-                        onClick={() => handleDelete(supp.id, supp.TenNCC)}
-                      >
-                        <TrashIcon className="ic" />
-                      </button>
+                      {userCan("suppliers", "sua") && (
+                        <button
+                          type="button"
+                          className="icon-sm-btn"
+                          title="Chỉnh sửa"
+                          onClick={() => openEdit(supp)}
+                        >
+                          <PencilSquareIcon className="ic" />
+                        </button>
+                      )}
+                      {userCan("suppliers", "xoa") && (
+                        <button
+                          type="button"
+                          className="icon-sm-btn del"
+                          title={isInactive ? "Xóa vĩnh viễn" : "Xóa hoặc ngưng hoạt động"}
+                          onClick={() => handleDelete(supp.id, supp.TenNCC)}
+                        >
+                          <TrashIcon className="ic" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

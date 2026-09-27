@@ -131,17 +131,6 @@ export function DashboardPage() {
     [validInvoices]
   );
 
-  // 3. Công nợ khách hàng (Phải thu)
-  const customerDebt = useMemo(() => {
-    return data.debts
-      .filter(
-        (d) =>
-          (d.LoaiCongNo === "Khách hàng" || (!d.LoaiCongNo && d.MaKHCode)) &&
-          d.TrangThai !== "Đã thanh toán"
-      )
-      .reduce((sum, d) => sum + Number(d.SoTienConLai || 0), 0);
-  }, [data.debts]);
-
   // 4. Công nợ nhà cung cấp (Phải trả)
   const supplierDebt = useMemo(() => {
     return data.debts
@@ -452,12 +441,12 @@ export function DashboardPage() {
           />
           <StatCard
             icon={CreditCardIcon}
-            label="Công nợ khách hàng"
-            value={money.format(customerDebt)}
+            label="Hóa đơn chưa thu tiền"
+            value={money.format(totalRevenue - totalPaid)}
             theme="amber"
-            delta={customerDebt > 0 ? "Phải thu từ khách" : "Đã thu đủ"}
-            deltaType={customerDebt > 0 ? "down" : "neutral"}
-            onClick={() => navigate("/debts")}
+            delta={(totalRevenue - totalPaid) > 0 ? "Còn phải thu từ hóa đơn" : "Đã thu đủ"}
+            deltaType={(totalRevenue - totalPaid) > 0 ? "down" : "neutral"}
+            onClick={() => navigate("/invoices")}
           />
           <StatCard
             icon={BuildingStorefrontIcon}

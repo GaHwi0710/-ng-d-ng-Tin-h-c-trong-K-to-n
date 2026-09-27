@@ -474,6 +474,32 @@ export async function seedDatabase(database) {
     console.log("Đã áp dụng ma trận quyền chi tiết cho 5 vai trò hệ thống (v4 - có Thu chi)");
   }
 
+  // v5: bổ sung nhóm quyền Audit Log và Backup vào VaiTro
+  if (!(await database.collection("_metadata").findOne({ key: "strict-permissions-v5" }))) {
+    for (const [maKey, quyenHan] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+      await database.collection("VaiTro").updateOne(
+        { MaKey: maKey },
+        {
+          $set: {
+            "QuyenHan.audit-logs": quyenHan["audit-logs"] || [],
+            "QuyenHan.backup": quyenHan["backup"] || [],
+          },
+        }
+      );
+    }
+    await database.collection("_metadata").insertOne({ key: "strict-permissions-v5", createdAt: new Date() });
+    console.log("Đã bổ sung quyền Nhật ký kiểm toán và Sao lưu vào VaiTro (v5)");
+  }
+
+  // v6: cập nhật ma trận quyền chặt chẽ theo nghiệp vụ thực tế cho từng vai trò
+  if (!(await database.collection("_metadata").findOne({ key: "strict-permissions-v6" }))) {
+    for (const [maKey, quyenHan] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+      await database.collection("VaiTro").updateOne({ MaKey: maKey }, { $set: { QuyenHan: quyenHan } });
+    }
+    await database.collection("_metadata").insertOne({ key: "strict-permissions-v6", createdAt: new Date() });
+    console.log("Đã cập nhật ma trận quyền chuẩn nghiệp vụ cho các vai trò (v6)");
+  }
+
   // Dữ liệu mẫu Phiếu thu / Phiếu chi (chỉ chèn khi cả 2 collection trống để luôn có dữ liệu demo)
   if (
     (await database.collection("PhieuThu").countDocuments()) === 0 &&

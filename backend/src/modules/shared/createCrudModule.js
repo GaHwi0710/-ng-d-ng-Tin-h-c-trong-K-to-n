@@ -472,7 +472,15 @@ export function createCrudModule(routeName, tableName) {
       if (!existingDoc) return res.status(404).json({ message: `Không tìm thấy ${routeName}` });
       const id = existingDoc._id;
 
+      // YC4: Chặn sửa đổi PhieuThu/PhieuChi đã xác nhận
+      if ((tableName === "PhieuThu" || tableName === "PhieuChi") && existingDoc.TrangThai === "CONFIRMED") {
+        return res.status(400).json({
+          message: `${tableName === "PhieuThu" ? "Phiếu thu" : "Phiếu chi"} đã xác nhận, không thể chỉnh sửa hoặc xóa.`,
+        });
+      }
+
       if (tableName === "CongNo") {
+
         const body = { ...req.body };
         const soTien = Number(body.SoTien ?? existingDoc.SoTien);
         if (!Number.isFinite(soTien) || soTien <= 0) {
@@ -670,11 +678,25 @@ export function createCrudModule(routeName, tableName) {
   router.delete("/:id", async (req, res, next) => {
     try {
       const db = getDatabase();
+
+      // YC3: Công nợ không được phép xóa trực tiếp - phải xử lý qua phiếu thanh toán/điều chỉnh nghiệp vụ
+      if (tableName === "CongNo") {
+        return res.status(403).json({
+          message: "Không được phép xóa công nợ. Công nợ phải được xử lý thông qua phiếu thanh toán hoặc điều chỉnh chứng từ nguồn.",
+        });
+      }
+
       const existingDoc = await findDocument(db.collection(tableName), tableName, req.params.id);
       if (!existingDoc) return res.status(404).json({ message: `Không tìm thấy ${routeName}` });
       const id = existingDoc._id;
 
-      // Soft-delete for KhachHang
+      // YC4: Chặn xóa PhieuThu/PhieuChi đã xác nhận
+      if ((tableName === "PhieuThu" || tableName === "PhieuChi") && existingDoc.TrangThai === "CONFIRMED") {
+        return res.status(400).json({
+          message: `${tableName === "PhieuThu" ? "Phiếu thu" : "Phiếu chi"} đã xác nhận, không thể chỉnh sửa hoặc xóa.`,
+        });
+      }
+
       if (tableName === "KhachHang") {
         const idMatches = [id, String(id)];
         if (existingDoc.MaKH) idMatches.push(existingDoc.MaKH);
