@@ -26,6 +26,8 @@ const BACKUP_COLLECTIONS = [
   "SanPham",
   "DonDatHang",
   "CT_DonDatHang",
+  "DonHang",
+  "CT_DonHang",
   "HoaDon",
   "CT_HoaDon",
   "PhieuThu",
@@ -42,6 +44,10 @@ const BACKUP_COLLECTIONS = [
   "CT_KiemKe",
   "DieuChinhKho",
   "KhuyenMai",
+  "PhieuTraHang",
+  "CT_PhieuTraHang",
+  "CT_KhuyenMai",
+  "Counters",
   "AuditLogs",
 ];
 
@@ -267,7 +273,38 @@ router.post("/backup/restore", requirePermission("backup", "sua"), async (req, r
     let restoredCount = 0;
     const restoredColls = [];
 
-    const objectIdKeys = new Set(["_id", "MaSP", "MaLoai", "MaNCC", "MaKH", "MaNV", "productId", "supplierId", "customerId"]);
+    const objectIdKeys = new Set([
+      "_id",
+      // Master data keys
+      "MaSP", "MaLoai", "MaNCC", "MaKH", "MaNV", "MaVaiTro",
+      // Document keys
+      "MaDDH", "MaDH", "MaHD", "MaPN", "MaPX", "MaCN", "MaKK", "MaPTH", "MaDC",
+      // English-style keys used in some records
+      "productId", "supplierId", "customerId",
+    ]);
+
+    // System timestamps that MUST be BSON Date objects
+    const systemDateKeys = new Set(["createdAt", "updatedAt", "timestamp"]);
+
+    // Business date fields that MUST remain strings in YYYY-MM-DD format
+    const businessDateKeys = new Set([
+      "NgayLap",
+      "NgayNhap",
+      "NgayXuat",
+      "NgayDat",
+      "NgayThu",
+      "NgayChi",
+      "NgayTra",
+      "NgayDieuChinh",
+      "NgayKiemKe",
+      "NgayPhatSinh",
+      "NgayThanhToan",
+      "HanSuDung",
+      "NgaySinh",
+      "NgayVaoLam",
+      "NgayBatDau",
+      "NgayKetThuc",
+    ]);
 
     const deserializeDoc = (doc) => {
       if (!doc || typeof doc !== "object") return doc;
@@ -275,13 +312,22 @@ router.post("/backup/restore", requirePermission("backup", "sua"), async (req, r
       for (const [key, val] of Object.entries(clone)) {
         if (objectIdKeys.has(key) && typeof val === "string" && ObjectId.isValid(val)) {
           clone[key] = new ObjectId(val);
-        } else if (key === "createdAt" || key === "updatedAt") {
+        } else if (systemDateKeys.has(key)) {
           if (typeof val === "string") {
             const d = new Date(val);
             if (!isNaN(d.getTime())) clone[key] = d;
           }
+        } else if (businessDateKeys.has(key)) {
+          // Chuẩn hóa định dạng chuỗi YYYY-MM-DD cho các trường ngày nghiệp vụ
+          if (typeof val === "string") {
+            clone[key] = val.slice(0, 10);
+          } else if (val instanceof Date && !isNaN(val.getTime())) {
+            clone[key] = val.toISOString().slice(0, 10);
+          }
         } else if (Array.isArray(val)) {
           clone[key] = val.map((item) => (item && typeof item === "object" ? deserializeDoc(item) : item));
+        } else if (val && typeof val === "object" && !(val instanceof Date)) {
+          clone[key] = deserializeDoc(val);
         }
       }
       return clone;

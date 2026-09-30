@@ -4,11 +4,10 @@ import { getDatabase } from "../../config/mongodb.js";
 import { passwordMatches, hashPassword } from "./password.js";
 import { isLockedStatus } from "./accountEmployee.js";
 import { getRolePermissions } from "../shared/permissions.js";
-import { requireAuth } from "../../common/middlewares/auth.middleware.js";
+import { requireAuth, getJwtSecret } from "../../common/middlewares/auth.middleware.js";
 import { recordAudit } from "../audit/audit.service.js";
 
 const router = Router();
-const secret = process.env.JWT_SECRET || "baby-shop-development-secret";
 
 router.post("/login", (req, res) => {
   const rawUsername = String(req.body.username || "").trim();
@@ -88,7 +87,7 @@ router.post("/login", (req, res) => {
           fullName: validAccount.fullName,
           role: validAccount.role,
         },
-        secret,
+        getJwtSecret(),
         { expiresIn: "8h" }
       ),
       user: { ...validAccount, permissions, roleName },
@@ -111,7 +110,7 @@ router.post("/logout", (req, res) => {
 router.get("/me", async (req, res) => {
   try {
     const token = req.headers.authorization?.replace("Bearer ", "");
-    const decoded = jwt.verify(token, secret);
+    const decoded = jwt.verify(token, getJwtSecret());
 
     try {
       const db = getDatabase();

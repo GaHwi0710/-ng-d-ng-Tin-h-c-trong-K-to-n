@@ -105,14 +105,18 @@ function validateRecord(tableName, body) {
   return null;
 }
 
-async function serializeRecord(tableName, document) {
+async function serializeRecord(tableName, document, cache = {}) {
   const record = serialize(document);
   if (!record) return record;
 
   if (tableName === "SanPham") {
-    const stockDoc = await getDatabase().collection("TonKho").findOne({ MaSP: new ObjectId(record.id) });
-    if (stockDoc && stockDoc.SoLuongTon !== undefined) {
-      record.stock = stockDoc.SoLuongTon;
+    if (cache.stockMap && cache.stockMap.has(String(record.id))) {
+      record.stock = cache.stockMap.get(String(record.id));
+    } else {
+      const stockDoc = await getDatabase().collection("TonKho").findOne({ MaSP: new ObjectId(record.id) });
+      if (stockDoc && stockDoc.SoLuongTon !== undefined) {
+        record.stock = stockDoc.SoLuongTon;
+      }
     }
   } else if (tableName === "TonKho") {
     if (record.MaSP) {
@@ -166,6 +170,12 @@ async function serializeRecord(tableName, document) {
   for (const reference of references) {
     if (!record[reference.field]) continue;
     const refVal = record[reference.field];
+    if (tableName === "SanPham" && reference.table === "LoaiHang" && cache.catMap) {
+      const linked = cache.catMap.get(String(refVal));
+      if (linked?.[reference.code]) record[reference.output] = linked[reference.code];
+      if (linked?.[reference.name]) record[reference.nameOutput] = linked[reference.name];
+      continue;
+    }
     const projection = { [reference.code]: 1 };
     if (reference.name) projection[reference.name] = 1;
     const orClauses = [];
@@ -249,6 +259,40 @@ async function serializeRecord(tableName, document) {
   return record;
 }
 
+async function serializeRecords(tableName, documents) {
+  if (!documents || !documents.length) return [];
+  const cache = {};
+  if (tableName === "SanPham") {
+    const db = getDatabase();
+    const ids = documents.map((d) => d._id).filter(Boolean);
+    const idStrings = ids.map((id) => String(id));
+    const [stocks, categories] = await Promise.all([
+      db
+        .collection("TonKho")
+        .find({
+          $or: [{ MaSP: { $in: ids } }, { MaSP: { $in: idStrings } }],
+        })
+        .toArray()
+        .catch(() => []),
+      db.collection("LoaiHang").find({}).toArray().catch(() => []),
+    ]);
+
+    const stockMap = new Map();
+    stocks.forEach((s) => {
+      if (s.MaSP) stockMap.set(String(s.MaSP), s.SoLuongTon);
+    });
+    cache.stockMap = stockMap;
+
+    const catMap = new Map();
+    categories.forEach((c) => {
+      catMap.set(String(c._id), c);
+      if (c.MaLoai) catMap.set(String(c.MaLoai), c);
+    });
+    cache.catMap = catMap;
+  }
+  return Promise.all(documents.map((item) => serializeRecord(tableName, item, cache)));
+}
+
 export function createCrudModule(routeName, tableName) {
   const router = Router();
 
@@ -269,7 +313,7 @@ export function createCrudModule(routeName, tableName) {
       const data = await cursor.toArray();
       const totalPages = Math.ceil(total / limit) || 1;
 
-      const serializedData = await Promise.all(data.map((item) => serializeRecord(tableName, item)));
+      const serializedData = await serializeRecords(tableName, data);
       res.json({
         table: tableName,
         data: serializedData,
@@ -804,20 +848,18 @@ export function createCrudModule(routeName, tableName) {
         await db.collection("TonKho").deleteOne({ MaSP: id });
       }
 
-      if (tableName === "PhieuNhap") {
-        await db.collection("CongNo").deleteMany({
-          $or: [
-            { MaPN: id },
-            { MaPN: String(id) },
-            ...(existingDoc.MaPN ? [{ MaPN: existingDoc.MaPN }] : []),
-          ]
-        });
-        await db.collection("CT_PhieuNhap").deleteMany({
-          $or: [
-            { MaPN: id },
-            { MaPN: String(id) },
-            ...(existingDoc.MaPN ? [{ MaPN: existingDoc.MaPN }] : []),
-          ]
+      // ERR-03 & ERR-04: Chặn xóa vật lý chứng từ kế toán — phải hủy qua trạng thái
+      const PROTECTED_VOUCHERS = ["PhieuNhap", "HoaDon", "DonHang", "PhieuXuat", "DonDatHang"];
+      if (PROTECTED_VOUCHERS.includes(tableName)) {
+        const voucherNames = {
+          PhieuNhap: "Phiếu nhập kho",
+          HoaDon: "Hóa đơn bán hàng",
+          DonHang: "Đơn hàng",
+          PhieuXuat: "Phiếu xuất kho",
+          DonDatHang: "Đơn đặt hàng",
+        };
+        return res.status(403).json({
+          message: `Không được phép xóa ${voucherNames[tableName] || tableName}. Chứng từ kế toán chỉ có thể hủy bỏ thông qua chức năng cập nhật trạng thái, không được xóa vật lý.`,
         });
       }
 

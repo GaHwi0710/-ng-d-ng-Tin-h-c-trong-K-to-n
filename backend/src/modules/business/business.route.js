@@ -734,35 +734,45 @@ router.post("/debts/:id/pay", requirePermission("debts", "sua"), async (req, res
 
     const result = await withTransaction(async (session) => {
       const debtCol = getDatabase().collection("CongNo");
-      const debt = await debtCol.findOne(
-        debtId ? { _id: debtId } : { $or: [{ MaCN: String(req.params.id) }, { id: String(req.params.id) }] },
-        { session }
+
+      // ERR-06 FIX: Atomic findOneAndUpdate prevents race condition / double-payment
+      // The $gte filter ensures the remaining balance is sufficient BEFORE the update happens
+      const filter = debtId
+        ? { _id: debtId, SoTienConLai: { $gte: amount } }
+        : {
+            $or: [{ MaCN: String(req.params.id) }, { id: String(req.params.id) }],
+            SoTienConLai: { $gte: amount },
+          };
+
+      const debt = await debtCol.findOneAndUpdate(
+        filter,
+        {
+          $inc: { SoTienDaTra: amount, SoTienConLai: -amount },
+          $set: { updatedAt: new Date() },
+        },
+        { session, returnDocument: "before" }
       );
-      if (!debt) throw fail("Không tìm thấy bản ghi công nợ", 404);
 
-      const totalDebt = Number(debt.SoTien || 0);
-      const currentPaid = Number(debt.SoTienDaTra || 0);
-      const currentRemaining = Math.max(0, Number(debt.SoTienConLai ?? (totalDebt - currentPaid)));
-
-      if (amount > currentRemaining) {
-        throw fail(`Số tiền thanh toán (${amount.toLocaleString("vi-VN")} ₫) vượt số còn nợ (${currentRemaining.toLocaleString("vi-VN")} ₫)`, 400);
+      if (!debt) {
+        // Could be: debt not found, already settled, or insufficient balance
+        const exists = await debtCol.findOne(
+          debtId ? { _id: debtId } : { $or: [{ MaCN: String(req.params.id) }, { id: String(req.params.id) }] },
+          { session }
+        );
+        if (!exists) throw fail("Không tìm thấy bản ghi công nợ", 404);
+        const remaining = Math.max(0, Number(exists.SoTienConLai ?? 0));
+        throw fail(`Số tiền thanh toán (${amount.toLocaleString("vi-VN")} ₫) vượt số còn nợ (${remaining.toLocaleString("vi-VN")} ₫)`, 400);
       }
 
-      const newPaid = currentPaid + amount;
+      const totalDebt = Number(debt.SoTien || 0);
+      const newPaid = Number(debt.SoTienDaTra || 0) + amount;
       const newRemaining = Math.max(0, totalDebt - newPaid);
       const newStatus = newRemaining === 0 ? "Đã thanh toán" : "Còn nợ";
 
-      // 1. Cập nhật CongNo
+      // Update status field (TrangThai was not set atomically above to keep $inc clean)
       await debtCol.updateOne(
         { _id: debt._id },
-        {
-          $set: {
-            SoTienDaTra: newPaid,
-            SoTienConLai: newRemaining,
-            TrangThai: newStatus,
-            updatedAt: new Date(),
-          },
-        },
+        { $set: { TrangThai: newStatus } },
         { session }
       );
 

@@ -14,7 +14,7 @@ import {
   EnvelopeIcon,
   QrCodeIcon,
 } from "@heroicons/react/24/outline";
-import { listRecords, saveRecord } from "../../lib/api.js";
+import { listRecords, saveRecord, postRequest } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatusBadge, Badge } from "../../components/Badge.jsx";
@@ -622,19 +622,12 @@ export function InvoicePage({ title }) {
     }
     setSendingEmail(true);
     try {
-      const res = await fetch("/api/email/invoice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          invoiceId: emailModalInvoice.id || emailModalInvoice._id,
-          email,
-        }),
+      const invoiceId = emailModalInvoice.id || emailModalInvoice._id || emailModalInvoice.MaHD;
+      const data = await postRequest("email/invoice", {
+        invoiceId,
+        email,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || "Gửi email thất bại");
-      }
-      toast(data.message || `Đã gửi hóa đơn điện tử đến ${email}`);
+      toast(data?.message || `Đã gửi hóa đơn điện tử đến ${email}`);
       setEmailModalInvoice(null);
     } catch (error) {
       toast(error.message || "Lỗi khi gửi email hóa đơn");

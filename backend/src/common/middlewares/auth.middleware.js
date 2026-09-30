@@ -2,23 +2,33 @@ import jwt from "jsonwebtoken";
 import { getDatabase } from "../../config/mongodb.js";
 import { isLockedStatus } from "../../modules/auth/accountEmployee.js";
 
-const secret = process.env.JWT_SECRET || "baby-shop-development-secret";
+const DEFAULT_SECRET = "baby-shop-development-secret";
+
+export function getJwtSecret() {
+  const secret = process.env.JWT_SECRET || DEFAULT_SECRET;
+  if (secret === DEFAULT_SECRET && process.env.NODE_ENV === "production") {
+    console.error("⛔ CRITICAL: JWT_SECRET đang sử dụng giá trị mặc định! Server từ chối khởi động trong production.");
+    console.error("   Hãy tạo file backend/.env với JWT_SECRET=<random-secret>");
+    process.exit(1);
+  }
+  return secret;
+}
 
 export async function requireAuth(req, res, next) {
   let tokenStr = "";
   const header = req.headers.authorization;
   if (header?.startsWith("Bearer ")) {
     tokenStr = header.slice(7);
-  } else if (req.query?.token) {
-    tokenStr = String(req.query.token);
   }
+  // SEC-02: Đã loại bỏ hỗ trợ token qua query parameter (req.query.token)
+  // để tránh token bị lộ qua URL / access logs / referer headers
 
   if (!tokenStr) {
     return res.status(401).json({ message: "Missing access token" });
   }
 
   try {
-    req.user = jwt.verify(tokenStr, secret);
+    req.user = jwt.verify(tokenStr, getJwtSecret());
     
     // Kiểm tra ngay xem tài khoản có bị khóa trong CSDL hay không
     if (req.user?.username) {
@@ -41,4 +51,3 @@ export async function requireAuth(req, res, next) {
 
   next();
 }
-

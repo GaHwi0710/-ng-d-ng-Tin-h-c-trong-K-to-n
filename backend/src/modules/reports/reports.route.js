@@ -73,18 +73,38 @@ router.get("/revenue", async (req, res, next) => {
     }
 
     if (from || to) {
-      filter.NgayLap = {};
-      if (from) filter.NgayLap.$gte = String(from).slice(0, 10);
-      if (to) filter.NgayLap.$lte = String(to).slice(0, 10);
+      const fromStr = from ? String(from).slice(0, 10) : "";
+      const toStr = to ? String(to).slice(0, 10) : "";
+      const dateConds = [];
+
+      const strCond = {};
+      if (fromStr) strCond.$gte = fromStr;
+      if (toStr) strCond.$lte = toStr;
+      dateConds.push({ NgayLap: strCond });
+
+      const dateObjCond = {};
+      if (fromStr) dateObjCond.$gte = new Date(`${fromStr}T00:00:00.000Z`);
+      if (toStr) dateObjCond.$lte = new Date(`${toStr}T23:59:59.999Z`);
+      dateConds.push({ NgayLap: dateObjCond });
+
+      filter.$or = dateConds;
     }
 
     if (customerId && customerId !== "all") {
       const cId = parseId(customerId);
-      filter.$or = [
+      const custConds = [
         ...(cId ? [{ MaKH: cId }] : []),
         { MaKH: String(customerId) },
         { MaKHCode: String(customerId) },
       ];
+      if (filter.$and) {
+        filter.$and.push({ $or: custConds });
+      } else if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: custConds }];
+        delete filter.$or;
+      } else {
+        filter.$or = custConds;
+      }
     }
 
     let invoices = await db.collection("HoaDon").find(filter).sort({ NgayLap: 1 }).toArray();
@@ -169,9 +189,29 @@ router.get("/revenue", async (req, res, next) => {
       }
     }
 
+    const toDateStr = (v) => {
+      if (!v) return "";
+      if (v instanceof Date && !isNaN(v.getTime())) {
+        const y = v.getFullYear();
+        const m = String(v.getMonth() + 1).padStart(2, "0");
+        const d = String(v.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+      const s = String(v);
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+      const parsed = new Date(v);
+      if (!isNaN(parsed.getTime())) {
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, "0");
+        const d = String(parsed.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+      return "";
+    };
+
     // Tập hợp doanh thu từ từng hóa đơn thực tế
     for (const inv of invoices) {
-      const dateStr = String(inv.NgayLap || "").slice(0, 10);
+      const dateStr = toDateStr(inv.NgayLap) || toDateStr(inv.createdAt) || "Chưa rõ";
       let pKey = "";
       if (validGroupBy === "year") {
         pKey = dateStr.slice(0, 4) || "Chưa rõ";
@@ -212,22 +252,25 @@ router.get("/revenue", async (req, res, next) => {
       }));
 
     // 6. Mảng 7 ngày cho Dashboard (Backward compatibility)
-    const makeDates = (anchor) =>
-      Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(`${anchor}T00:00:00`);
+    const todayStr = toDateStr(new Date());
+    const makeDates = (anchor) => {
+      const cleanAnchor = toDateStr(anchor) || todayStr;
+      const baseDate = new Date(`${cleanAnchor}T00:00:00`);
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(baseDate);
         d.setDate(d.getDate() - (6 - i));
-        return d.toISOString().slice(0, 10);
+        return !isNaN(d.getTime()) ? toDateStr(d) : cleanAnchor;
       });
+    };
 
-    const todayStr = new Date().toISOString().slice(0, 10);
     let dates = makeDates(to || todayStr);
 
     if (
       invoices.length > 0 &&
-      !dates.some((d) => invoices.some((inv) => String(inv.NgayLap || "").slice(0, 10) === d))
+      !dates.some((d) => invoices.some((inv) => toDateStr(inv.NgayLap || inv.createdAt) === d))
     ) {
       const latestDate = invoices
-        .map((inv) => String(inv.NgayLap || "").slice(0, 10))
+        .map((inv) => toDateStr(inv.NgayLap || inv.createdAt))
         .filter(Boolean)
         .sort()
         .at(-1);
@@ -237,7 +280,7 @@ router.get("/revenue", async (req, res, next) => {
     const weekly = dates.map((date) => ({
       date,
       total: invoices
-        .filter((inv) => String(inv.NgayLap || "").slice(0, 10) === date)
+        .filter((inv) => toDateStr(inv.NgayLap || inv.createdAt) === date)
         .reduce((sum, inv) => sum + Number(inv.TongTien || 0), 0),
     }));
 
@@ -273,16 +316,19 @@ router.get("/warehouse", async (req, res, next) => {
     const issueFilter = {};
 
     if (from || to) {
-      receiptFilter.NgayNhap = {};
-      issueFilter.NgayXuat = {};
-      if (from) {
-        receiptFilter.NgayNhap.$gte = String(from).slice(0, 10);
-        issueFilter.NgayXuat.$gte = String(from).slice(0, 10);
-      }
-      if (to) {
-        receiptFilter.NgayNhap.$lte = String(to).slice(0, 10);
-        issueFilter.NgayXuat.$lte = String(to).slice(0, 10);
-      }
+      const fromStr = from ? String(from).slice(0, 10) : "";
+      const toStr = to ? String(to).slice(0, 10) : "";
+      const makeDateQuery = (field) => {
+        const strCond = {};
+        if (fromStr) strCond.$gte = fromStr;
+        if (toStr) strCond.$lte = toStr;
+        const objCond = {};
+        if (fromStr) objCond.$gte = new Date(`${fromStr}T00:00:00.000Z`);
+        if (toStr) objCond.$lte = new Date(`${toStr}T23:59:59.999Z`);
+        return [{ [field]: strCond }, { [field]: objCond }];
+      };
+      receiptFilter.$or = makeDateQuery("NgayNhap");
+      issueFilter.$or = makeDateQuery("NgayXuat");
     }
 
     if (status && status !== "all") {
@@ -292,11 +338,17 @@ router.get("/warehouse", async (req, res, next) => {
 
     if (supplierId && supplierId !== "all") {
       const sId = parseId(supplierId);
-      receiptFilter.$or = [
+      const suppConds = [
         ...(sId ? [{ MaNCC: sId }] : []),
         { MaNCC: String(supplierId) },
         { MaNCCCode: String(supplierId) },
       ];
+      if (receiptFilter.$or) {
+        receiptFilter.$and = [{ $or: receiptFilter.$or }, { $or: suppConds }];
+        delete receiptFilter.$or;
+      } else {
+        receiptFilter.$or = suppConds;
+      }
     }
 
     const [rawReceipts, rawIssues, suppMap, stocks, products] = await Promise.all([
@@ -486,13 +538,14 @@ router.get("/inventory", async (req, res, next) => {
       }
     }
 
-    const [products, stocks, categories, goodsReceipts, invoices, goodsIssues] = await Promise.all([
+    const [products, stocks, categories, goodsReceipts, invoices, goodsIssues, adjustments] = await Promise.all([
       db.collection("SanPham").find(query).toArray(),
       db.collection("TonKho").find({}).toArray(),
       db.collection("LoaiHang").find({}).toArray(),
       db.collection("PhieuNhap").find({}).toArray(),
       db.collection("HoaDon").find({ TrangThai: { $ne: "Đã hủy" } }).toArray(),
       db.collection("PhieuXuat").find({}).toArray(),
+      db.collection("DieuChinhKho").find({}).toArray(),
     ]);
 
     const catMap = new Map(categories.map((c) => [c._id.toString(), c.TenLoai]));
@@ -567,12 +620,35 @@ router.get("/inventory", async (req, res, next) => {
         }
       }
 
-      // 3. Tính toán Tồn cuối và Tồn đầu chuẩn kế toán:
-      // Tồn cuối kỳ = tồn hiện tại trừ nhập phát sinh sau kỳ cộng xuất phát sinh sau kỳ
-      const tonCuoi = Math.max(0, curStock - nhapSauKy + xuatSauKy);
-      // Đẳng thức kế toán bắt buộc: TonCuoi = TonDau + NhapTrongKy - XuatTrongKy
-      // => TonDau = TonCuoi - NhapTrongKy + XuatTrongKy
-      const tonDau = tonCuoi - nhapTrongKy + xuatTrongKy;
+      // ERR-09 FIX: 3. Điều chỉnh kho (DieuChinhKho) — ±DieuChinh
+      // SoLuongDieuChinh > 0 = tăng tồn (như nhập), < 0 = giảm tồn (như xuất)
+      let dieuChinhTrongKy = 0;
+      let dieuChinhSauKy = 0;
+      for (const dc of adjustments) {
+        const d = extractDateStr(dc, "NgayDieuChinh");
+        for (const item of (dc.details || dc.items || [])) {
+          if (matchesProduct(item)) {
+            const qty = Number(item.SoLuongDieuChinh || item.SoLuongChenhLech || item.quantity || 0);
+            if (d >= fromStr && d <= toStr) dieuChinhTrongKy += qty;
+            if (d > toStr) dieuChinhSauKy += qty;
+          }
+        }
+        // DieuChinhKho records without details (single-product adjustment)
+        if (!(dc.details || dc.items || []).length && matchesProduct(dc)) {
+          const qty = Number(dc.SoLuongDieuChinh || dc.SoLuongChenhLech || 0);
+          const d = extractDateStr(dc, "NgayDieuChinh");
+          if (d >= fromStr && d <= toStr) dieuChinhTrongKy += qty;
+          if (d > toStr) dieuChinhSauKy += qty;
+        }
+      }
+
+      // 4. Tính toán Tồn cuối và Tồn đầu chuẩn kế toán:
+      // Công thức: TonCuoi = TonDau + NhapTrongKy - XuatTrongKy ± DieuChinh
+      // TonCuoi hiện tại = curStock trừ phát sinh sau kỳ báo cáo
+      const tonCuoi = Math.max(0, curStock - nhapSauKy + xuatSauKy - dieuChinhSauKy);
+      // Đẳng thức kế toán: TonCuoi = TonDau + NhapTrongKy - XuatTrongKy + DieuChinhTrongKy
+      // => TonDau = TonCuoi - NhapTrongKy + XuatTrongKy - DieuChinhTrongKy
+      const tonDau = tonCuoi - nhapTrongKy + xuatTrongKy - dieuChinhTrongKy;
 
       const giaNhap = Number(p.GiaNhap || p.GiaBan || 0);
       const giaTriTon = tonCuoi * giaNhap;

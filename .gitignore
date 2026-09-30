@@ -14,3 +14,7 @@ desktop.ini
 # Editor and tool state
 .vscode/
 .idea/
+
+# Database backups (contain business & personal data)
+backend/backups/*.json
+

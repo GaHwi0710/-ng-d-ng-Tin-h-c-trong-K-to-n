@@ -82,5 +82,14 @@ export async function ensureIndexes(database) {
   // ── Users (Tài khoản) ─────────────────────────────────────────────
   await idx("Users", { username: 1 }, { unique: true, sparse: true });
 
+  // ── AuditLogs (Nhật ký kiểm toán) ──────────────────────────────────
+  await idx("AuditLogs", { timestamp: -1 });
+  await idx("AuditLogs", { action: 1, timestamp: -1 });
+  await idx("AuditLogs", { module: 1, timestamp: -1 });
+  await idx("AuditLogs", { role: 1, timestamp: -1 });
+
+  // ── Counters (Mã tự sinh nghiệp vụ) ───────────────────────────────
+  await idx("Counters", { _id: 1 });
+
   console.log("✓ Đã kiểm tra và tạo đầy đủ chỉ mục MongoDB");
 }

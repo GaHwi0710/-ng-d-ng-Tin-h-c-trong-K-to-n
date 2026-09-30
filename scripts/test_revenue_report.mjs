@@ -57,15 +57,30 @@ async function runRevenueReportE2E() {
     const ketoan = await loginUser("ketoan", "ketoan123");
     assert(ketoan.status === 200, "Login 'ketoan' (KeToan) 200 OK");
 
+    // Helper to query invoices matching day or month regardless of whether stored as String or Date
+    const makeDateFilter = (dStr) => ({
+      $or: [
+        { NgayLap: dStr },
+        { NgayLap: new Date(`${dStr}T00:00:00.000Z`) },
+        { NgayLap: { $gte: new Date(`${dStr}T00:00:00.000Z`), $lte: new Date(`${dStr}T23:59:59.999Z`) } },
+      ],
+      TrangThai: { $ne: "Đã hủy" },
+    });
+
+    const makeMonthFilter = (yearMonth) => ({
+      $or: [
+        { NgayLap: { $regex: `^${yearMonth}` } },
+        { NgayLap: { $gte: new Date(`${yearMonth}-01T00:00:00.000Z`), $lte: new Date(`${yearMonth}-31T23:59:59.999Z`) } },
+      ],
+      TrangThai: { $ne: "Đã hủy" },
+    });
+
     // -------------------------------------------------------------------------
     // TEST 1: CÓ 3 HÓA ĐƠN TRONG CÙNG NGÀY -> TỔNG DOANH THU = TỔNG 3 HÓA ĐƠN
     // -------------------------------------------------------------------------
     console.log("\n[TEST 1] UC23: Có 3 hóa đơn trong cùng ngày 2026-09-04");
     const testDate = "2026-09-04";
-    const dayInvoices = await db.collection("HoaDon").find({
-      NgayLap: testDate,
-      TrangThai: { $ne: "Đã hủy" },
-    }).toArray();
+    const dayInvoices = await db.collection("HoaDon").find(makeDateFilter(testDate)).toArray();
 
     const expectedDayOrders = dayInvoices.length;
     const expectedDayRevenue = dayInvoices.reduce((sum, inv) => sum + Number(inv.TongTien || 0), 0);
@@ -94,8 +109,8 @@ async function runRevenueReportE2E() {
     const dateA = "2026-08-25";
     const dateB = "2026-09-04";
 
-    const invA = await db.collection("HoaDon").find({ NgayLap: dateA, TrangThai: { $ne: "Đã hủy" } }).toArray();
-    const invB = await db.collection("HoaDon").find({ NgayLap: dateB, TrangThai: { $ne: "Đã hủy" } }).toArray();
+    const invA = await db.collection("HoaDon").find(makeDateFilter(dateA)).toArray();
+    const invB = await db.collection("HoaDon").find(makeDateFilter(dateB)).toArray();
     const sumA = invA.reduce((s, i) => s + Number(i.TongTien || 0), 0);
     const sumB = invB.reduce((s, i) => s + Number(i.TongTien || 0), 0);
 
@@ -116,10 +131,7 @@ async function runRevenueReportE2E() {
     // TEST 3: CHỌN THÁNG -> CÁC HÓA ĐƠN TRONG THÁNG ĐƯỢC TỔNG HỢP ĐÚNG
     // -------------------------------------------------------------------------
     console.log("\n[TEST 3] UC23: Chọn tháng (2026-09) -> Tổng hợp đúng các hóa đơn trong tháng");
-    const sepInvoices = await db.collection("HoaDon").find({
-      NgayLap: { $regex: "^2026-09" },
-      TrangThai: { $ne: "Đã hủy" },
-    }).toArray();
+    const sepInvoices = await db.collection("HoaDon").find(makeMonthFilter("2026-09")).toArray();
     const expectedSepRevenue = sepInvoices.reduce((s, i) => s + Number(i.TongTien || 0), 0);
     const expectedSepOrders = sepInvoices.length;
 
