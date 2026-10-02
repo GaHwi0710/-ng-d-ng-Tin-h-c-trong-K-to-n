@@ -174,7 +174,7 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
         DiaDiem: req.body.DiaDiem || "",
         TkNo: req.body.TkNo || "156",
         TkCo: req.body.TkCo || "331",
-        SoChungTuGoc: purchaseOrder ? (purchaseOrder.MaDDH || String(purchaseOrderId)) : (req.body.SoChungTuGoc || ""),
+        SoChungTuGoc: purchaseOrder ? (purchaseOrder.MaDDH || "") : (req.body.SoChungTuGoc || ""),
         GhiChu: req.body.GhiChu || req.body.note || "",
         details: lines.map((line) => ({
           MaSP: line.product._id,
@@ -230,7 +230,7 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
         };
         await getDatabase().collection("ThanhToan").insertOne(paymentDoc, { session });
 
-        if (phuongThuc === "Tiền mặt") {
+        if (phuongThuc === "Tiền mặt" || phuongThuc === "Chuyển khoản") {
           const cashVoucherDoc = {
             MaPC: await nextBusinessCode(getDatabase().collection("PhieuChi"), "PhieuChi"),
             NgayLap: document.NgayNhap,
@@ -240,7 +240,7 @@ router.post("/goods-receipts", requirePermission("goods-receipts", "tao"), async
             DiaChi: supplier.DiaChi || "",
             LyDo: `Thanh toán tiền hàng phiếu nhập ${document.MaPN}`,
             SoTien: paidAmount,
-            PhuongThuc: "Tiền mặt",
+            PhuongThuc: phuongThuc,
             MaPN: result.insertedId,
             MaNCC: supplier._id,
             TrangThai: "Đã chi",
@@ -731,6 +731,50 @@ router.post("/debts/:id/pay", requirePermission("debts", "sua"), async (req, res
 
     const phuongThuc = req.body.method || req.body.PhuongThuc || "Tiền mặt";
     const paymentDate = req.body.date || req.body.NgayThanhToan || today();
+    const requestId = req.body.requestId || req.headers["x-request-id"] || req.body.idempotencyKey || req.headers["x-idempotency-key"] || null;
+
+    // Chống tạo trùng phiếu chi / giao dịch thanh toán khi gửi lại request hoặc click lặp lại
+    if (requestId) {
+      const existingTT = await getDatabase().collection("ThanhToan").findOne({ requestId });
+      if (existingTT) {
+        const existingDebt = await getDatabase().collection("CongNo").findOne(
+          debtId ? { _id: debtId } : { $or: [{ MaCN: String(req.params.id) }, { id: String(req.params.id) }] }
+        );
+        const existingPC = await getDatabase().collection("PhieuChi").findOne({
+          $or: [{ requestId }, { MaTT: existingTT.MaTT }],
+        });
+        return res.json({
+          data: serialize(existingDebt),
+          voucher: existingPC ? serialize(existingPC) : null,
+          payment: serialize(existingTT),
+          MaPC: existingPC?.MaPC || null,
+          message: `Giao dịch đã được ghi nhận trước đó${existingPC?.MaPC ? ` (Mã phiếu chi: ${existingPC.MaPC})` : ""}`,
+          duplicate: true,
+        });
+      }
+    } else {
+      // Bảo vệ trùng lặp ngắn hạn (2 giây) cùng đối tượng nợ, số tiền và phương thức
+      const recentDuplicate = await getDatabase().collection("ThanhToan").findOne({
+        MaCN: debtId || req.params.id,
+        SoTien: amount,
+        PhuongThuc: phuongThuc,
+        createdAt: { $gte: new Date(Date.now() - 2000) },
+      });
+      if (recentDuplicate) {
+        const existingDebt = await getDatabase().collection("CongNo").findOne(
+          debtId ? { _id: debtId } : { $or: [{ MaCN: String(req.params.id) }, { id: String(req.params.id) }] }
+        );
+        const existingPC = await getDatabase().collection("PhieuChi").findOne({ MaTT: recentDuplicate.MaTT });
+        return res.json({
+          data: serialize(existingDebt),
+          voucher: existingPC ? serialize(existingPC) : null,
+          payment: serialize(recentDuplicate),
+          MaPC: existingPC?.MaPC || null,
+          message: `Giao dịch trùng lặp vừa được xử lý${existingPC?.MaPC ? ` (Mã phiếu chi: ${existingPC.MaPC})` : ""}`,
+          duplicate: true,
+        });
+      }
+    }
 
     const result = await withTransaction(async (session) => {
       const debtCol = getDatabase().collection("CongNo");
@@ -764,68 +808,93 @@ router.post("/debts/:id/pay", requirePermission("debts", "sua"), async (req, res
         throw fail(`Số tiền thanh toán (${amount.toLocaleString("vi-VN")} ₫) vượt số còn nợ (${remaining.toLocaleString("vi-VN")} ₫)`, 400);
       }
 
-      const totalDebt = Number(debt.SoTien || 0);
-      const newPaid = Number(debt.SoTienDaTra || 0) + amount;
-      const newRemaining = Math.max(0, totalDebt - newPaid);
-      const newStatus = newRemaining === 0 ? "Đã thanh toán" : "Còn nợ";
+      let debtUpdated = true;
+      let pnUpdated = false;
+      let insertedTTId = null;
+      let insertedPCId = null;
+      let createdVoucher = null;
+      let createdPayment = null;
 
-      // Update status field (TrangThai was not set atomically above to keep $inc clean)
-      await debtCol.updateOne(
-        { _id: debt._id },
-        { $set: { TrangThai: newStatus } },
-        { session }
-      );
+      try {
+        const totalDebt = Number(debt.SoTien || 0);
+        const newPaid = Number(debt.SoTienDaTra || 0) + amount;
+        const newRemaining = Math.max(0, totalDebt - newPaid);
+        const newStatus = newRemaining === 0 ? "Đã thanh toán" : "Còn nợ";
 
-      const isSupplier = debt.LoaiCongNo === "Nhà cung cấp" || (!debt.MaKH && (!!debt.MaNCC || debt.type === "suppliers"));
-      let partyName = "";
-      let supplierDoc = null;
-      let customerDoc = null;
-
-      if (isSupplier) {
-        supplierDoc = await getDatabase().collection("NhaCungCap").findOne(
-          { $or: [{ _id: id(debt.MaNCC) }, { MaNCC: String(debt.MaNCC) }] },
+        // Update status field (TrangThai was not set atomically above to keep $inc clean)
+        await debtCol.updateOne(
+          { _id: debt._id },
+          { $set: { TrangThai: newStatus } },
           { session }
         );
-        partyName = supplierDoc?.TenNCC || debt.partnerName || debt.TenNCC || "Nhà cung cấp";
 
-        // Cập nhật PhieuNhap nếu có
-        if (debt.MaPN) {
-          const pnStatus = newRemaining === 0 ? "Đã thanh toán" : "Thanh toán một phần";
-          await getDatabase().collection("PhieuNhap").updateOne(
-            { $or: [{ _id: id(debt.MaPN) }, { MaPN: String(debt.MaPN) }] },
-            {
-              $inc: { SoTienDaTra: amount },
-              $set: {
-                SoTienConLai: newRemaining,
-                TrangThai: pnStatus,
-                updatedAt: new Date(),
-              },
-            },
+        const isSupplier = debt.LoaiCongNo === "Nhà cung cấp" || (!debt.MaKH && (!!debt.MaNCC || debt.type === "suppliers"));
+        let partyName = "";
+        let supplierDoc = null;
+        let customerDoc = null;
+
+        if (isSupplier) {
+          supplierDoc = await getDatabase().collection("NhaCungCap").findOne(
+            { $or: [{ _id: id(debt.MaNCC) }, { MaNCC: String(debt.MaNCC) }] },
             { session }
           );
-        }
+          partyName = supplierDoc?.TenNCC || debt.partnerName || debt.TenNCC || "Nhà cung cấp";
 
-        // Tạo bản ghi ThanhToan (UC19)
-        const paymentDoc = {
-          MaTT: await nextBusinessCode(getDatabase().collection("ThanhToan"), "ThanhToan"),
-          MaCN: debt._id,
-          MaCNCode: debt.MaCN,
-          MaPN: debt.MaPN || null,
-          MaNCC: debt.MaNCC || null,
-          TenDoiTuong: partyName,
-          TenKH: partyName,
-          TenNCC: partyName,
-          LoaiThanhToan: "Chi trả NCC",
-          PhuongThuc: phuongThuc,
-          SoTien: amount,
-          NgayThanhToan: paymentDate,
-          TrangThai: "Đã thanh toán",
-          createdAt: new Date(),
-        };
-        await getDatabase().collection("ThanhToan").insertOne(paymentDoc, { session });
+          // Cập nhật PhieuNhap nếu có
+          let pnDoc = null;
+          if (debt.MaPN) {
+            pnDoc = await getDatabase().collection("PhieuNhap").findOne(
+              { $or: [{ _id: id(debt.MaPN) }, { MaPN: String(debt.MaPN) }] },
+              { session }
+            );
+            const pnStatus = newRemaining === 0 ? "Đã thanh toán" : "Thanh toán một phần";
+            await getDatabase().collection("PhieuNhap").updateOne(
+              { $or: [{ _id: id(debt.MaPN) }, { MaPN: String(debt.MaPN) }] },
+              {
+                $inc: { SoTienDaTra: amount },
+                $set: {
+                  SoTienConLai: newRemaining,
+                  TrangThai: pnStatus,
+                  updatedAt: new Date(),
+                },
+              },
+              { session }
+            );
+            pnUpdated = true;
+          }
 
-        // Tạo PhieuChi tiền mặt (UC18)
-        if (phuongThuc === "Tiền mặt") {
+          // Tạo bản ghi ThanhToan (UC19)
+          const paymentDoc = {
+            MaTT: await nextBusinessCode(getDatabase().collection("ThanhToan"), "ThanhToan"),
+            MaCN: debt._id,
+            MaCNCode: debt.MaCN,
+            MaPN: debt.MaPN || null,
+            MaPNCode: pnDoc?.MaPN || null,
+            MaNCC: debt.MaNCC || null,
+            MaNCCCode: supplierDoc?.MaNCC || debt.MaNCCCode || null,
+            TenDoiTuong: partyName,
+            TenKH: partyName,
+            TenNCC: partyName,
+            LoaiThanhToan: "Chi trả NCC",
+            PhuongThuc: phuongThuc,
+            SoTien: amount,
+            NgayThanhToan: paymentDate,
+            TrangThai: "Đã thanh toán",
+            requestId: requestId || null,
+            createdAt: new Date(),
+          };
+          const ttRes = await getDatabase().collection("ThanhToan").insertOne(paymentDoc, { session });
+          insertedTTId = ttRes.insertedId;
+          createdPayment = { _id: insertedTTId, ...paymentDoc };
+
+          // Tự động tạo Phiếu chi cho cả Tiền mặt và Chuyển khoản (UC18 / Kế toán)
+          let reason = req.body.note || req.body.LyDo || (pnDoc?.MaPN ? `Thanh toán công nợ nhà cung cấp theo phiếu nhập ${pnDoc.MaPN}` : `Thanh toán công nợ nhà cung cấp ${debt.MaCN || ""}`);
+          // Sanitize: replace any 24-char hex ObjectId in reason with human-readable code
+          reason = String(reason).replace(/[0-9a-fA-F]{24}/g, (match) => {
+            if (pnDoc?.MaPN) return pnDoc.MaPN;
+            if (debt.MaCN) return debt.MaCN;
+            return "chứng từ";
+          });
           const cashPaymentDoc = {
             MaPC: await nextBusinessCode(getDatabase().collection("PhieuChi"), "PhieuChi"),
             NgayLap: paymentDate,
@@ -833,86 +902,136 @@ router.post("/debts/:id/pay", requirePermission("debts", "sua"), async (req, res
             NguoiNhanTien: partyName,
             NguoiNhan: partyName,
             DiaChi: supplierDoc?.DiaChi || debt.DiaChi || "",
-            LyDo: req.body.note || req.body.LyDo || `Thanh toán công nợ NCC theo chứng từ ${debt.MaPN || debt.MaCN}`,
+            LyDo: reason,
             SoTien: amount,
-            PhuongThuc: "Tiền mặt",
+            PhuongThuc: phuongThuc,
             MaCN: debt._id,
+            MaCNCode: debt.MaCN,
+            MaPN: debt.MaPN || null,
+            MaPNCode: pnDoc?.MaPN || null,
             MaNCC: debt.MaNCC || null,
-            TrangThai: "Đã chi",
+            MaNCCCode: supplierDoc?.MaNCC || debt.MaNCCCode || null,
+            MaTT: paymentDoc.MaTT,
+            ChungTuGoc: pnDoc?.MaPN || debt.MaCN || "",
+            LoaiChi: "Thanh toán công nợ",
+            TrangThai: "Đã xác nhận",
+            status: "CONFIRMED",
             NguoiLap: req.user?.fullName || req.user?.username || "Kế toán",
-            MaNV: req.user.id,
+            MaNV: req.user?.id || req.user?._id || "ketoan",
+            requestId: requestId || null,
             createdAt: new Date(),
+            updatedAt: new Date(),
           };
-          await getDatabase().collection("PhieuChi").insertOne(cashPaymentDoc, { session });
-        }
-      } else {
-        // Khách hàng
-        customerDoc = await getDatabase().collection("KhachHang").findOne(
-          { $or: [{ _id: id(debt.MaKH) }, { MaKH: String(debt.MaKH) }] },
-          { session }
-        );
-        partyName = customerDoc?.HoTen || debt.partnerName || debt.TenKH || "Khách hàng";
-
-        // Cập nhật HoaDon nếu có
-        if (debt.MaHD) {
-          const invoiceStatus = newRemaining === 0 ? "Đã thanh toán" : "Thanh toán một phần";
-          await getDatabase().collection("HoaDon").updateOne(
-            { $or: [{ _id: id(debt.MaHD) }, { MaHD: String(debt.MaHD) }] },
-            {
-              $set: {
-                SoTienDaTra: newPaid,
-                SoTienConLai: newRemaining,
-                TrangThai: invoiceStatus,
-                updatedAt: new Date(),
-              },
-            },
+          const pcRes = await getDatabase().collection("PhieuChi").insertOne(cashPaymentDoc, { session });
+          insertedPCId = pcRes.insertedId;
+          createdVoucher = { _id: insertedPCId, ...cashPaymentDoc };
+        } else {
+          // Khách hàng
+          customerDoc = await getDatabase().collection("KhachHang").findOne(
+            { $or: [{ _id: id(debt.MaKH) }, { MaKH: String(debt.MaKH) }] },
             { session }
           );
-        }
+          partyName = customerDoc?.HoTen || debt.partnerName || debt.TenKH || "Khách hàng";
 
-        // Tạo bản ghi ThanhToan (UC19)
-        const paymentDoc = {
-          MaTT: await nextBusinessCode(getDatabase().collection("ThanhToan"), "ThanhToan"),
-          MaCN: debt._id,
-          MaCNCode: debt.MaCN,
-          MaHD: debt.MaHD || null,
-          MaKH: debt.MaKH || null,
-          TenDoiTuong: partyName,
-          TenKH: partyName,
-          LoaiThanhToan: "Thu nợ KH",
-          PhuongThuc: phuongThuc,
-          SoTien: amount,
-          NgayThanhToan: paymentDate,
-          TrangThai: "Đã thanh toán",
-          createdAt: new Date(),
-        };
-        await getDatabase().collection("ThanhToan").insertOne(paymentDoc, { session });
+          // Cập nhật HoaDon nếu có
+          if (debt.MaHD) {
+            const invoiceStatus = newRemaining === 0 ? "Đã thanh toán" : "Thanh toán một phần";
+            await getDatabase().collection("HoaDon").updateOne(
+              { $or: [{ _id: id(debt.MaHD) }, { MaHD: String(debt.MaHD) }] },
+              {
+                $set: {
+                  SoTienDaTra: newPaid,
+                  SoTienConLai: newRemaining,
+                  TrangThai: invoiceStatus,
+                  updatedAt: new Date(),
+                },
+              },
+              { session }
+            );
+          }
 
-        // Tạo PhieuThu tiền mặt (UC17)
-        if (phuongThuc === "Tiền mặt") {
-          const cashReceiptDoc = {
-            MaPT: await nextBusinessCode(getDatabase().collection("PhieuThu"), "PhieuThu"),
-            NgayLap: paymentDate,
-            NgayThu: paymentDate,
-            NguoiNopTien: partyName,
-            NguoiNop: partyName,
-            DiaChi: customerDoc?.DiaChi || debt.DiaChi || "",
-            LyDo: req.body.note || req.body.LyDo || `Thu nợ khách hàng theo chứng từ ${debt.MaHD || debt.MaCN}`,
-            SoTien: amount,
-            PhuongThuc: "Tiền mặt",
+          // Tạo bản ghi ThanhToan (UC19)
+          const paymentDoc = {
+            MaTT: await nextBusinessCode(getDatabase().collection("ThanhToan"), "ThanhToan"),
             MaCN: debt._id,
+            MaCNCode: debt.MaCN,
             MaHD: debt.MaHD || null,
-            TrangThai: "Đã thu",
-            NguoiLap: req.user?.fullName || req.user?.username || "Kế toán",
-            MaNV: req.user.id,
+            MaKH: debt.MaKH || null,
+            TenDoiTuong: partyName,
+            TenKH: partyName,
+            LoaiThanhToan: "Thu nợ KH",
+            PhuongThuc: phuongThuc,
+            SoTien: amount,
+            NgayThanhToan: paymentDate,
+            TrangThai: "Đã thanh toán",
+            requestId: requestId || null,
             createdAt: new Date(),
           };
-          await getDatabase().collection("PhieuThu").insertOne(cashReceiptDoc, { session });
-        }
-      }
+          const ttRes = await getDatabase().collection("ThanhToan").insertOne(paymentDoc, { session });
+          insertedTTId = ttRes.insertedId;
+          createdPayment = { _id: insertedTTId, ...paymentDoc };
 
-      const updatedDebt = await debtCol.findOne({ _id: debt._id }, { session });
-      return serialize(updatedDebt);
+          // Tạo PhieuThu tiền mặt (UC17)
+          if (phuongThuc === "Tiền mặt") {
+            const cashReceiptDoc = {
+              MaPT: await nextBusinessCode(getDatabase().collection("PhieuThu"), "PhieuThu"),
+              NgayLap: paymentDate,
+              NgayThu: paymentDate,
+              NguoiNopTien: partyName,
+              NguoiNop: partyName,
+              DiaChi: customerDoc?.DiaChi || debt.DiaChi || "",
+              LyDo: String(req.body.note || req.body.LyDo || `Thu nợ khách hàng theo chứng từ ${debt.MaHD || debt.MaCN}`).replace(/[0-9a-fA-F]{24}/g, debt.MaCN || "chứng từ"),
+              SoTien: amount,
+              PhuongThuc: "Tiền mặt",
+              MaCN: debt._id,
+              MaHD: debt.MaHD || null,
+              TrangThai: "Đã thu",
+              NguoiLap: req.user?.fullName || req.user?.username || "Kế toán",
+              MaNV: req.user?.id || req.user?._id || "ketoan",
+              requestId: requestId || null,
+              createdAt: new Date(),
+            };
+            const ptRes = await getDatabase().collection("PhieuThu").insertOne(cashReceiptDoc, { session });
+            createdVoucher = { _id: ptRes.insertedId, ...cashReceiptDoc };
+          }
+        }
+
+        const updatedDebt = await debtCol.findOne({ _id: debt._id }, { session });
+        return {
+          updatedDebt,
+          voucher: createdVoucher,
+          payment: createdPayment,
+        };
+      } catch (innerErr) {
+        // Cơ chế bồi hoàn (Rollback) cho môi trường Standalone MongoDB không có replica set session
+        if (!session) {
+          try {
+            if (insertedPCId) await getDatabase().collection("PhieuChi").deleteOne({ _id: insertedPCId });
+            if (insertedTTId) await getDatabase().collection("ThanhToan").deleteOne({ _id: insertedTTId });
+            if (pnUpdated && debt.MaPN) {
+              await getDatabase().collection("PhieuNhap").updateOne(
+                { $or: [{ _id: id(debt.MaPN) }, { MaPN: String(debt.MaPN) }] },
+                {
+                  $inc: { SoTienDaTra: -amount },
+                  $set: { SoTienConLai: debt.SoTienConLai, TrangThai: debt.TrangThai, updatedAt: new Date() },
+                }
+              );
+            }
+            if (debtUpdated) {
+              await debtCol.updateOne(
+                { _id: debt._id },
+                {
+                  $inc: { SoTienDaTra: -amount, SoTienConLai: amount },
+                  $set: { TrangThai: debt.TrangThai, updatedAt: new Date() },
+                }
+              );
+            }
+          } catch (rbErr) {
+            console.error("Rollback bù trừ thất bại:", rbErr);
+          }
+        }
+        throw innerErr;
+      }
     });
 
     recordAudit({
@@ -922,15 +1041,18 @@ router.post("/debts/:id/pay", requirePermission("debts", "sua"), async (req, res
       action: "DEBT_PAYMENT",
       module: "debts",
       entity: "CongNo",
-      entityId: String(result?.id || result?._id || req.params.id),
+      entityId: String(result?.updatedDebt?.id || result?.updatedDebt?._id || req.params.id),
       description: `Thanh toán công nợ: ${amount.toLocaleString("vi-VN")} ₫`,
-      metadata: { debtId: req.params.id, amount },
+      metadata: { debtId: req.params.id, amount, MaPC: result?.voucher?.MaPC || null },
       ip: req.ip,
     });
 
     res.json({
-      data: result,
-      message: `Đã ghi nhận thanh toán ${amount.toLocaleString("vi-VN")} ₫ thành công`,
+      data: serialize(result.updatedDebt),
+      voucher: result.voucher ? serialize(result.voucher) : null,
+      payment: result.payment ? serialize(result.payment) : null,
+      MaPC: result.voucher?.MaPC || null,
+      message: `Đã ghi nhận thanh toán ${amount.toLocaleString("vi-VN")} ₫ thành công${result.voucher?.MaPC ? ` (Mã phiếu chi: ${result.voucher.MaPC})` : ""}`,
     });
   } catch (error) {
     next(error);
@@ -1064,14 +1186,14 @@ router.post("/purchase-orders/:id/receive", requirePermission("goods-receipts", 
         SoTienDaTra: paidAmount,
         SoTienConLai: remaining,
         SoLuong: lines.reduce((s, l) => s + l.quantity, 0),
-        LyDoNhap: req.body.LyDoNhap || `Nhập hàng theo đơn ${po.MaDDH || String(poId)}`,
+        LyDoNhap: req.body.LyDoNhap || `Nhập hàng theo đơn ${po.MaDDH || "đơn hàng"}`,
         NguoiLienQuan: supplier.TenNCC || "",
         DiaChi: supplier.DiaChi || "",
         Kho: req.body.Kho || "Kho chính",
         GhiChu: req.body.GhiChu || req.body.note || "",
         TkNo: "156",
         TkCo: "331",
-        SoChungTuGoc: po.MaDDH || String(poId),
+        SoChungTuGoc: po.MaDDH || "",
         details: lines.map((l) => ({
           MaSP: l.product._id,
           MaSPCode: l.product.MaSP,
@@ -1129,7 +1251,7 @@ router.post("/purchase-orders/:id/receive", requirePermission("goods-receipts", 
         };
         await getDatabase().collection("ThanhToan").insertOne(paymentDoc, { session });
 
-        if (phuongThuc === "Tiền mặt") {
+        if (phuongThuc === "Tiền mặt" || phuongThuc === "Chuyển khoản") {
           const cashVoucherDoc = {
             MaPC: await nextBusinessCode(getDatabase().collection("PhieuChi"), "PhieuChi"),
             NgayLap: ngayNhap,
@@ -1139,7 +1261,7 @@ router.post("/purchase-orders/:id/receive", requirePermission("goods-receipts", 
             DiaChi: supplier.DiaChi || "",
             LyDo: `Thanh toán tiền hàng phiếu nhập ${document.MaPN}`,
             SoTien: paidAmount,
-            PhuongThuc: "Tiền mặt",
+            PhuongThuc: phuongThuc,
             MaPN: result.insertedId,
             MaNCC: supplier._id,
             TrangThai: "Đã chi",

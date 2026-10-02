@@ -22,6 +22,8 @@ import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
 import { currentUserInfo } from "../../lib/permissions.js";
 import { LOW_STOCK_THRESHOLD } from "../../lib/constants.js";
+import { DocumentPrintPreviewModal } from "../../components/DocumentPrintPreviewModal.jsx";
+import { renderDonDatHangHtml, printDonDatHang } from "../../lib/accountingDocsPrint.js";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -67,7 +69,8 @@ export function PurchaseOrderPage({ title }) {
   const [poSubmitting, setPoSubmitting] = useState(false);
 
   // Modal Tạo phiếu nhập từ PO
-  const [receiveModal, setReceiveModal] = useState(null); // { po, items[] }
+  const [receiveModal, setReceiveModal] = useState(null);
+  const [previewOrder, setPreviewOrder] = useState(null); // { po, items[] }
   const [receiveDate, setReceiveDate] = useState(new Date().toISOString().slice(0, 10));
   const [receivePaid, setReceivePaid] = useState(0);
   const [receiveNote, setReceiveNote] = useState("");
@@ -524,9 +527,9 @@ export function PurchaseOrderPage({ title }) {
                   <thead>
                     <tr>
                       <th>Mã hàng / Tên hàng</th>
-                      <th style={{ width: 120 }}>Số lượng</th>
-                      <th style={{ width: 150 }}>Đơn giá nhập</th>
-                      <th style={{ width: 140 }}>Thành tiền</th>
+                      <th style={{ width: 120 }} className="right">Số lượng</th>
+                      <th style={{ width: 150 }} className="right">Đơn giá nhập</th>
+                      <th style={{ width: 140 }} className="right">Thành tiền</th>
                       <th style={{ width: 48 }}></th>
                     </tr>
                   </thead>
@@ -570,7 +573,7 @@ export function PurchaseOrderPage({ title }) {
                             }}
                           />
                         </td>
-                        <td>
+                        <td className="right tabular-nums">
                           <span className="po-line-total">{money.format((line.quantity || 0) * (line.price || 0))}</span>
                         </td>
                         <td>
@@ -678,7 +681,7 @@ export function PurchaseOrderPage({ title }) {
                 <th>Nhà cung cấp</th>
                 <th>Ngày đặt</th>
                 <th>Người lập phiếu</th>
-                <th>Tổng tiền</th>
+                <th className="right">Tổng tiền</th>
                 <th>Tiến độ nhập</th>
                 <th>Trạng thái</th>
                 <th>Thao tác</th>
@@ -703,7 +706,7 @@ export function PurchaseOrderPage({ title }) {
                     <td>{s?.TenNCC || order.MaNCCCode || order.MaNCC}</td>
                     <td>{order.NgayDat}</td>
                     <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{order.NguoiLap || order.MaNVCode || "Quản trị viên"}</span></td>
-                    <td>{money.format(order.TongTien || 0)}</td>
+                    <td className="right tabular-nums">{money.format(order.TongTien || 0)}</td>
                     <td style={{ minWidth: 120 }}>
                       {totalOrdered > 0 ? (
                         <PoProgressBar ordered={totalOrdered} received={totalReceived} />
@@ -1029,6 +1032,26 @@ export function PurchaseOrderPage({ title }) {
           </div>
         )}
       </Modal>
+      {/* Modal Xem trước & In Đơn đặt hàng (Purchase Order) */}
+      <DocumentPrintPreviewModal
+        open={Boolean(previewOrder)}
+        onClose={() => setPreviewOrder(null)}
+        title={`Đơn đặt hàng (${previewOrder?.MaDDH || previewOrder?.id || ""})`}
+        subtitle="Mẫu đơn đặt mua hàng tiêu chuẩn giao dịch thương mại A4"
+        htmlContent={
+          previewOrder
+            ? renderDonDatHangHtml(previewOrder, {
+                supplier: suppliers.find(
+                  (s) =>
+                    String(s.id) === String(previewOrder.MaNCC) ||
+                    s.MaNCC === previewOrder.MaNCC ||
+                    String(s.MaNCC) === String(previewOrder.MaNCCCode)
+                ),
+              })
+            : ""
+        }
+        printLabel="In đơn đặt hàng"
+      />
     </section>
   );
 }

@@ -7,6 +7,7 @@
     "start": "node src/server.js"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "baby-shop-management": "file:..",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

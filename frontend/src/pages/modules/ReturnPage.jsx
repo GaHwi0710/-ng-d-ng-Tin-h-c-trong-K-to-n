@@ -5,6 +5,7 @@ import {
   MagnifyingGlassIcon,
   CalendarDaysIcon,
   XMarkIcon,
+  PrinterIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, saveRecord } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
@@ -15,6 +16,8 @@ import { StatusBadge } from "../../components/Badge.jsx";
 import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
 import { currentUserInfo } from "../../lib/permissions.js";
+import { DocumentPrintPreviewModal } from "../../components/DocumentPrintPreviewModal.jsx";
+import { renderBienBanTraLaiHangHoaHtml, printBienBanTraLaiHangHoa } from "../../lib/accountingDocsPrint.js";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -32,6 +35,7 @@ export function ReturnPage({ title }) {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [previewReturn, setPreviewReturn] = useState(null);
 
   // Form state
   const [orderId, setOrderId] = useState("");
@@ -281,6 +285,7 @@ export function ReturnPage({ title }) {
               <th style={{ width: 110 }}>Ngày trả</th>
               <th style={{ width: 130 }}>Người lập</th>
               <th style={{ width: 120, textAlign: "center" }}>Trạng thái</th>
+              <th style={{ width: 120, textAlign: "center" }}>Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -333,7 +338,7 @@ export function ReturnPage({ title }) {
                     </div>
                   </td>
                   <td style={{ textAlign: "center" }}>
-                    <span className="badge badge-amber" style={{ fontWeight: 700 }}>
+                    <span className="badge badge-amber tabular-nums" style={{ fontWeight: 700 }}>
                       {qty} cái
                     </span>
                   </td>
@@ -351,12 +356,24 @@ export function ReturnPage({ title }) {
                   <td style={{ textAlign: "center" }}>
                     <StatusBadge status={r.TrangThai} />
                   </td>
+                  <td style={{ textAlign: "center" }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={() => setPreviewReturn(r)}
+                      style={{ gap: 4, padding: "4px 8px", fontSize: 12, display: "inline-flex", alignItems: "center" }}
+                      title="In biên bản trả lại hàng hóa"
+                    >
+                      <PrinterIcon style={{ width: 14, height: 14 }} />
+                      In biên bản
+                    </button>
+                  </td>
                 </tr>
               );
             })}
             {!visibleReturns.length && (
               <tr>
-                <td colSpan={9} style={{ padding: 0 }}>
+                <td colSpan={10} style={{ padding: 0 }}>
                   <EmptyState
                     icon={CubeIcon}
                     title="Chưa có phiếu trả hàng"
@@ -512,6 +529,18 @@ export function ReturnPage({ title }) {
           </p>
         )}
       </Modal>
+
+      <DocumentPrintPreviewModal
+        open={previewReturn !== null}
+        onClose={() => setPreviewReturn(null)}
+        title={`Biên bản trả lại hàng hóa (${previewReturn?.MaPTH || previewReturn?.id || ""})`}
+        subtitle="Căn cứ Nghị định 123/2020/NĐ-CP & Thông tư 78/2021/TT-BTC"
+        htmlContent={
+          previewReturn
+            ? renderBienBanTraLaiHangHoaHtml(previewReturn, products, customers)
+            : ""
+        }
+      />
     </section>
   );
 }

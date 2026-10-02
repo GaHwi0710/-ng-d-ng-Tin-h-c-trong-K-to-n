@@ -221,6 +221,7 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
     setPrintMenuOpen(false);
     try {
       const { printReport } = await import("../../lib/reportPrint.js");
+      const qs = `?from=${dateFrom || ""}&to=${dateTo || ""}`;
       switch (type) {
         case "revenue":
           printReport("revenue", {
@@ -245,9 +246,33 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
             },
           });
           break;
-        case "warehouse":
-          printReport("warehouse", { receipts, issues, dateFrom, dateTo });
+        case "warehouse": {
+          try {
+            const res = await getReport(`warehouse${qs}`);
+            printReport("warehouse", {
+              receipts: res?.receipts || receipts || [],
+              issues: res?.issues || issues || [],
+              transactions: res?.transactions || warehouseTransactions || [],
+              totalImportUnits: res?.totalImportUnits !== undefined ? res.totalImportUnits : totalImportUnits,
+              totalExportUnits: res?.totalExportUnits !== undefined ? res.totalExportUnits : totalExportUnits,
+              totalImportValue: res?.totalImportValue !== undefined ? res.totalImportValue : 0,
+              totalExportValue: res?.totalExportValue !== undefined ? res.totalExportValue : 0,
+              dateFrom: dateFrom || "",
+              dateTo: dateTo || "",
+            });
+          } catch {
+            printReport("warehouse", {
+              receipts,
+              issues,
+              transactions: warehouseTransactions,
+              totalImportUnits,
+              totalExportUnits,
+              dateFrom,
+              dateTo,
+            });
+          }
           break;
+        }
         case "debts":
           printReport("debts", {
             debts,
@@ -262,12 +287,82 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
         case "cash-flow":
           printReport("cash-flow", {
             cashFlow,
-            invoices: revenueInvoices,
-            receipts,
+            entries: cashFlow?.entries,
+            totalThu: cashFlow?.totalThu,
+            totalChi: cashFlow?.totalChi,
             dateFrom,
             dateTo,
           });
           break;
+        case "cash-receipts": {
+          const res = await getReport(`cash-receipts${qs}`);
+          printReport("cash-receipts", {
+            receipts: res?.data || [],
+            dateFrom: res?.from || dateFrom,
+            dateTo: res?.to || dateTo,
+            openingBalance: res?.openingBalance || 0,
+            closingBalance: res?.closingBalance || 0,
+            totalAmount: res?.totalAmount || 0,
+          });
+          break;
+        }
+        case "cash-payments": {
+          const res = await getReport(`cash-payments${qs}`);
+          printReport("cash-payments", {
+            payments: res?.data || [],
+            dateFrom: res?.from || dateFrom,
+            dateTo: res?.to || dateTo,
+            openingBalance: res?.openingBalance || 0,
+            closingBalance: res?.closingBalance || 0,
+            totalAmount: res?.totalAmount || 0,
+          });
+          break;
+        }
+        case "warehouse-receipts": {
+          const res = await getReport(`warehouse-receipts${qs}`);
+          printReport("warehouse-receipts", {
+            receipts: res?.data || [],
+            dateFrom: res?.from || dateFrom,
+            dateTo: res?.to || dateTo,
+            totalQuantity: res?.totalQuantity || 0,
+            totalAmount: res?.totalAmount || 0,
+          });
+          break;
+        }
+        case "warehouse-issues": {
+          const res = await getReport(`warehouse-issues${qs}`);
+          printReport("warehouse-issues", {
+            issues: res?.data || [],
+            dateFrom: res?.from || dateFrom,
+            dateTo: res?.to || dateTo,
+            totalQuantity: res?.totalQuantity || 0,
+            totalAmount: res?.totalAmount || 0,
+          });
+          break;
+        }
+        case "income-statement": {
+          const res = await getReport(`income-statement${qs}`);
+          printReport("income-statement", res || {});
+          break;
+        }
+        case "product-ledger": {
+          const prodParam = filterProduct ? `&productId=${filterProduct}` : "";
+          const res = await getReport(`product-ledger${qs}${prodParam}`);
+          printReport("product-ledger", res || {});
+          break;
+        }
+        case "general-journal": {
+          const res = await getReport(`general-journal${qs}`);
+          printReport("general-journal", res || {});
+          break;
+        }
+        case "fixed-assets": {
+          const res = await getReport(`fixed-assets`);
+          printReport("fixed-assets", res || {});
+          break;
+        }
+        default:
+          toast("Chưa hỗ trợ mẫu in này");
       }
     } catch (err) {
       toast("Không mở được cửa sổ in. Vui lòng kiểm tra chặn pop-up của trình duyệt.");
@@ -623,6 +718,19 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
       const summary = ["Tổng cộng", `${warehouseTransactions.length} chứng từ`, "", "", "", "", totalWarehouseVal];
       exportToExcel(`ChungTuKho_${todayStr}`, `BÁO CÁO NHẬP - XUẤT KHO (${dateFrom} - ${dateTo})`, headers, rows, summary);
       toast("Đã xuất file Excel Báo cáo Nhập - Xuất kho thành công");
+    } else if (activeTab === "cash-flow") {
+      const headers = ["STT", "Ngày", "Số phiếu", "Loại phiếu", "Lý do / Người nộp - nhận", "Số tiền (đ)"];
+      const rows = (cashFlow?.entries || []).map((entry, idx) => [
+        idx + 1,
+        entry.date ? String(entry.date).slice(0, 10) : "—",
+        entry.code || entry.number || "—",
+        entry.type === "thu" ? "Thu tiền" : "Chi tiền",
+        entry.reason || entry.person || "—",
+        entry.amount || 0,
+      ]);
+      const summary = ["Tổng cộng", "", "", "", `Tồn quỹ: ${cashFlow?.balance || 0}đ`, (cashFlow?.totalThu || 0) - (cashFlow?.totalChi || 0)];
+      exportToExcel(`SoQuyTienMat_${todayStr}`, `SỔ QUỸ TIỀN MẶT (${dateFrom} - ${dateTo})`, headers, rows, summary);
+      toast("Đã xuất file Excel Sổ quỹ tiền mặt thành công");
     } else {
       toast("Đã sẵn sàng xuất dữ liệu cho phân hệ này");
     }
@@ -692,6 +800,19 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
         ]);
         await exportToPdf(`BaoCaoCongNo_${todayStr}.pdf`, `BÁO CÁO CÔNG NỢ CHI TIẾT (${dateFrom} - ${dateTo})`, headers, rows);
         toast("Đã xuất file PDF Báo cáo Công nợ thành công!");
+      } else if (activeTab === "cash-flow") {
+        const headers = ["STT", "Ngày", "Số phiếu", "Loại phiếu", "Lý do / Người nộp - nhận", "Số tiền (đ)"];
+        const rows = (cashFlow?.entries || []).map((entry, idx) => [
+          idx + 1,
+          entry.date ? String(entry.date).slice(0, 10) : "—",
+          entry.code || entry.number || "—",
+          entry.type === "thu" ? "Thu tiền" : "Chi tiền",
+          entry.reason || entry.person || "—",
+          entry.amount || 0,
+        ]);
+        const summary = ["Tổng cộng", "", "", "", `Tồn quỹ: ${cashFlow?.balance || 0}đ`, (cashFlow?.totalThu || 0) - (cashFlow?.totalChi || 0)];
+        await exportToPdf(`SoQuyTienMat_${todayStr}.pdf`, `SỔ QUỸ TIỀN MẶT (${dateFrom} - ${dateTo})`, headers, rows, summary);
+        toast("Đã xuất file PDF Sổ quỹ tiền mặt thành công!");
       } else {
         toast("Đã sẵn sàng xuất PDF cho phân hệ này");
       }
@@ -768,22 +889,22 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                   background: "#fff",
                   border: "1px solid #E2E8F0",
                   borderRadius: 10,
-                  boxShadow: "0 10px 25px rgba(0,0,0,0.1)",
-                  minWidth: 220,
+                  boxShadow: "0 10px 25px rgba(0,0,0,0.12)",
+                  minWidth: 280,
+                  maxWidth: 320,
+                  maxHeight: 460,
+                  overflowY: "auto",
                   zIndex: 100,
-                  overflow: "hidden",
                   padding: "6px 0",
                 }}
               >
-                <div style={{ padding: "6px 14px", fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>
-                  Chọn mẫu in chuẩn A4
+                <div style={{ padding: "6px 14px 4px", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>
+                  Chứng từ quỹ tiền mặt
                 </div>
                 {[
-                  { type: "revenue", label: "Báo cáo doanh thu" },
-                  { type: "warehouse", label: "Báo cáo nhập – xuất kho" },
-                  { type: "inventory", label: "Báo cáo tồn kho" },
-                  { type: "debts", label: "Báo cáo công nợ" },
-                  { type: "cash-flow", label: "Báo cáo thu – chi" },
+                  { type: "cash-receipts", label: "Báo cáo thu tiền mặt (8 cột độc lập)" },
+                  { type: "cash-payments", label: "Báo cáo chi tiền mặt (8 cột độc lập)" },
+                  { type: "cash-flow", label: "Sổ quỹ thu – chi (Tổng hợp)" },
                 ].map((r) => (
                   <button
                     key={r.type}
@@ -795,18 +916,121 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                       alignItems: "center",
                       gap: 10,
                       width: "100%",
-                      padding: "8px 14px",
+                      padding: "7px 14px",
                       border: "none",
                       background: printing === r.type ? "#EFF6FF" : "transparent",
                       cursor: "pointer",
-                      fontSize: 13,
+                      fontSize: 12.5,
                       color: "#0F172A",
                       textAlign: "left",
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.background = "#F8FAFC"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                   >
-                    <PrinterIcon style={{ width: 14, height: 14, color: "#64748B" }} />
+                    <PrinterIcon style={{ width: 14, height: 14, color: "#64748B", flexShrink: 0 }} />
+                    <span>{printing === r.type ? "Đang mở bản in..." : r.label}</span>
+                  </button>
+                ))}
+
+                <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", borderTop: "1px solid #F1F5F9" }}>
+                  Chứng từ & Sổ kho hàng
+                </div>
+                {[
+                  { type: "warehouse-receipts", label: "Báo cáo nhập kho (11 cột độc lập)" },
+                  { type: "warehouse-issues", label: "Báo cáo xuất kho (11 cột độc lập)" },
+                  { type: "inventory", label: "Báo cáo tồn kho (Nhập - Xuất - Tồn)" },
+                  { type: "product-ledger", label: "Sổ chi tiết hàng hóa (Mẫu S10-DN)" },
+                  { type: "warehouse", label: "Báo cáo nhập – xuất kho (Tổng hợp)" },
+                ].map((r) => (
+                  <button
+                    key={r.type}
+                    type="button"
+                    onClick={() => handlePrint(r.type)}
+                    disabled={printing === r.type}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      width: "100%",
+                      padding: "7px 14px",
+                      border: "none",
+                      background: printing === r.type ? "#EFF6FF" : "transparent",
+                      cursor: "pointer",
+                      fontSize: 12.5,
+                      color: "#0F172A",
+                      textAlign: "left",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#F8FAFC"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <PrinterIcon style={{ width: 14, height: 14, color: "#64748B", flexShrink: 0 }} />
+                    <span>{printing === r.type ? "Đang mở bản in..." : r.label}</span>
+                  </button>
+                ))}
+
+                <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", borderTop: "1px solid #F1F5F9" }}>
+                  Báo cáo tài chính & Sổ kế toán
+                </div>
+                {[
+                  { type: "income-statement", label: "Báo cáo kết quả HĐKD (Mẫu B 02 - DN)" },
+                  { type: "general-journal", label: "Sổ nhật ký chung (Mẫu S03a-DNN)" },
+                  { type: "fixed-assets", label: "Sổ tài sản cố định (Mẫu S21-DN)" },
+                ].map((r) => (
+                  <button
+                    key={r.type}
+                    type="button"
+                    onClick={() => handlePrint(r.type)}
+                    disabled={printing === r.type}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      width: "100%",
+                      padding: "7px 14px",
+                      border: "none",
+                      background: printing === r.type ? "#EFF6FF" : "transparent",
+                      cursor: "pointer",
+                      fontSize: 12.5,
+                      color: "#0F172A",
+                      textAlign: "left",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#F8FAFC"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <PrinterIcon style={{ width: 14, height: 14, color: "#64748B", flexShrink: 0 }} />
+                    <span>{printing === r.type ? "Đang mở bản in..." : r.label}</span>
+                  </button>
+                ))}
+
+                <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", borderTop: "1px solid #F1F5F9" }}>
+                  Báo cáo tổng hợp khác
+                </div>
+                {[
+                  { type: "revenue", label: "Báo cáo doanh thu bán hàng" },
+                  { type: "debts", label: "Báo cáo công nợ tổng hợp" },
+                ].map((r) => (
+                  <button
+                    key={r.type}
+                    type="button"
+                    onClick={() => handlePrint(r.type)}
+                    disabled={printing === r.type}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      width: "100%",
+                      padding: "7px 14px",
+                      border: "none",
+                      background: printing === r.type ? "#EFF6FF" : "transparent",
+                      cursor: "pointer",
+                      fontSize: 12.5,
+                      color: "#0F172A",
+                      textAlign: "left",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#F8FAFC"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <PrinterIcon style={{ width: 14, height: 14, color: "#64748B", flexShrink: 0 }} />
                     <span>{printing === r.type ? "Đang mở bản in..." : r.label}</span>
                   </button>
                 ))}
@@ -1172,31 +1396,31 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: 48, textAlign: "center" }}>STT</th>
+                    <th className="center" style={{ width: 48 }}>STT</th>
                     <th>Thời gian ({revenueGroupBy === "year" ? "Năm" : revenueGroupBy === "month" ? "Tháng" : "Ngày"})</th>
-                    <th style={{ textAlign: "center", width: 90 }}>Số HĐ</th>
-                    <th style={{ textAlign: "right" }}>Doanh thu</th>
-                    <th style={{ textAlign: "right" }}>Đã thanh toán</th>
-                    <th style={{ textAlign: "right" }}>Còn nợ</th>
-                    <th style={{ textAlign: "right", width: 90 }}>Tỷ trọng</th>
+                    <th className="center" style={{ width: 90 }}>Số HĐ</th>
+                    <th className="right">Doanh thu</th>
+                    <th className="right">Đã thanh toán</th>
+                    <th className="right">Còn nợ</th>
+                    <th className="right" style={{ width: 90 }}>Tỷ trọng</th>
                   </tr>
                 </thead>
                 <tbody>
                   {revenueBreakdown.map((row, idx) => (
                     <tr key={row.period}>
-                      <td style={{ textAlign: "center", color: "#94A3B8" }}>{idx + 1}</td>
+                      <td className="center" style={{ color: "#94A3B8" }}>{idx + 1}</td>
                       <td><strong>{row.label || row.period}</strong></td>
-                      <td style={{ textAlign: "center", fontWeight: 600 }}>{row.ordersCount}</td>
-                      <td style={{ textAlign: "right", fontWeight: 700 }} className="tabular-nums">
+                      <td className="center tabular-nums" style={{ fontWeight: 600 }}>{row.ordersCount}</td>
+                      <td className="right tabular-nums" style={{ fontWeight: 700 }}>
                         {money.format(row.revenue)}
                       </td>
-                      <td style={{ textAlign: "right", color: "#059669", fontWeight: 600 }} className="tabular-nums">
+                      <td className="right tabular-nums" style={{ color: "#059669", fontWeight: 600 }}>
                         {money.format(row.paidAmount)}
                       </td>
-                      <td style={{ textAlign: "right", color: row.unpaidAmount > 0 ? "#DC2626" : "#64748B", fontWeight: 600 }} className="tabular-nums">
+                      <td className="right tabular-nums" style={{ color: row.unpaidAmount > 0 ? "#DC2626" : "#64748B", fontWeight: 600 }}>
                         {money.format(row.unpaidAmount)}
                       </td>
-                      <td style={{ textAlign: "right", color: "var(--primary, #3D7068)", fontWeight: 700 }}>
+                      <td className="right tabular-nums" style={{ color: "var(--primary, #3D7068)", fontWeight: 700 }}>
                         {row.percentage}%
                       </td>
                     </tr>
@@ -1212,12 +1436,12 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                 {revenueBreakdown.length > 0 && (
                   <tfoot>
                     <tr style={{ background: "#F8FAFC", fontWeight: 700 }}>
-                      <td colSpan={2} style={{ textAlign: "right" }}>Tổng cộng:</td>
-                      <td style={{ textAlign: "center" }}>{totalOrdersCount}</td>
-                      <td style={{ textAlign: "right" }} className="tabular-nums">{money.format(totalRevenue)}</td>
-                      <td style={{ textAlign: "right", color: "#059669" }} className="tabular-nums">{money.format(totalPaid)}</td>
-                      <td style={{ textAlign: "right", color: totalUnpaid > 0 ? "#DC2626" : "#64748B" }} className="tabular-nums">{money.format(totalUnpaid)}</td>
-                      <td style={{ textAlign: "right", color: "var(--primary, #3D7068)" }}>100%</td>
+                      <td colSpan={2} className="right">Tổng cộng:</td>
+                      <td className="center tabular-nums">{totalOrdersCount}</td>
+                      <td className="right tabular-nums">{money.format(totalRevenue)}</td>
+                      <td className="right tabular-nums" style={{ color: "#059669" }}>{money.format(totalPaid)}</td>
+                      <td className="right tabular-nums" style={{ color: totalUnpaid > 0 ? "#DC2626" : "#64748B" }}>{money.format(totalUnpaid)}</td>
+                      <td className="right tabular-nums" style={{ color: "var(--primary, #3D7068)" }}>100%</td>
                     </tr>
                   </tfoot>
                 )}
@@ -1233,12 +1457,12 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: 48, textAlign: "center" }}>STT</th>
+                    <th className="center" style={{ width: 48 }}>STT</th>
                     <th>Sản phẩm</th>
                     <th>Loại hàng</th>
-                    <th style={{ textAlign: "center" }}>Số lượng bán</th>
-                    <th style={{ textAlign: "right" }}>Doanh thu</th>
-                    <th style={{ textAlign: "right" }}>Tỷ lệ</th>
+                    <th className="center">Số lượng bán</th>
+                    <th className="right">Doanh thu</th>
+                    <th className="right">Tỷ lệ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1246,14 +1470,14 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                     const pct = totalRevenue > 0 ? ((p.total / totalRevenue) * 100).toFixed(1) : "0";
                     return (
                       <tr key={p.key}>
-                        <td style={{ textAlign: "center", color: "#94A3B8" }}>{idx + 1}</td>
+                        <td className="center" style={{ color: "#94A3B8" }}>{idx + 1}</td>
                         <td><strong>{p.name}</strong></td>
                         <td><span style={{ color: "#64748B" }}>{p.category}</span></td>
-                        <td style={{ textAlign: "center", fontWeight: 600 }}>{p.quantity}</td>
-                        <td style={{ textAlign: "right", fontWeight: 600 }} className="tabular-nums">
+                        <td className="center tabular-nums" style={{ fontWeight: 600 }}>{p.quantity}</td>
+                        <td className="right tabular-nums" style={{ fontWeight: 600 }}>
                           {money.format(p.total)}
                         </td>
-                        <td style={{ textAlign: "right", color: "var(--primary, #3D7068)", fontWeight: 600 }}>
+                        <td className="right tabular-nums" style={{ color: "var(--primary, #3D7068)", fontWeight: 600 }}>
                           {pct}%
                         </td>
                       </tr>
@@ -1354,27 +1578,27 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: 48, textAlign: "center" }}>STT</th>
+                    <th className="center" style={{ width: 48 }}>STT</th>
                     <th>Ngày</th>
                     <th>Loại giao dịch</th>
                     <th>Mã phiếu</th>
                     <th>Chi tiết / Đối tác</th>
-                    <th style={{ textAlign: "center" }}>Số mặt hàng</th>
-                    <th style={{ textAlign: "right" }}>Giá trị chứng từ</th>
+                    <th className="center">Số mặt hàng</th>
+                    <th className="right">Giá trị chứng từ</th>
                   </tr>
                 </thead>
                 <tbody>
                   {warehouseTransactions.slice(0, 15).map((t, idx) => (
                     <tr key={t.id}>
-                      <td style={{ textAlign: "center", color: "#94A3B8" }}>{idx + 1}</td>
+                      <td className="center" style={{ color: "#94A3B8" }}>{idx + 1}</td>
                       <td>{t.date ? String(t.date).slice(0, 10) : "—"}</td>
                       <td>
                         <Badge variant={t.badge}>{t.typeLabel}</Badge>
                       </td>
                       <td><strong>{t.code}</strong></td>
                       <td>{t.person}</td>
-                      <td style={{ textAlign: "center" }}>{t.detailsCount} mặt hàng</td>
-                      <td style={{ textAlign: "right", fontWeight: 600 }} className="tabular-nums">
+                      <td className="center tabular-nums">{t.detailsCount} mặt hàng</td>
+                      <td className="right tabular-nums" style={{ fontWeight: 600 }}>
                         {money.format(t.total || 0)}
                       </td>
                     </tr>
@@ -1473,16 +1697,16 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: 44, textAlign: "center" }}>STT</th>
+                    <th className="center" style={{ width: 44 }}>STT</th>
                     <th style={{ width: 95 }}>Mã SP</th>
                     <th>Tên sản phẩm</th>
-                    <th style={{ width: 70, textAlign: "center" }}>ĐVT</th>
-                    <th style={{ textAlign: "right", minWidth: 85 }}>Tồn đầu</th>
-                    <th style={{ textAlign: "right", minWidth: 95 }}>Nhập trong kỳ</th>
-                    <th style={{ textAlign: "right", minWidth: 95 }}>Xuất trong kỳ</th>
-                    <th style={{ textAlign: "right", minWidth: 85 }}>Tồn cuối</th>
-                    <th style={{ textAlign: "right", minWidth: 105 }}>Giá nhập</th>
-                    <th style={{ textAlign: "right", minWidth: 120 }}>Giá trị tồn</th>
+                    <th className="center" style={{ width: 70 }}>ĐVT</th>
+                    <th className="right" style={{ minWidth: 85 }}>Tồn đầu</th>
+                    <th className="right" style={{ minWidth: 95 }}>Nhập trong kỳ</th>
+                    <th className="right" style={{ minWidth: 95 }}>Xuất trong kỳ</th>
+                    <th className="right" style={{ minWidth: 85 }}>Tồn cuối</th>
+                    <th className="right" style={{ minWidth: 105 }}>Giá nhập</th>
+                    <th className="right" style={{ minWidth: 120 }}>Giá trị tồn</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1495,26 +1719,26 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                     const val = Number(p.GiaTriTon !== undefined ? p.GiaTriTon : tonCuoi * price);
                     return (
                       <tr key={p.id || p.MaSP || idx}>
-                        <td style={{ textAlign: "center", color: "#94A3B8" }}>{idx + 1}</td>
+                        <td className="center" style={{ color: "#94A3B8" }}>{idx + 1}</td>
                         <td><span className="prod-code-badge">{p.MaSP || p.id}</span></td>
                         <td><strong>{p.TenSP}</strong></td>
-                        <td style={{ textAlign: "center" }}>{p.DonViTinh || "Cái"}</td>
-                        <td style={{ textAlign: "right", fontWeight: 600 }} className="tabular-nums">
+                        <td className="center">{p.DonViTinh || "Cái"}</td>
+                        <td className="right tabular-nums" style={{ fontWeight: 600 }}>
                           {tonDau.toLocaleString("vi-VN")}
                         </td>
-                        <td style={{ textAlign: "right", color: nhap > 0 ? "#16A34A" : "#64748B", fontWeight: nhap > 0 ? 600 : 400 }} className="tabular-nums">
+                        <td className="right tabular-nums" style={{ color: nhap > 0 ? "#16A34A" : "#64748B", fontWeight: nhap > 0 ? 600 : 400 }}>
                           {nhap > 0 ? `+${nhap.toLocaleString("vi-VN")}` : "0"}
                         </td>
-                        <td style={{ textAlign: "right", color: xuat > 0 ? "#DC2626" : "#64748B", fontWeight: xuat > 0 ? 600 : 400 }} className="tabular-nums">
+                        <td className="right tabular-nums" style={{ color: xuat > 0 ? "#DC2626" : "#64748B", fontWeight: xuat > 0 ? 600 : 400 }}>
                           {xuat > 0 ? `-${xuat.toLocaleString("vi-VN")}` : "0"}
                         </td>
-                        <td style={{ textAlign: "right" }}>
-                          <Badge variant={tonCuoi <= 0 ? "red" : tonCuoi <= LOW_STOCK_THRESHOLD ? "amber" : "green"}>
+                        <td className="right">
+                          <Badge variant={tonCuoi <= 0 ? "red" : tonCuoi <= LOW_STOCK_THRESHOLD ? "amber" : "green"} className="tabular-nums">
                             {tonCuoi.toLocaleString("vi-VN")}
                           </Badge>
                         </td>
-                        <td style={{ textAlign: "right" }} className="tabular-nums">{money.format(price)}</td>
-                        <td style={{ textAlign: "right", fontWeight: 600, color: "var(--primary, #3D7068)" }} className="tabular-nums">
+                        <td className="right tabular-nums">{money.format(price)}</td>
+                        <td className="right tabular-nums" style={{ fontWeight: 600, color: "var(--primary, #3D7068)" }}>
                           {money.format(val)}
                         </td>
                       </tr>
@@ -1637,8 +1861,8 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                     <tr>
                       <th>Khách hàng</th>
                       <th>Hạn thanh toán</th>
-                      <th style={{ textAlign: "right" }}>Số tiền</th>
-                      <th style={{ textAlign: "center" }}>Trạng thái</th>
+                      <th className="right">Số tiền</th>
+                      <th className="center">Trạng thái</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1650,10 +1874,10 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                         <tr key={d.id}>
                           <td><strong>{cust?.HoTen || d.partnerName || d.MaKH || "Khách hàng"}</strong></td>
                           <td style={{ color: "#64748B", fontSize: 12 }}>{d.HanThanhToan || d.NgayPhatSinh || "—"}</td>
-                          <td style={{ textAlign: "right", fontWeight: 600 }} className="tabular-nums">
+                          <td className="right tabular-nums" style={{ fontWeight: 600 }}>
                             {money.format(rem)}
                           </td>
-                          <td style={{ textAlign: "center" }}>
+                          <td className="center">
                             <Badge variant={isPaid ? "green" : "red"}>
                               {isPaid ? "Đã thanh toán" : "Chưa thanh toán"}
                             </Badge>
@@ -1684,8 +1908,8 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                     <tr>
                       <th>Nhà cung cấp</th>
                       <th>Hạn thanh toán</th>
-                      <th style={{ textAlign: "right" }}>Số tiền</th>
-                      <th style={{ textAlign: "center" }}>Trạng thái</th>
+                      <th className="right">Số tiền</th>
+                      <th className="center">Trạng thái</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1697,10 +1921,10 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                         <tr key={d.id}>
                           <td><strong>{supp?.TenNCC || d.partnerName || d.MaNCC || "Nhà cung cấp"}</strong></td>
                           <td style={{ color: "#64748B", fontSize: 12 }}>{d.HanThanhToan || d.NgayPhatSinh || "—"}</td>
-                          <td style={{ textAlign: "right", fontWeight: 600 }} className="tabular-nums">
+                          <td className="right tabular-nums" style={{ fontWeight: 600 }}>
                             {money.format(rem)}
                           </td>
-                          <td style={{ textAlign: "center" }}>
+                          <td className="center">
                             <Badge variant={isPaid ? "green" : "red"}>
                               {isPaid ? "Đã thanh toán" : "Chưa thanh toán"}
                             </Badge>
@@ -1763,18 +1987,18 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: 48, textAlign: "center" }}>STT</th>
+                    <th className="center" style={{ width: 48 }}>STT</th>
                     <th>Ngày</th>
                     <th>Số phiếu</th>
                     <th>Loại phiếu</th>
                     <th>Lý do / Người nộp – nhận</th>
-                    <th style={{ textAlign: "right" }}>Số tiền</th>
+                    <th className="right">Số tiền</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(cashFlow?.entries || []).map((entry, idx) => (
                     <tr key={entry.id || idx}>
-                      <td style={{ textAlign: "center", color: "#94A3B8" }}>{idx + 1}</td>
+                      <td className="center" style={{ color: "#94A3B8" }}>{idx + 1}</td>
                       <td>{entry.date ? String(entry.date).slice(0, 10) : "—"}</td>
                       <td><strong>{entry.code || entry.number}</strong></td>
                       <td>
@@ -1785,11 +2009,10 @@ export function ReportPage({ title = "Báo cáo & Thống kê" }) {
                       <td>{entry.reason || entry.person || "—"}</td>
                       <td
                         style={{
-                          textAlign: "right",
                           fontWeight: 600,
                           color: entry.type === "thu" ? "#059669" : "#D97706",
                         }}
-                        className="tabular-nums"
+                        className="right tabular-nums"
                       >
                         {entry.type === "thu" ? "+" : "-"}{money.format(entry.amount || 0)}
                       </td>

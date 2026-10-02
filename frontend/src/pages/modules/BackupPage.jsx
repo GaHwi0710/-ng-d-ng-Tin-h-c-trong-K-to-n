@@ -354,7 +354,7 @@ export function BackupPage({ title = "Sao lưu dữ liệu" }) {
               <th>Tên file sao lưu</th>
               <th style={{ width: 220 }}>Thời điểm tạo</th>
               <th style={{ width: 140 }}>Dung lượng</th>
-              <th style={{ width: 160, textAlign: "right" }}>Thao tác</th>
+              <th className="right" style={{ width: 160 }}>Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -369,15 +369,15 @@ export function BackupPage({ title = "Sao lưu dữ liệu" }) {
                       <span>{b.filename}</span>
                     </div>
                   </td>
-                  <td style={{ color: "var(--text-soft)", fontSize: 13 }}>
+                  <td className="tabular-nums" style={{ color: "var(--text-soft)", fontSize: 13 }}>
                     {new Date(b.createdAt).toLocaleString("vi-VN")}
                   </td>
                   <td>
-                    <span className="badge badge-light" style={{ fontWeight: 600 }}>
+                    <span className="badge badge-light tabular-nums" style={{ fontWeight: 600 }}>
                       {formatSize(b.size)}
                     </span>
                   </td>
-                  <td style={{ textAlign: "right" }}>
+                  <td className="right">
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                       <button
                         type="button"

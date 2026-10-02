@@ -478,7 +478,7 @@ export function AdminPage({ title, description, path }) {
                       </td>
                       <td><span className="prod-code-badge">{emp.MaNV || emp.id}</span></td>
                       <td>
-                        <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 600, color: "var(--text-dark, #1e293b)" }}>
+                        <span className="tabular-nums" style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 600, color: "var(--text-dark, #1e293b)" }}>
                           {emp.CCCD || "—"}
                         </span>
                       </td>

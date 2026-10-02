@@ -318,7 +318,7 @@ export function CustomersPage({ title, description }) {
               <th>Liên hệ</th>
               <th>Địa chỉ</th>
               <th>Hạng &amp; Quyền lợi Voucher</th>
-              <th style={{ textAlign: "right" }}>Điểm tích lũy</th>
+              <th style={{ textAlign: "right" }} className="right">Điểm tích lũy</th>
               <th style={{ width: 140, textAlign: "center" }}>Trạng thái</th>
               <th style={{ width: 90, textAlign: "center" }}>Thao tác</th>
             </tr>
@@ -411,7 +411,7 @@ export function CustomersPage({ title, description }) {
                       )}
                     </div>
                   </td>
-                  <td style={{ textAlign: "right" }}>
+                  <td style={{ textAlign: "right" }} className="right tabular-nums">
                     <div className="cust-points-cell">
                       <strong>{(Number(cust.DiemTichLuy) || 0).toLocaleString("vi-VN")}</strong>
                       <small>điểm</small>

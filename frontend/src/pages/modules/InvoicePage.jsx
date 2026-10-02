@@ -13,6 +13,7 @@ import {
   XMarkIcon,
   EnvelopeIcon,
   QrCodeIcon,
+  DocumentTextIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, saveRecord, postRequest } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
@@ -24,6 +25,12 @@ import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
 import { amountToWords } from "../../lib/amountToWords.js";
 import { getStoreConfig, getVietQrUrl, getBrandLogoUrl } from "../../lib/storeConfig.js";
+import { DocumentPrintPreviewModal } from "../../components/DocumentPrintPreviewModal.jsx";
+import {
+  renderHoaDonBanLeK80Html,
+  renderHoaDonBanLeA4Html,
+  renderPhieuThuM01TTHtml,
+} from "../../lib/accountingDocsPrint.js";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -55,6 +62,9 @@ export function InvoicePage({ title }) {
   const [emailModalInvoice, setEmailModalInvoice] = useState(null);
   const [customerEmailInput, setCustomerEmailInput] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
+
+  // Xem trước & In chứng từ (K80, A4, Phiếu thu Mẫu 01-TT)
+  const [previewInvoice, setPreviewInvoice] = useState(null);
 
   const loadData = () => {
     listRecords("invoices").then(setInvoices).catch(() => []);
@@ -192,394 +202,8 @@ export function InvoicePage({ title }) {
   }
 
   function printInvoice(invoice) {
-    const customer = customerFor(invoice);
-    const lines = invoice.details || [];
-    const escapeHtml = (value) =>
-      String(value ?? "").replace(
-        /[&<>"']/g,
-        (character) =>
-          ({
-            "&": "&amp;",
-            "<": "&lt;",
-            ">": "&gt;",
-            '"': "&quot;",
-            "'": "&#039;",
-          }[character])
-      );
-    const totalAmount = Number(invoice.TongTien || 0);
-    const discount = Number(invoice.GiamGia || 0);
-    const subtotal = totalAmount + discount;
-    const isPaid = invoice.TrangThai === "Đã thanh toán";
-    const paymentMethod = invoice.HinhThucThanhToan || invoice.paymentMethod || "Tiền mặt";
-    const code = invoice.MaHD || invoice.id;
-    const store = getStoreConfig();
-
-    const printWindow = window.open("", "_blank", "width=880,height=920");
-    if (!printWindow) return;
-
-    printWindow.document.write(`<!doctype html>
-<html lang="vi">
-<head>
-  <meta charset="utf-8"/>
-  <title>Hóa đơn bán hàng - ${escapeHtml(code)}</title>
-  <style>
-    @page { size: A4 portrait; margin: 12mm 15mm; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      color: #1F2937;
-      background: #fff;
-      font-size: 13px;
-      line-height: 1.4;
-    }
-    .doc-container {
-      max-width: 195mm;
-      margin: 0 auto;
-      padding: 6mm 4mm;
-    }
-    .doc-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 18px;
-    }
-    .brand-left {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-    }
-    .brand-logo-circle {
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      background: #FBEAEC;
-      color: #E11D48;
-      border: 1px solid #FECDD3;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      flex-shrink: 0;
-    }
-    .brand-info h2 {
-      font-size: 18px;
-      font-weight: 700;
-      color: #0F172A;
-      margin-bottom: 2px;
-    }
-    .brand-info .slogan {
-      font-size: 12px;
-      color: #64748B;
-      margin-bottom: 6px;
-    }
-    .brand-meta {
-      font-size: 11.5px;
-      color: #64748B;
-      line-height: 1.6;
-    }
-    .meta-right {
-      text-align: right;
-      font-size: 12px;
-      color: #334155;
-      line-height: 1.6;
-    }
-    .meta-right strong {
-      color: #0F172A;
-      font-size: 13px;
-    }
-    .barcode-box {
-      margin-top: 6px;
-      display: inline-block;
-      text-align: center;
-      padding: 4px 10px;
-      background: #F8FAFC;
-      border: 1px dashed #CBD5E1;
-      border-radius: 4px;
-    }
-    .barcode-lines {
-      letter-spacing: 2px;
-      font-family: monospace;
-      font-weight: bold;
-      font-size: 14px;
-      color: #0F172A;
-    }
-    .doc-title-row {
-      text-align: center;
-      margin: 16px 0 16px;
-    }
-    .doc-title {
-      font-size: 22px;
-      font-weight: 800;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-      color: #2A4F49;
-    }
-    .info-box {
-      background: #F8FAFC;
-      border: 1px solid #E2E8F0;
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-bottom: 18px;
-      font-size: 12.5px;
-    }
-    .info-grid {
-      display: grid;
-      grid-template-columns: 1.2fr 1fr;
-      gap: 6px 20px;
-    }
-    .info-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .info-label {
-      color: #64748B;
-      min-width: 105px;
-    }
-    .info-val {
-      color: #0F172A;
-      font-weight: 500;
-    }
-    .badge-paid {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 9999px;
-      background: #ECFDF5;
-      color: #059669;
-      border: 1px solid #A7F3D0;
-      font-size: 11px;
-      font-weight: 600;
-    }
-    .badge-unpaid {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 9999px;
-      background: #FEF2F2;
-      color: #DC2626;
-      border: 1px solid #FECACA;
-      font-size: 11px;
-      font-weight: 600;
-    }
-    table.doc-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 16px;
-      font-size: 12px;
-    }
-    table.doc-table th {
-      background: #F1F5F9;
-      color: #334155;
-      font-weight: 600;
-      padding: 8px 10px;
-      border: 1px solid #CBD5E1;
-      text-align: left;
-    }
-    table.doc-table td {
-      padding: 8px 10px;
-      border: 1px solid #E2E8F0;
-      color: #1E293B;
-    }
-    table.doc-table th.center, table.doc-table td.center { text-align: center; }
-    table.doc-table th.right, table.doc-table td.right { text-align: right; }
-
-    .summary-wrap {
-      display: flex;
-      justify-content: flex-end;
-      margin-bottom: 14px;
-    }
-    .summary-table {
-      width: 290px;
-      font-size: 12.5px;
-    }
-    .summary-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 4px 0;
-      color: #475569;
-    }
-    .summary-row.highlight {
-      padding: 8px 10px;
-      border-radius: 6px;
-      font-weight: 700;
-      font-size: 13.5px;
-      margin-top: 4px;
-      background: #FBEAEC;
-      color: #BE123C;
-    }
-    .words-row {
-      font-style: italic;
-      color: #475569;
-      font-size: 12px;
-      margin-bottom: 24px;
-    }
-    .doc-footer-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-top: 16px;
-    }
-    .thank-you {
-      font-size: 13px;
-      font-weight: 600;
-      color: #0F172A;
-    }
-    .thank-you small {
-      display: block;
-      color: #64748B;
-      font-weight: normal;
-      font-size: 11.5px;
-      margin-top: 2px;
-    }
-    .signatures-row {
-      display: flex;
-      gap: 60px;
-      text-align: center;
-    }
-    .sig-title {
-      font-weight: 700;
-      color: #0F172A;
-      font-size: 12.5px;
-    }
-    .sig-sub {
-      font-size: 11px;
-      font-style: italic;
-      color: #64748B;
-      margin-top: 2px;
-    }
-    .sig-space {
-      height: 55px;
-    }
-    @media print {
-      body { padding: 0; }
-      .doc-container { width: 100%; max-width: none; padding: 0; }
-    }
-  </style>
-</head>
-<body>
-  <div class="doc-container">
-    <header class="doc-header">
-      <div class="brand-left">
-        <img src="${getBrandLogoUrl()}" alt="Logo Mẹ & Bé" style="width:44px;height:44px;object-fit:contain;flex-shrink:0;" onerror="this.style.display='none'" />
-        <div class="brand-info">
-          <h2>${escapeHtml(store.brandName || store.name || "Cửa hàng Mẹ & Bé")}</h2>
-          <div class="slogan">${escapeHtml(store.subtitle || "Hệ thống quản lý Cửa hàng Mẹ và Bé")}</div>
-          <div class="brand-meta">
-            <div>📍 <strong>Địa chỉ:</strong> ${escapeHtml(store.address)}</div>
-            <div>☎ <strong>Hotline:</strong> ${escapeHtml(store.hotline || store.phone)}${store.taxCode ? ` | MST: ${escapeHtml(store.taxCode)}` : ""}</div>
-            <div>✉ <strong>Email:</strong> ${escapeHtml(store.email)} | 🌐 <strong>Website:</strong> ${escapeHtml(store.website || "www.cuahangmebe.vn")}</div>
-          </div>
-        </div>
-      </div>
-      <div class="meta-right">
-        <div>Mã HĐ: <strong>${escapeHtml(code)}</strong></div>
-        <div>Ngày lập: <strong>${escapeHtml(invoice.NgayLap || new Date().toLocaleDateString("vi-VN"))}</strong></div>
-        <div class="barcode-box">
-          <div class="barcode-lines">||||| | |||| |||</div>
-          <small style="font-size:10px;color:#64748B">${escapeHtml(code)}</small>
-        </div>
-      </div>
-    </header>
-
-    <div class="doc-title-row">
-      <h1 class="doc-title">HÓA ĐƠN BÁN HÀNG</h1>
-    </div>
-
-    <div class="info-box">
-      <div class="info-grid">
-        <div>
-          <div class="info-row"><span class="info-label">Tên khách hàng:</span><strong class="info-val">${escapeHtml(customer?.HoTen || invoice.MaKHCode || "Khách lẻ")}</strong></div>
-          <div class="info-row"><span class="info-label">SĐT:</span><span class="info-val">${escapeHtml(customer?.SDT || "—")}</span></div>
-          <div class="info-row"><span class="info-label">Địa chỉ:</span><span class="info-val">${escapeHtml(customer?.DiaChi || "Tại quầy")}</span></div>
-        </div>
-        <div>
-          <div class="info-row"><span class="info-label">Hình thức TT:</span><span class="info-val">${escapeHtml(paymentMethod)}</span></div>
-          <div class="info-row">
-            <span class="info-label">Trạng thái:</span>
-            <span class="${isPaid ? "badge-paid" : "badge-unpaid"}">${isPaid ? "Đã thanh toán" : "Chưa thanh toán"}</span>
-          </div>
-          <div class="info-row"><span class="info-label">Nhân viên:</span><span class="info-val">${escapeHtml(invoice.NguoiLap || "Trần Thị Mai")}</span></div>
-        </div>
-      </div>
-    </div>
-
-    <table class="doc-table">
-      <thead>
-        <tr>
-          <th class="center" style="width: 40px">STT</th>
-          <th>Tên sản phẩm</th>
-          <th class="center" style="width: 60px">ĐVT</th>
-          <th class="center" style="width: 50px">SL</th>
-          <th class="right" style="width: 110px">Đơn giá</th>
-          <th class="right" style="width: 120px">Thành tiền</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${lines
-          .map((line, i) => {
-            const qty = Number(line.SoLuong || line.quantity || 1);
-            const price = Number(line.DonGia || line.price || 0);
-            const amount = Number(line.ThanhTien || qty * price);
-            return `
-          <tr>
-            <td class="center">${i + 1}</td>
-            <td><strong>${escapeHtml(line.TenSP || line.MaSPCode || line.MaSP || "Sản phẩm")}</strong></td>
-            <td class="center">${escapeHtml(line.DonViTinh || "Cái")}</td>
-            <td class="center">${qty}</td>
-            <td class="right">${money.format(price)}</td>
-            <td class="right"><strong>${money.format(amount)}</strong></td>
-          </tr>
-        `;
-          })
-          .join("")}
-      </tbody>
-    </table>
-
-    <div class="summary-wrap">
-      <div class="summary-table">
-        <div class="summary-row">
-          <span>Tổng tiền hàng:</span>
-          <span>${money.format(subtotal)}</span>
-        </div>
-        <div class="summary-row">
-          <span>Giảm giá:</span>
-          <span>${money.format(discount)}</span>
-        </div>
-        <div class="summary-row highlight">
-          <span>Thành tiền:</span>
-          <span>${money.format(totalAmount)}</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="words-row">
-      <strong>Số tiền bằng chữ:</strong> ${escapeHtml(amountToWords(totalAmount))}.
-    </div>
-
-    <div class="doc-footer-row">
-      <div class="thank-you">
-        Cảm ơn quý khách!
-        <small>Hẹn gặp lại quý khách!</small>
-      </div>
-      <div class="signatures-row">
-        <div>
-          <div class="sig-title">Khách hàng</div>
-          <div class="sig-sub">(Ký, ghi rõ họ tên)</div>
-          <div class="sig-space"></div>
-        </div>
-        <div>
-          <div class="sig-title">Nhân viên bán hàng</div>
-          <div class="sig-sub">(Ký, ghi rõ họ tên)</div>
-          <div class="sig-space"></div>
-          <small style="color:#64748B">${escapeHtml(invoice.NguoiLap || "Trần Thị Mai")}</small>
-        </div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => printWindow.print(), 350);
+    if (!invoice) return;
+    setPreviewInvoice(invoice);
   }
 
   async function pay() {
@@ -793,8 +417,8 @@ export function InvoicePage({ title }) {
                   <th scope="col">Khách hàng</th>
                   <th scope="col">Ngày lập</th>
                   <th scope="col">Người lập phiếu</th>
-                  <th scope="col">Giá trị</th>
-                  <th scope="col">Còn phải thu</th>
+                  <th scope="col" style={{ textAlign: "right" }} className="right">Giá trị</th>
+                  <th scope="col" style={{ textAlign: "right" }} className="right">Còn phải thu</th>
                   <th scope="col">Trạng thái</th>
                   <th scope="col"></th>
                 </tr>
@@ -806,13 +430,13 @@ export function InvoicePage({ title }) {
                     <td>{customerFor(invoice)?.HoTen || invoice.MaKHCode || "Khách lẻ"}</td>
                     <td>{invoice.NgayLap}</td>
                     <td><span style={{ fontWeight: 500, color: "var(--text-soft)" }}>{invoice.NguoiLap || invoice.MaNVCode || "Quản trị viên"}</span></td>
-                    <td>{money.format(invoice.TongTien || 0)}</td>
-                    <td><strong>{money.format(invoice.SoTienConLai ?? invoice.TongTien ?? 0)}</strong></td>
+                    <td className="right tabular-nums" style={{ textAlign: "right", fontWeight: 600 }}>{money.format(invoice.TongTien || 0)}</td>
+                    <td className="right tabular-nums" style={{ textAlign: "right" }}><strong>{money.format(invoice.SoTienConLai ?? invoice.TongTien ?? 0)}</strong></td>
                     <td><StatusBadge status={invoice.TrangThai} /></td>
                     <td>
                       <div className="row-actions">
                         <button className="icon-btn" type="button" title="Xem chi tiết" aria-label="Xem chi tiết" onClick={() => setSelectedInvoice(invoice)}><EyeIcon className="ic" aria-hidden="true" /></button>
-                        <button className="icon-btn" type="button" title="In hóa đơn A4" aria-label="In hóa đơn A4" onClick={() => printInvoice(invoice)}><PrinterIcon className="ic" aria-hidden="true" /></button>
+                        <button className="icon-btn" type="button" title="In hóa đơn / Phiếu thu" aria-label="In hóa đơn / Phiếu thu" onClick={() => printInvoice(invoice)}><PrinterIcon className="ic" aria-hidden="true" /></button>
                         <button
                           className="icon-btn"
                           type="button"
@@ -962,7 +586,7 @@ export function InvoicePage({ title }) {
                   <th scope="col">Phân loại</th>
                   <th scope="col">Chứng từ liên quan</th>
                   <th scope="col">Đối tượng</th>
-                  <th scope="col" style={{ textAlign: "right" }}>Số tiền</th>
+                  <th scope="col" style={{ textAlign: "right" }} className="right">Số tiền</th>
                   <th scope="col">Phương thức</th>
                   <th scope="col">Ngày thanh toán</th>
                   <th scope="col" style={{ textAlign: "center" }}>Trạng thái</th>
@@ -998,7 +622,7 @@ export function InvoicePage({ title }) {
                         )}
                       </td>
                       <td><strong>{partyName}</strong></td>
-                      <td style={{ textAlign: "right", fontWeight: 700, color: isChi ? "#d97706" : "var(--success)" }}>
+                      <td className="right tabular-nums" style={{ textAlign: "right", fontWeight: 700, color: isChi ? "#d97706" : "var(--success)" }}>
                         {isChi ? "-" : "+"}{money.format(p.SoTien || 0)}
                       </td>
                       <td>
@@ -1298,6 +922,68 @@ export function InvoicePage({ title }) {
           </div>
         )}
       </Modal>
+      {/* Modal Xem trước & In chứng từ: K80 (POS), A4 (Chi tiết), Phiếu thu Mẫu 01-TT */}
+      <DocumentPrintPreviewModal
+        open={Boolean(previewInvoice)}
+        onClose={() => setPreviewInvoice(null)}
+        title={`Xem trước chứng từ bán hàng (${previewInvoice?.MaHD || previewInvoice?.id || ""})`}
+        subtitle="Hóa đơn bán lẻ K80 nhiệt POS, Hóa đơn A4 chi tiết và Phiếu thu Mẫu 01-TT (TT 200/2014/TT-BTC)"
+        alternativeTemplates={
+          previewInvoice
+            ? [
+                {
+                  label: "Hóa đơn K80 (POS)",
+                  icon: <PrinterIcon style={{ width: 14, height: 14 }} />,
+                  isK80: true,
+                  getHtml: () =>
+                    renderHoaDonBanLeK80Html(previewInvoice, {
+                      customer: customerFor(previewInvoice),
+                    }),
+                },
+                {
+                  label: "Hóa đơn A4 (Chi tiết)",
+                  icon: <DocumentTextIcon style={{ width: 14, height: 14 }} />,
+                  isK80: false,
+                  getHtml: () =>
+                    renderHoaDonBanLeA4Html(previewInvoice, {
+                      customer: customerFor(previewInvoice),
+                    }),
+                },
+                {
+                  label: "Phiếu thu (Mẫu 01-TT)",
+                  icon: <BanknotesIcon style={{ width: 14, height: 14 }} />,
+                  isK80: false,
+                  getHtml: () => {
+                    const isDebt =
+                      previewInvoice.HinhThucThanhToan === "Ghi nợ" ||
+                      previewInvoice.TrangThai === "Chưa thanh toán";
+                    const paidAmount = Number(
+                      previewInvoice.SoTienDaTra ??
+                        (previewInvoice.TrangThai === "Đã thanh toán"
+                          ? previewInvoice.TongTien
+                          : 0)
+                    );
+                    const amount = paidAmount > 0 ? paidAmount : Number(previewInvoice.TongTien || 0);
+                    return renderPhieuThuM01TTHtml({
+                      MaPT: `PT-${previewInvoice.MaHD || previewInvoice.id}`,
+                      NgayThu: previewInvoice.NgayLap || new Date().toISOString(),
+                      TenKH: customerFor(previewInvoice)?.HoTen || previewInvoice.MaKHCode || "Khách mua hàng",
+                      DiaChi: customerFor(previewInvoice)?.DiaChi || "Tại quầy",
+                      SoTien: amount,
+                      TkNo: "1111",
+                      TkCo: isDebt ? "131" : "5111",
+                      LyDo: isDebt
+                        ? `Thu hồi công nợ theo hóa đơn ${previewInvoice.MaHD || previewInvoice.id}`
+                        : `Thu tiền bán hàng lẻ theo hóa đơn ${previewInvoice.MaHD || previewInvoice.id}`,
+                      ChungTuGoc: `Hóa đơn bán lẻ ${previewInvoice.MaHD || previewInvoice.id}`,
+                      NguoiLap: previewInvoice.NguoiLap || "Thu ngân",
+                    });
+                  },
+                },
+              ]
+            : []
+        }
+      />
     </section>
   );
 }

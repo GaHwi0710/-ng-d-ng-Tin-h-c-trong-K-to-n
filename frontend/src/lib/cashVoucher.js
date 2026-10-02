@@ -1,5 +1,6 @@
 import { amountToWords } from "./amountToWords.js";
 import { getStoreConfig, DEFAULT_STORE_CONFIG, getBrandLogoUrl } from "./storeConfig.js";
+import { renderPhieuChiM02TTHtml, printPhieuChiM02TT, renderPhieuThuM01TTHtml, printPhieuThuM01TT } from "./accountingDocsPrint.js";
 
 const money = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 
@@ -46,6 +47,10 @@ export function buildCashVoucherModel({ kind, record, userName = "" }) {
     amount: Number(record.SoTien || 0),
     attachedNote: record.KemTheo || "",
     sourceDocs: record.ChungTuGoc || record.SoChungTuGoc || "",
+    TkNo: record.TkNo || (isThu ? "111" : "331"),
+    TkCo: record.TkCo || (isThu ? "131" : "111"),
+    debit: record.TkNo || (isThu ? "111" : "331"),
+    credit: record.TkCo || (isThu ? "131" : "111"),
     preparedBy: record.NguoiLap || userName,
   };
 }
@@ -154,114 +159,15 @@ const CASH_CSS = `
 `;
 
 export function buildCashVoucherHtml(model) {
-  const { d, m, y } = parseDateParts(model.date);
-  const title = model.isThu ? "PHIẾU THU" : "PHIẾU CHI";
-  const formNo = model.isThu ? "01-TT" : "02-TT";
-  const personLabel = model.isThu
-    ? "Họ, tên người nộp tiền"
-    : "Họ, tên người nhận tiền";
-  const reasonLabel = model.isThu ? "Lý do nộp" : "Lý do chi";
-  const signs = model.isThu
-    ? [
-        { role: "Giám đốc", note: "(Ký, họ tên, đóng dấu)" },
-        { role: "Kế toán trưởng", note: "(Ký, họ tên)" },
-        { role: "Người nộp tiền", note: "(Ký, họ tên)" },
-        { role: "Người lập phiếu", note: "(Ký, họ tên)", name: model.preparedBy },
-        { role: "Thủ quỹ", note: "(Ký, họ tên)" },
-      ]
-    : [
-        { role: "Giám đốc", note: "(Ký, họ tên, đóng dấu)" },
-        { role: "Kế toán trưởng", note: "(Ký, họ tên)" },
-        { role: "Thủ quỹ", note: "(Ký, họ tên)" },
-        { role: "Người lập phiếu", note: "(Ký, họ tên)", name: model.preparedBy },
-        { role: "Người nhận tiền", note: "(Ký, họ tên)" },
-      ];
-
-  const receivedLine = model.isThu
-    ? `<div class="cv-line"><span>Đã nhận đủ số tiền (viết bằng chữ):</span><span class="fill">${dotted(amountToWords(model.amount))}</span><span></span></div>`
-    : "";
-
-  const cfg = getStoreConfig();
-
-  return `<!DOCTYPE html>
-<html lang="vi">
-<head>
-  <meta charset="utf-8" />
-  <title>${esc(title)} ${esc(model.number)}</title>
-  ${typeof window !== "undefined" && window.location?.origin ? `<base href="${window.location.origin}/">` : ""}
-  <style>${CASH_CSS}</style>
-</head>
-<body>
-  <div class="cv">
-    <div class="cv-top">
-      <div class="cv-brand">
-        <img src="${getBrandLogoUrl()}" class="cv-logo-img" alt="Logo Mẹ & Bé" style="width:46px;height:46px;object-fit:contain;flex-shrink:0;" />
-        <div class="cv-company">
-          ${esc(cfg.brandName || cfg.name || "CỬA HÀNG MẸ & BÉ")}
-          <small><strong>Địa chỉ:</strong> ${esc(cfg.address)}</small>
-          <small><strong>Hotline:</strong> ${esc(cfg.hotline || cfg.phone)} | <strong>Email:</strong> ${esc(cfg.email)}</small>
-          <small><strong>Website:</strong> ${esc(cfg.website || "www.cuahangmebe.vn")}</small>
-        </div>
-      </div>
-      <div class="cv-form-no">
-        <strong>Mẫu số ${formNo}</strong>
-        (Ban hành theo TT 200/2014/TT-BTC<br/>ngày 22/12/2014 của Bộ trưởng BTC)
-      </div>
-    </div>
-
-    <div class="cv-title"><h1>${title}</h1></div>
-    <div class="cv-num"><b>Số:</b><span>${voucherNumber(model.number)}</span></div>
-    <div class="cv-sub">Ngày ${d} tháng ${m} năm ${y}</div>
-
-    <div class="cv-info">
-      <div class="cv-line"><span>${personLabel}:</span><span class="fill">${dotted(model.personName)}</span><span></span></div>
-      <div class="cv-line"><span>Địa chỉ:</span><span class="fill">${dotted(model.address)}</span><span></span></div>
-      <div class="cv-line"><span>${reasonLabel}:</span><span class="fill">${dotted(model.reason)}</span><span></span></div>
-      <div class="cv-line"><span>Số tiền:</span><span class="fill">${money.format(model.amount)} ₫</span><span></span></div>
-      <div class="cv-line"><span>(Viết bằng chữ):</span><span class="fill">${dotted(amountToWords(model.amount))}</span><span></span></div>
-      <div class="cv-line"><span>Kèm theo:</span><span class="fill">${dotted(model.attachedNote)}</span><span>&nbsp;&nbsp;Chứng từ gốc: ${dotted(model.sourceDocs)}</span></div>
-      ${receivedLine}
-    </div>
-
-    <div class="cv-sign-date">Ngày ${d} tháng ${m} năm ${y}</div>
-    <div class="cv-signs">
-      ${signs.map((sign) => `
-      <div>
-        <strong>${sign.role}</strong>
-        <em>${sign.note}</em>
-        <div class="space"></div>
-        ${sign.name ? esc(sign.name) : ""}
-      </div>`).join("")}
-    </div>
-
-    <div class="cv-foot">
-      <div class="cv-line"><span>+ Tỷ giá ngoại tệ ( vàng bạc, đá quý):</span><span class="fill"></span><span></span></div>
-      <div class="cv-line"><span>+ Số tiền quy đổi:</span><span class="fill"></span><span></span></div>
-    </div>
-  </div>
-</body>
-</html>`;
+  if (!model.isThu) {
+    return renderPhieuChiM02TTHtml(model);
+  }
+  return renderPhieuThuM01TTHtml(model);
 }
 
 export function printCashVoucher(model) {
-  const html = buildCashVoucherHtml(model);
-  const frame = document.createElement("iframe");
-  frame.setAttribute("aria-hidden", "true");
-  frame.style.cssText =
-    "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none";
-  document.body.appendChild(frame);
-  const win = frame.contentWindow;
-  const doc = win.document;
-  doc.open();
-  doc.write(html);
-  doc.close();
-  const cleanup = () => {
-    setTimeout(() => frame.remove(), 400);
-  };
-  win.onafterprint = cleanup;
-  setTimeout(() => {
-    win.focus();
-    win.print();
-    setTimeout(cleanup, 1500);
-  }, 250);
+  if (!model.isThu) {
+    return printPhieuChiM02TT(model);
+  }
+  return printPhieuThuM01TT(model);
 }

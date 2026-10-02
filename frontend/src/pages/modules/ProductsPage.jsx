@@ -103,19 +103,36 @@ export function ProductsPage({ title, description }) {
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null, name: "" });
 
+  const [formErrors, setFormErrors] = useState({});
+  const [touched, setTouched] = useState({});
+
   const [formData, setFormData] = useState({
     MaSP: "",
     TenSP: "",
     MaLoai: "",
     LoaiHang: "",
     DonViTinh: "Cái",
-    GiaNhap: 0,
-    GiaBan: 0,
+    GiaNhap: "",
+    GiaBan: "",
     HanSuDung: "",
     TrangThai: "Đang bán",
     stock: 0,
     HinhAnh: "",
   });
+
+  function validatePrice(field, val) {
+    let err = "";
+    if (val === "" || val === null || val === undefined || String(val).trim() === "") {
+      err = `${field === "GiaNhap" ? "Giá nhập" : "Giá bán"} là bắt buộc, không được để trống`;
+    } else {
+      const num = Number(val);
+      if (isNaN(num) || num <= 0) {
+        err = `${field === "GiaNhap" ? "Giá nhập" : "Giá bán"} phải là số hợp lệ lớn hơn 0`;
+      }
+    }
+    setFormErrors((prev) => ({ ...prev, [field]: err }));
+    return !err;
+  }
 
   async function handleFileChange(e) {
     const file = e.target.files?.[0];
@@ -228,6 +245,8 @@ export function ProductsPage({ title, description }) {
 
   function openCreate() {
     setEditing(null);
+    setFormErrors({});
+    setTouched({});
     const defaultCat =
       (selectedCat !== "all"
         ? categories.find((c) => c.TenLoai?.toLowerCase().trim() === selectedCat.toLowerCase().trim())
@@ -238,8 +257,8 @@ export function ProductsPage({ title, description }) {
       MaLoai: defaultCat?.id || "",
       LoaiHang: defaultCat?.TenLoai || "",
       DonViTinh: "Cái",
-      GiaNhap: 0,
-      GiaBan: 0,
+      GiaNhap: "",
+      GiaBan: "",
       HanSuDung: "",
       TrangThai: "Đang bán",
       stock: 0,
@@ -251,6 +270,8 @@ export function ProductsPage({ title, description }) {
 
   function openEdit(product) {
     setEditing(product);
+    setFormErrors({});
+    setTouched({});
     const matchedCat = categories.find(
       (c) =>
         String(c.id) === String(product.MaLoai) ||
@@ -263,8 +284,8 @@ export function ProductsPage({ title, description }) {
       MaLoai: matchedCat?.id || product.MaLoai || "",
       LoaiHang: matchedCat?.TenLoai || product.LoaiHang || "",
       DonViTinh: product.DonViTinh || "Cái",
-      GiaNhap: product.GiaNhap || 0,
-      GiaBan: product.GiaBan || 0,
+      GiaNhap: product.GiaNhap !== undefined && product.GiaNhap !== null ? product.GiaNhap : "",
+      GiaBan: product.GiaBan !== undefined && product.GiaBan !== null ? product.GiaBan : "",
       HanSuDung: product.HanSuDung || "",
       TrangThai: product.TrangThai || "Đang bán",
       stock: product.stock || 0,
@@ -280,23 +301,23 @@ export function ProductsPage({ title, description }) {
     if (!formData.HanSuDung) {
       return toast("Vui lòng chọn Hạn sử dụng cho sản phẩm (Bắt buộc)");
     }
-    if (
-      formData.GiaNhap === "" ||
-      formData.GiaNhap === null ||
-      formData.GiaNhap === undefined ||
-      isNaN(Number(formData.GiaNhap)) ||
-      Number(formData.GiaNhap) < 0
-    ) {
-      return toast("Giá nhập là bắt buộc và phải là số hợp lệ >= 0");
+
+    const isGiaNhapValid = validatePrice("GiaNhap", formData.GiaNhap);
+    const isGiaBanValid = validatePrice("GiaBan", formData.GiaBan);
+    setTouched((prev) => ({ ...prev, GiaNhap: true, GiaBan: true }));
+
+    if (!isGiaNhapValid) {
+      if (formData.GiaNhap === "" || formData.GiaNhap === null || formData.GiaNhap === undefined || String(formData.GiaNhap).trim() === "") {
+        return toast("Giá nhập là bắt buộc, không được để trống");
+      }
+      return toast("Giá nhập phải là số hợp lệ lớn hơn 0");
     }
-    if (
-      formData.GiaBan === "" ||
-      formData.GiaBan === null ||
-      formData.GiaBan === undefined ||
-      isNaN(Number(formData.GiaBan)) ||
-      Number(formData.GiaBan) < 0
-    ) {
-      return toast("Giá bán là bắt buộc và phải là số hợp lệ >= 0");
+
+    if (!isGiaBanValid) {
+      if (formData.GiaBan === "" || formData.GiaBan === null || formData.GiaBan === undefined || String(formData.GiaBan).trim() === "") {
+        return toast("Giá bán là bắt buộc, không được để trống");
+      }
+      return toast("Giá bán phải là số hợp lệ lớn hơn 0");
     }
 
     const matchedCat = categories.find(
@@ -356,8 +377,8 @@ export function ProductsPage({ title, description }) {
   }
 
   const marginPercent =
-    formData.GiaBan > 0
-      ? (((formData.GiaBan - formData.GiaNhap) / formData.GiaBan) * 100).toFixed(0)
+    Number(formData.GiaBan) > 0 && Number(formData.GiaNhap) > 0
+      ? (((Number(formData.GiaBan) - Number(formData.GiaNhap)) / Number(formData.GiaBan)) * 100).toFixed(0)
       : 0;
 
   return (
@@ -472,8 +493,8 @@ export function ProductsPage({ title, description }) {
               <th style={{ width: 100 }}>Mã SP</th>
               <th>Tên sản phẩm &amp; Danh mục</th>
               <th style={{ width: 80 }}>ĐVT</th>
-              <th style={{ textAlign: "right", width: 120 }}>Giá nhập</th>
-              <th style={{ textAlign: "right", width: 130 }}>Giá bán</th>
+              <th style={{ textAlign: "right", width: 120 }} className="right">Giá nhập</th>
+              <th style={{ textAlign: "right", width: 130 }} className="right">Giá bán</th>
               <th style={{ textAlign: "center", width: 90 }}>Lợi nhuận</th>
               <th style={{ width: 140 }}>Tồn kho</th>
               <th style={{ width: 110, textAlign: "center" }}>Trạng thái</th>
@@ -530,10 +551,10 @@ export function ProductsPage({ title, description }) {
                     </div>
                   </td>
                   <td style={{ color: "var(--text-soft)", fontWeight: 500 }}>{p.DonViTinh}</td>
-                  <td style={{ textAlign: "right", color: "var(--text-soft)", fontSize: 13 }}>
+                  <td className="right tabular-nums" style={{ textAlign: "right", color: "var(--text-soft)", fontSize: 13 }}>
                     {money.format(p.GiaNhap || 0)}
                   </td>
-                  <td style={{ textAlign: "right" }}>
+                  <td className="right tabular-nums" style={{ textAlign: "right" }}>
                     <strong style={{ color: "var(--primary-dark)", fontSize: 13.5 }}>
                       {money.format(p.GiaBan || 0)}
                     </strong>
@@ -545,7 +566,7 @@ export function ProductsPage({ title, description }) {
                   </td>
                   <td>
                     <div className="prod-stock-cell" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <strong style={{ fontSize: 13, color: "var(--text-dark)" }}>
+                      <strong className="tabular-nums" style={{ fontSize: 13, color: "var(--text-dark)" }}>
                         {st} {p.DonViTinh}
                       </strong>
                       <div>
@@ -630,6 +651,21 @@ export function ProductsPage({ title, description }) {
         title={editing ? "Cập nhật sản phẩm" : "Thêm sản phẩm mới"}
         onClose={() => setModalOpen(false)}
         onSubmit={handleSave}
+        submitDisabled={
+          !formData.TenSP?.trim() ||
+          !formData.MaSP?.trim() ||
+          !formData.HanSuDung ||
+          formData.GiaNhap === "" ||
+          formData.GiaNhap === null ||
+          formData.GiaNhap === undefined ||
+          isNaN(Number(formData.GiaNhap)) ||
+          Number(formData.GiaNhap) <= 0 ||
+          formData.GiaBan === "" ||
+          formData.GiaBan === null ||
+          formData.GiaBan === undefined ||
+          isNaN(Number(formData.GiaBan)) ||
+          Number(formData.GiaBan) <= 0
+        }
       >
         <div className="form-grid">
           <div className="field">
@@ -714,17 +750,31 @@ export function ProductsPage({ title, description }) {
             <input
               id="p-inprice"
               type="number"
-              min="0"
+              min="1"
               step="1000"
               required
+              placeholder="Nhập giá nhập > 0"
               value={formData.GiaNhap}
-              onChange={(e) => setFormData({ ...formData, GiaNhap: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, GiaNhap: e.target.value });
+                if (touched.GiaNhap) validatePrice("GiaNhap", e.target.value);
+              }}
+              onBlur={() => {
+                setTouched((prev) => ({ ...prev, GiaNhap: true }));
+                validatePrice("GiaNhap", formData.GiaNhap);
+              }}
+              style={formErrors.GiaNhap ? { borderColor: "var(--danger, #ef4444)" } : undefined}
             />
+            {formErrors.GiaNhap && (
+              <span className="field-error" style={{ color: "var(--danger, #ef4444)", fontSize: 12, marginTop: 4, display: "block" }}>
+                {formErrors.GiaNhap}
+              </span>
+            )}
           </div>
           <div className="field">
             <label htmlFor="p-outprice">
               Giá bán (VNĐ) <span className="required-star">*</span>
-              {formData.GiaBan > 0 && (
+              {Number(formData.GiaBan) > 0 && Number(formData.GiaNhap) > 0 && (
                 <span style={{ float: "right", color: "var(--success)", fontWeight: 600 }}>
                   Lãi: +{marginPercent}%
                 </span>
@@ -733,12 +783,26 @@ export function ProductsPage({ title, description }) {
             <input
               id="p-outprice"
               type="number"
-              min="0"
+              min="1"
               step="1000"
               required
+              placeholder="Nhập giá bán > 0"
               value={formData.GiaBan}
-              onChange={(e) => setFormData({ ...formData, GiaBan: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, GiaBan: e.target.value });
+                if (touched.GiaBan) validatePrice("GiaBan", e.target.value);
+              }}
+              onBlur={() => {
+                setTouched((prev) => ({ ...prev, GiaBan: true }));
+                validatePrice("GiaBan", formData.GiaBan);
+              }}
+              style={formErrors.GiaBan ? { borderColor: "var(--danger, #ef4444)" } : undefined}
             />
+            {formErrors.GiaBan && (
+              <span className="field-error" style={{ color: "var(--danger, #ef4444)", fontSize: 12, marginTop: 4, display: "block" }}>
+                {formErrors.GiaBan}
+              </span>
+            )}
           </div>
         </div>
 

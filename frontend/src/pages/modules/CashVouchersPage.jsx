@@ -20,7 +20,9 @@ import { EmptyState } from "../../components/EmptyState.jsx";
 import { Badge } from "../../components/Badge.jsx";
 import { userCan } from "../../lib/permissions.js";
 import { amountToWords } from "../../lib/amountToWords.js";
-import { buildCashVoucherModel, printCashVoucher } from "../../lib/cashVoucher.js";
+import { buildCashVoucherModel, buildCashVoucherHtml, printCashVoucher } from "../../lib/cashVoucher.js";
+import { DocumentPrintPreviewModal } from "../../components/DocumentPrintPreviewModal.jsx";
+import { renderPhieuChiM02TTHtml, renderPhieuBaoNoNganHangHtml, renderPhieuThuM01TTHtml } from "../../lib/accountingDocsPrint.js";
 
 const money = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -49,6 +51,7 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
   const [formData, setFormData] = useState(emptyForm());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [previewVoucher, setPreviewVoucher] = useState(null);
 
   function emptyForm() {
     return {
@@ -219,11 +222,7 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
   }
 
   function handlePrint(record) {
-    try {
-      printCashVoucher(buildCashVoucherModel({ kind: type, record }));
-    } catch (err) {
-      toast("Không mở được cửa sổ in. Kiểm tra pop-up blocker.");
-    }
+    setPreviewVoucher(record);
   }
 
   const codeOf = (record) => record.MaPT || record.MaPC || record.id;
@@ -315,9 +314,9 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
               <th style={{ width: 105 }}>Ngày lập</th>
               <th>{isThu ? "Người nộp tiền" : "Người nhận tiền"}</th>
               <th>Lý do {isThu ? "nộp" : "chi"}</th>
-              <th style={{ textAlign: "right", width: 140 }}>Số tiền</th>
-              <th style={{ width: 130, textAlign: 'center' }}>Trạng thái</th>
-              <th style={{ width: 130, textAlign: "center" }}>Thao tác</th>
+              <th className="right" style={{ width: 140 }}>Số tiền</th>
+              <th className="center" style={{ width: 130 }}>Trạng thái</th>
+              <th className="center" style={{ width: 130 }}>Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -334,26 +333,26 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
                 </td>
                 <td>
                   <div>
-                    <span>{record.LyDo || "—"}</span>
+                    <span>{(record.LyDo || "—").replace(/[0-9a-fA-F]{24}/g, record.MaPNCode || record.MaCNCode || "chứng từ")}</span>
                     {(record.KemTheo || record.ChungTuGoc) && (
                       <small style={{ display: "block", color: "var(--text-faint)" }}>
-                        {record.KemTheo ? `Kèm theo: ${record.KemTheo}` : ""}{record.ChungTuGoc ? ` · Ct gốc: ${record.ChungTuGoc}` : ""}
+                        {record.KemTheo ? `Kèm theo: ${record.KemTheo}` : ""}{record.ChungTuGoc ? ` · Ct gốc: ${String(record.ChungTuGoc).replace(/[0-9a-fA-F]{24}/g, record.MaPNCode || record.MaCNCode || "chứng từ")}` : ""}
                       </small>
                     )}
                   </div>
                 </td>
-                <td style={{ textAlign: "right" }}>
+                <td className="right tabular-nums">
                   <strong style={{ color: isThu ? "var(--success, #15803d)" : "var(--danger, #b91c1c)" }}>
                     {money.format(Number(record.SoTien) || 0)} ₫
                   </strong>
                   <small style={{ display: "block", color: "var(--text-faint)", fontStyle: "italic" }}>{amountToWords(Number(record.SoTien) || 0)}</small>
                 </td>
-                <td style={{ textAlign: 'center' }}>
+                <td className="center">
                   <Badge variant={record.TrangThai === 'CONFIRMED' ? 'green' : 'amber'}>
                     {record.TrangThai === 'CONFIRMED' ? 'Đã xác nhận' : 'Chưa xác nhận'}
                   </Badge>
                 </td>
-                <td style={{ textAlign: "center" }}>
+                <td className="center">
                   <div className="row-actions" style={{ justifyContent: "center" }}>
                     {record.TrangThai === 'CONFIRMED' ? (
                       <button type="button" className="icon-sm-btn" title="In phiếu" onClick={() => handlePrint(record)}>
@@ -483,6 +482,7 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
           <input
             id="cv-amount"
             type="number"
+            className="tabular-nums"
             required
             min="1"
             step="1000"
@@ -534,6 +534,34 @@ export function CashVouchersPage({ title, description, type = "thu" }) {
         onConfirm={executeConfirm}
         onCancel={() => setConfirmDialog({ open: false, id: null, code: '' })}
         confirmLabel="Xác nhận"
+      />
+
+      <DocumentPrintPreviewModal
+        open={previewVoucher !== null}
+        onClose={() => setPreviewVoucher(null)}
+        title={isThu ? `Phiếu thu — Mẫu 01-TT (${codeOf(previewVoucher || {})})` : `Chứng từ chi tiền (${codeOf(previewVoucher || {})})`}
+        subtitle={isThu ? "Mẫu số 01-TT ban hành theo TT 200/2014/TT-BTC & TT 133/2016/TT-BTC" : "Mẫu số 02-TT (TT 99/2025/TT-BTC & TT 133/2016/TT-BTC) hoặc Phiếu báo nợ Techcombank"}
+        htmlContent={
+          previewVoucher
+            ? isThu
+              ? buildCashVoucherHtml(buildCashVoucherModel({ kind: "thu", record: previewVoucher }))
+              : renderPhieuChiM02TTHtml(previewVoucher)
+            : ""
+        }
+        alternativeTemplates={
+          previewVoucher && !isThu
+            ? [
+                {
+                  label: "Phiếu chi (Mẫu 02-TT)",
+                  getHtml: () => renderPhieuChiM02TTHtml(previewVoucher),
+                },
+                {
+                  label: "Phiếu báo nợ ngân hàng",
+                  getHtml: () => renderPhieuBaoNoNganHangHtml(previewVoucher),
+                },
+              ]
+            : []
+        }
       />
     </section>
   );

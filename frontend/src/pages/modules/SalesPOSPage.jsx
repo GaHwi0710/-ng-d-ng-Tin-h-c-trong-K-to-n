@@ -24,6 +24,13 @@ import { getMemberTier } from "./CustomersPage.jsx";
 import { getCategoryIcon } from "./ProductsPage.jsx";
 import { currentUserInfo } from "../../lib/permissions.js";
 import { getStoreConfig, getVietQrUrl, getBrandLogoUrl } from "../../lib/storeConfig.js";
+import { DocumentPrintPreviewModal } from "../../components/DocumentPrintPreviewModal.jsx";
+import {
+  printHoaDonBanLe,
+  renderHoaDonBanLeK80Html,
+  renderHoaDonBanLeA4Html,
+  renderPhieuThuM01TTHtml,
+} from "../../lib/accountingDocsPrint.js";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -42,6 +49,7 @@ export function SalesPOSPage({ title }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCat, setSelectedCat] = useState("all");
   const [createdInvoice, setCreatedInvoice] = useState(null);
+  const [posPreviewInvoice, setPosPreviewInvoice] = useState(null);
 
   // Voucher / Promotion state
   const [promoInput, setPromoInput] = useState("");
@@ -421,259 +429,11 @@ export function SalesPOSPage({ title }) {
 
   function printPOSReceipt(inv) {
     if (!inv) return;
-    const escapeHtml = (val) => String(val ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c]));
-    const printWindow = window.open("", "_blank", "width=420,height=620");
-    if (!printWindow) return;
-    const lines = inv.details || [];
-    const custName = selectedCustomer?.HoTen || "Khách lẻ";
-    const custPhone = selectedCustomer?.SDT || "";
-    const totalQty = lines.reduce((s, i) => s + Number(i.SoLuong || i.quantity || 1), 0);
-    const subtotalVal = inv.TienHang || (inv.TongTien + (inv.GiamGia || 0));
-    const discountVal = inv.GiamGia || 0;
-    const totalVal = inv.TongTien || 0;
-    const invCode = inv.MaHD || inv.id;
-    const store = getStoreConfig();
-
-    printWindow.document.write(`<!doctype html>
-<html lang="vi">
-<head>
-<meta charset="utf-8"/>
-<title>Hóa đơn bán hàng - ${escapeHtml(invCode)}</title>
-<style>
-  @page { size: 80mm auto; margin: 2mm 3mm; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-    width: 74mm;
-    margin: 0 auto;
-    color: #1F2937;
-    font-size: 11.5px;
-    line-height: 1.35;
-    background: #fff;
-  }
-  .receipt-scallop-top {
-    height: 10px;
-    background: radial-gradient(circle, #FECDD3 5px, transparent 6px) repeat-x;
-    background-size: 12px 10px;
-    margin-bottom: 8px;
-  }
-  .receipt-header {
-    text-align: center;
-    padding: 0 4px 10px;
-    border-bottom: 1px dashed #CBD5E1;
-  }
-  .receipt-logo {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: #FBEAEC;
-    color: #E11D48;
-    font-size: 16px;
-    margin-bottom: 4px;
-  }
-  .receipt-brand {
-    font-size: 14px;
-    font-weight: 800;
-    color: #0F172A;
-  }
-  .receipt-slogan {
-    font-size: 10.5px;
-    color: #64748B;
-    margin-bottom: 4px;
-  }
-  .receipt-meta {
-    font-size: 10px;
-    color: #64748B;
-    line-height: 1.4;
-  }
-  .receipt-title {
-    font-size: 14px;
-    font-weight: 800;
-    color: #0F172A;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin: 8px 0;
-    text-align: center;
-  }
-  .receipt-info {
-    padding: 4px 0 8px;
-    border-bottom: 1px dashed #CBD5E1;
-    font-size: 10.5px;
-    color: #334155;
-    line-height: 1.5;
-  }
-  .info-flex {
-    display: flex;
-    justify-content: space-between;
-  }
-  table.receipt-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 8px 0;
-    font-size: 11px;
-  }
-  table.receipt-table th {
-    border-bottom: 1px solid #94A3B8;
-    padding: 4px 0;
-    font-weight: 600;
-    color: #0F172A;
-    text-align: left;
-  }
-  table.receipt-table td {
-    padding: 4px 0;
-    vertical-align: top;
-    color: #1E293B;
-  }
-  .c { text-align: center; }
-  .r { text-align: right; }
-  .bold { font-weight: 700; }
-  
-  .receipt-summary {
-    border-top: 1px dashed #CBD5E1;
-    padding-top: 6px;
-    margin-top: 4px;
-  }
-  .sum-line {
-    display: flex;
-    justify-content: space-between;
-    padding: 2px 0;
-    font-size: 11px;
-    color: #475569;
-  }
-  .sum-highlight {
-    background: #FBEAEC;
-    color: #BE123C;
-    padding: 6px 8px;
-    border-radius: 4px;
-    margin-top: 6px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 13px;
-    font-weight: 800;
-  }
-  .receipt-payment-line {
-    margin-top: 8px;
-    font-size: 11px;
-    color: #334155;
-  }
-  .receipt-footer {
-    text-align: center;
-    margin-top: 14px;
-    padding-top: 8px;
-  }
-  .receipt-thanks {
-    font-size: 11.5px;
-    font-weight: 600;
-    color: #0F172A;
-    margin-bottom: 6px;
-  }
-  .receipt-barcode {
-    margin: 8px auto 0;
-    text-align: center;
-    letter-spacing: 3px;
-    font-family: monospace;
-    font-weight: bold;
-    font-size: 15px;
-    color: #0F172A;
-  }
-  .receipt-scallop-bottom {
-    height: 10px;
-    background: radial-gradient(circle, #FECDD3 5px, transparent 6px) repeat-x;
-    background-size: 12px 10px;
-    margin-top: 12px;
-  }
-  @media print {
-    body { width: 100%; margin: 0; }
-  }
-</style>
-  ${typeof window !== "undefined" && window.location?.origin ? `<base href="${window.location.origin}/">` : ""}
-</head>
-<body>
-  <div class="receipt-scallop-top"></div>
-  
-  <div class="receipt-header">
-    <img src="${getBrandLogoUrl()}" class="receipt-logo-img" alt="Logo Mẹ & Bé" style="width:38px;height:38px;object-fit:contain;margin-bottom:4px;" onerror="this.style.display='none'" />
-    <div class="receipt-brand">${escapeHtml(store.brandName || store.name || "Cửa hàng Mẹ & Bé")}</div>
-    <div class="receipt-slogan">${escapeHtml(store.subtitle || "Hệ thống quản lý Cửa hàng Mẹ và Bé")}</div>
-    <div class="receipt-meta">
-      <div><strong>Địa chỉ:</strong> ${escapeHtml(store.address)}</div>
-      <div><strong>Hotline:</strong> ${escapeHtml(store.hotline || store.phone)}${store.taxCode ? ` | <strong>MST:</strong> ${escapeHtml(store.taxCode)}` : ""}</div>
-      <div><strong>Email:</strong> ${escapeHtml(store.email)}</div>
-      <div><strong>Website:</strong> ${escapeHtml(store.website || "www.cuahangmebe.vn")}</div>
-    </div>
-  </div>
-
-  <div class="receipt-title">HÓA ĐƠN BÁN HÀNG</div>
-
-  <div class="receipt-info">
-    <div class="info-flex">
-      <span>Mã HĐ: <strong>${escapeHtml(invCode)}</strong></span>
-      <span>Ngày: ${escapeHtml(inv.NgayLap || new Date().toLocaleDateString("vi-VN"))}</span>
-    </div>
-    <div>Thu ngân: <strong>${escapeHtml(inv.NguoiLap || currentUserInfo().name)}</strong></div>
-    <div>Khách hàng: <strong>${escapeHtml(custName)}</strong>${custPhone ? ` (${escapeHtml(custPhone)})` : ""}</div>
-  </div>
-
-  <table class="receipt-table">
-    <thead>
-      <tr>
-        <th style="width: 44%">Tên sản phẩm</th>
-        <th class="c" style="width: 14%">SL</th>
-        <th class="r" style="width: 21%">Đơn giá</th>
-        <th class="r" style="width: 21%">Thành tiền</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${lines.map((l) => {
-        const qty = Number(l.SoLuong || l.quantity || 1);
-        const price = Number(l.DonGia || l.price || 0);
-        const amt = Number(l.ThanhTien || qty * price);
-        return `
-          <tr>
-            <td>${escapeHtml(l.TenSP || l.MaSPCode || "Sản phẩm")}</td>
-            <td class="c">${qty}</td>
-            <td class="r">${price.toLocaleString("vi-VN")}</td>
-            <td class="r bold">${amt.toLocaleString("vi-VN")}</td>
-          </tr>
-        `;
-      }).join("")}
-    </tbody>
-  </table>
-
-  <div class="receipt-summary">
-    <div class="sum-line">
-      <span>Tổng tiền hàng:</span>
-      <span>${money.format(subtotalVal)}</span>
-    </div>
-    <div class="sum-line">
-      <span>Giảm giá:</span>
-      <span>${money.format(discountVal)}</span>
-    </div>
-    <div class="sum-highlight">
-      <span>Thanh toán:</span>
-      <span>${money.format(totalVal)}</span>
-    </div>
-    <div class="receipt-payment-line">
-      <span>Phương thức: <strong>${escapeHtml(inv.HinhThucThanhToan || paymentMethod || "Tiền mặt")}</strong></span>
-    </div>
-  </div>
-
-  <div class="receipt-footer">
-    <div class="receipt-thanks">❤️ Cảm ơn quý khách!</div>
-    <div class="receipt-barcode">||||| | ||||| ||||</div>
-    <small style="font-size: 9.5px; color: #64748B; font-family: monospace;">${escapeHtml(invCode)}</small>
-  </div>
-
-  <div class="receipt-scallop-bottom"></div>
-</body>
-</html>`);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => printWindow.print(), 350);
+    printHoaDonBanLe(inv, "k80", {
+      customer: selectedCustomer,
+      storeConfig: getStoreConfig(),
+      cashier: inv.NguoiLap || currentUserInfo().name || "Thu ngân",
+    });
   }
 
   return (
@@ -723,6 +483,9 @@ export function SalesPOSPage({ title }) {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button className="btn btn-sm btn-primary" type="button" onClick={() => printPOSReceipt(createdInvoice)}>
               <PrinterIcon className="btn-icon" aria-hidden="true" style={{ width: 15, height: 15 }} /> In bill K80
+            </button>
+            <button className="btn btn-sm btn-outline" type="button" onClick={() => setPosPreviewInvoice(createdInvoice)}>
+              Xem trước / In khác
             </button>
             <button className="btn btn-sm" type="button" onClick={() => navigate("/invoices")}>Xem chi tiết</button>
           </div>
@@ -1160,7 +923,7 @@ export function SalesPOSPage({ title }) {
                     <span>{item.quantity}</span>
                     <button type="button" onClick={() => changeQty(item.id, 1)} aria-label="Tăng">+</button>
                   </div>
-                  <strong style={{ minWidth: 70, textAlign: "right", color: "var(--primary-dark)" }}>
+                  <strong className="tabular-nums" style={{ minWidth: 70, textAlign: "right", color: "var(--primary-dark)" }}>
                     {money.format(item.quantity * item.GiaBan)}
                   </strong>
                 </article>
@@ -1228,21 +991,21 @@ export function SalesPOSPage({ title }) {
             <div className="cart-summary-box">
               <div className="cart-total-row">
                 <span>Số lượng món</span>
-                <strong>{totalItemCount}</strong>
+                <strong className="tabular-nums">{totalItemCount}</strong>
               </div>
               <div className="cart-total-row">
                 <span>Tạm tính</span>
-                <span>{money.format(subtotal)}</span>
+                <span className="tabular-nums">{money.format(subtotal)}</span>
               </div>
               {discountAmount > 0 && (
                 <div className="cart-total-row" style={{ color: "#059669" }}>
                   <span>Chiết khấu / Ưu đãi</span>
-                  <strong>-{money.format(discountAmount)}</strong>
+                  <strong className="tabular-nums">-{money.format(discountAmount)}</strong>
                 </div>
               )}
               <div className="cart-total-row grand">
                 <span>TỔNG THANH TOÁN</span>
-                <strong style={{ color: "var(--primary)", fontSize: 18 }}>{money.format(finalTotal)}</strong>
+                <strong className="tabular-nums" style={{ color: "var(--primary)", fontSize: 18 }}>{money.format(finalTotal)}</strong>
               </div>
             </div>
           )}
@@ -1490,6 +1253,73 @@ export function SalesPOSPage({ title }) {
           </div>
         )}
       </Modal>
+      {/* Modal Xem trước & In chứng từ POS: K80 (POS), A4 (Chi tiết), Phiếu thu Mẫu 01-TT */}
+      <DocumentPrintPreviewModal
+        open={Boolean(posPreviewInvoice)}
+        onClose={() => setPosPreviewInvoice(null)}
+        title={`Xem trước chứng từ bán lẻ (${posPreviewInvoice?.MaHD || posPreviewInvoice?.id || ""})`}
+        subtitle="Hóa đơn bán lẻ K80 nhiệt POS, Hóa đơn A4 chi tiết và Phiếu thu Mẫu 01-TT"
+        alternativeTemplates={
+          posPreviewInvoice
+            ? [
+                {
+                  label: "Hóa đơn K80 (POS)",
+                  icon: <PrinterIcon style={{ width: 14, height: 14 }} />,
+                  isK80: true,
+                  getHtml: () =>
+                    renderHoaDonBanLeK80Html(posPreviewInvoice, {
+                      customer: selectedCustomer,
+                      storeConfig: getStoreConfig(),
+                      cashier: posPreviewInvoice.NguoiLap || currentUserInfo().name || "Thu ngân",
+                    }),
+                },
+                {
+                  label: "Hóa đơn A4 (Chi tiết)",
+                  icon: <PrinterIcon style={{ width: 14, height: 14 }} />,
+                  isK80: false,
+                  getHtml: () =>
+                    renderHoaDonBanLeA4Html(posPreviewInvoice, {
+                      customer: selectedCustomer,
+                      storeConfig: getStoreConfig(),
+                      cashier: posPreviewInvoice.NguoiLap || currentUserInfo().name || "Thu ngân",
+                    }),
+                },
+                {
+                  label: "Phiếu thu (Mẫu 01-TT)",
+                  icon: <PrinterIcon style={{ width: 14, height: 14 }} />,
+                  isK80: false,
+                  getHtml: () => {
+                    const isDebt =
+                      paymentMethod === "Ghi nợ" ||
+                      posPreviewInvoice.HinhThucThanhToan === "Ghi nợ" ||
+                      posPreviewInvoice.TrangThai === "Chưa thanh toán";
+                    const paidAmount = Number(
+                      posPreviewInvoice.SoTienDaTra ??
+                        (posPreviewInvoice.TrangThai === "Đã thanh toán"
+                          ? posPreviewInvoice.TongTien
+                          : 0)
+                    );
+                    const amount = paidAmount > 0 ? paidAmount : Number(posPreviewInvoice.TongTien || finalTotal);
+                    return renderPhieuThuM01TTHtml({
+                      MaPT: `PT-${posPreviewInvoice.MaHD || posPreviewInvoice.id}`,
+                      NgayThu: posPreviewInvoice.NgayLap || new Date().toISOString(),
+                      TenKH: selectedCustomer?.HoTen || "Khách mua lẻ",
+                      DiaChi: selectedCustomer?.DiaChi || "Tại quầy",
+                      SoTien: amount,
+                      TkNo: "1111",
+                      TkCo: isDebt ? "131" : "5111",
+                      LyDo: isDebt
+                        ? `Thu hồi công nợ theo hóa đơn ${posPreviewInvoice.MaHD || posPreviewInvoice.id}`
+                        : `Thu tiền bán hàng lẻ theo hóa đơn ${posPreviewInvoice.MaHD || posPreviewInvoice.id}`,
+                      ChungTuGoc: `Hóa đơn bán lẻ ${posPreviewInvoice.MaHD || posPreviewInvoice.id}`,
+                      NguoiLap: posPreviewInvoice.NguoiLap || currentUserInfo().name || "Thu ngân",
+                    });
+                  },
+                },
+              ]
+            : []
+        }
+      />
     </section>
   );
 }

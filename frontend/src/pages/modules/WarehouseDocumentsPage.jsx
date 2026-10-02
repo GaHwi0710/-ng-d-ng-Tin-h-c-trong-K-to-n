@@ -16,6 +16,7 @@ import {
   buildWarehouseVoucherModel,
   printWarehouseVoucher,
 } from "../../lib/warehouseVoucher.js";
+import { DocumentPrintPreviewModal } from "../../components/DocumentPrintPreviewModal.jsx";
 import { Modal } from "../../components/Modal.jsx";
 import { toast } from "../../components/Toast.jsx";
 import { StatusBadge } from "../../components/Badge.jsx";
@@ -244,9 +245,11 @@ export function WarehouseDocumentsPage({ type, title }) {
     const supplier = suppliers.find((item) => item.id === supplierId);
     return {
       id: savedId,
-      MaNCC: supplierId,
-      supplierId: supplierId,
-      purchaseOrderId: purchaseOrderId || undefined,
+      MaPX: !isReceipt && savedId && savedId !== "......" ? savedId : undefined,
+      MaPN: isReceipt && savedId && savedId !== "......" ? savedId : undefined,
+      MaNCC: isReceipt ? supplierId : undefined,
+      supplierId: isReceipt ? supplierId : undefined,
+      purchaseOrderId: isReceipt ? (purchaseOrderId || undefined) : undefined,
       LyDoXuat: reason,
       LyDoNhap: supplier ? `Nhập hàng từ ${supplier.TenNCC}` : "Nhập kho",
       GhiChu: note,
@@ -257,8 +260,10 @@ export function WarehouseDocumentsPage({ type, title }) {
       paymentMethod: isReceipt ? payMethod : undefined,
       SoLuong: quantity,
       details: selected,
-      NguoiLienQuan: personName || supplier?.TenNCC || "",
-      DiaChi: address || supplier?.DiaChi || "",
+      NguoiLienQuan: personName || (isReceipt ? supplier?.TenNCC : "Khách mua lẻ") || "",
+      NguoiNhan: !isReceipt ? (personName || "Khách mua lẻ") : undefined,
+      NguoiGiaoHang: isReceipt ? (personName || supplier?.TenNCC || "Nhà cung cấp") : undefined,
+      DiaChi: address || (isReceipt ? supplier?.DiaChi : "Bộ phận bán hàng") || "",
       Kho: warehouse,
       DiaDiem: location,
       TkNo: debit,
@@ -814,7 +819,7 @@ export function WarehouseDocumentsPage({ type, title }) {
               <tr>
                 <th scope="col">Số phiếu</th>
                 <th scope="col">Ngày</th>
-                <th scope="col">{isReceipt ? "Nhà cung cấp / người giao" : "Lý do xuất"}</th>
+                <th scope="col">{isReceipt ? "Nhà cung cấp / người giao" : "Người nhận / Lý do xuất"}</th>
                 <th scope="col" style={{ textAlign: "right" }}>Tổng SL</th>
                 <th scope="col" style={{ textAlign: "right" }}>Tổng tiền</th>
                 <th scope="col" style={{ textAlign: "center" }}>Trạng thái</th>
@@ -833,10 +838,12 @@ export function WarehouseDocumentsPage({ type, title }) {
                     <td>
                       {isReceipt
                         ? voucher.NguoiLienQuan || supplier?.TenNCC || "—"
-                        : voucher.LyDoXuat || "—"}
+                        : voucher.NguoiNhan
+                        ? `${voucher.NguoiNhan} (${voucher.LyDoXuat || "Xuất kho"})`
+                        : voucher.LyDoXuat || voucher.NguoiLienQuan || "—"}
                     </td>
-                    <td style={{ textAlign: "right", fontWeight: 600 }}>{voucher.SoLuong ?? (voucher.details || []).reduce((s, i) => s + (Number(i.SoLuong || i.quantity) || 0), 0)}</td>
-                    <td style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{money.format(voucher.TongTien || 0)}</td>
+                    <td className="tabular-nums" style={{ textAlign: "right", fontWeight: 600 }}>{voucher.SoLuong ?? (voucher.details || []).reduce((s, i) => s + (Number(i.SoLuong || i.quantity) || 0), 0)}</td>
+                    <td className="tabular-nums" style={{ textAlign: "right", fontWeight: 600 }}>{money.format(voucher.TongTien || 0)}</td>
                     <td style={{ textAlign: "center" }}>
                       <span className="status-pill success">{voucher.TrangThai || "Đã lưu"}</span>
                     </td>
@@ -878,30 +885,14 @@ export function WarehouseDocumentsPage({ type, title }) {
         )}
       </section>
 
-      <Modal
+      <DocumentPrintPreviewModal
         open={preview !== null}
-        wide
-        title={isReceipt ? "Phiếu nhập kho — Mẫu số 01-VT" : "Phiếu xuất kho — Mẫu số 02-VT"}
         onClose={() => setPreview(null)}
-        onSubmit={() => {
-          const frame = document.querySelector(".vt-preview-frame");
-          if (frame?.contentWindow) {
-            frame.contentWindow.focus();
-            frame.contentWindow.print();
-            return;
-          }
-          printWarehouseVoucher(preview);
-        }}
-        submitLabel="In phiếu"
-      >
-        {preview && (
-          <iframe
-            className="vt-preview-frame"
-            title="Xem trước phiếu kho"
-            srcDoc={buildWarehouseVoucherHtml(preview)}
-          />
-        )}
-      </Modal>
+        title={isReceipt ? `Phiếu nhập kho — Mẫu số 01-VT (${preview?.number || ""})` : `Phiếu xuất kho — Mẫu số 02-VT (${preview?.number || ""})`}
+        subtitle={isReceipt ? "Mẫu chuẩn ban hành theo QĐ số 15/2006/QĐ-BTC & TT 200/2014/TT-BTC" : "Mẫu chuẩn ban hành theo Thông tư 200/2014/TT-BTC & TT 133/2016/TT-BTC"}
+        htmlContent={preview ? buildWarehouseVoucherHtml(preview) : ""}
+        printLabel="In chứng từ"
+      />
     </section>
   );
 }

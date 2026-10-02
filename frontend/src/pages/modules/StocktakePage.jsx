@@ -23,6 +23,8 @@ import { EmptyState } from "../../components/EmptyState.jsx";
 import { Modal } from "../../components/Modal.jsx";
 import { currentUserInfo } from "../../lib/permissions.js";
 import { getStoreConfig, getBrandLogoUrl } from "../../lib/storeConfig.js";
+import { DocumentPrintPreviewModal } from "../../components/DocumentPrintPreviewModal.jsx";
+import { renderBienBanKiemKeM05VTHtml, printBienBanKiemKeM05VT } from "../../lib/accountingDocsPrint.js";
 
 export function StocktakePage({ title }) {
   const [activeTab, setActiveTab] = useState("new"); // "new" | "list" | "adjustments"
@@ -42,6 +44,7 @@ export function StocktakePage({ title }) {
   const [adjustReason, setAdjustReason] = useState("");
   const [adjusting, setAdjusting] = useState(false);
   const [viewAdjustment, setViewAdjustment] = useState(null);
+  const [previewStocktake, setPreviewStocktake] = useState(null);
 
   const loadData = () => {
     setLoading(true);
@@ -175,153 +178,7 @@ export function StocktakePage({ title }) {
   }
 
   function printStocktake(record) {
-    const printWindow = window.open("", "_blank", "width=880,height=920");
-    if (!printWindow) return;
-    const escapeHtml = (val) =>
-      String(val ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c]));
-    const code = record.MaKK || record.id;
-    const dateStr = record.NgayKiemKe || new Date(record.createdAt || Date.now()).toLocaleDateString("vi-VN");
-    const store = getStoreConfig();
-
-    const lines = (record.details || []).map((line, index) => {
-      const diff = Number(line.ChenhLech || 0);
-      const diffColor = diff < 0 ? "#DC2626" : diff > 0 ? "#059669" : "#64748B";
-      const diffText = diff > 0 ? `+${diff}` : String(diff);
-      return `
-        <tr>
-          <td class="center">${index + 1}</td>
-          <td><strong>${escapeHtml(line.TenSP || "Sản phẩm")}</strong>${line.MaSPCode || line.MaSP ? ` <span style="color:#64748b">(${escapeHtml(line.MaSPCode || line.MaSP)})</span>` : ""}</td>
-          <td class="center">${escapeHtml(line.DonViTinh || "Cái")}</td>
-          <td class="center"><strong>${Number(line.SoLuongThucTe || 0)}</strong></td>
-          <td class="center">${Number(line.SoLuongHeThong || 0)}</td>
-          <td class="center" style="font-weight:700;color:${diffColor}">${diffText}</td>
-          <td>${escapeHtml(line.LyDo || "—")}</td>
-        </tr>
-      `;
-    }).join("");
-
-    printWindow.document.write(`<!doctype html>
-<html lang="vi">
-<head>
-  <meta charset="utf-8"/>
-  <title>Phiếu kiểm kê tồn kho - ${escapeHtml(code)}</title>
-  <style>
-    @page { size: A4 portrait; margin: 12mm 15mm; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      color: #1F2937;
-      background: #fff;
-      font-size: 13px;
-      line-height: 1.4;
-    }
-    .doc-container {
-      max-width: 195mm;
-      margin: 0 auto;
-      padding: 6mm 4mm;
-    }
-    .doc-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 16px;
-    }
-    .brand-left h2 { font-size: 17px; font-weight: 700; color: #0F172A; }
-    .brand-meta { font-size: 11.5px; color: #64748B; margin-top: 4px; }
-    .meta-right { text-align: right; font-size: 12px; color: #334155; }
-    .doc-title-row { text-align: center; margin: 16px 0 18px; }
-    .doc-title { font-size: 19px; font-weight: 800; color: #0F172A; text-transform: uppercase; letter-spacing: 0.5px; }
-    .doc-subtitle { font-size: 12px; color: #64748B; margin-top: 4px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
-    th, td { border: 1px solid #E2E8F0; padding: 7px 9px; vertical-align: middle; }
-    th { background: #F8FAFC; font-weight: 700; color: #334155; }
-    .center { text-align: center; }
-    .right { text-align: right; }
-    .signatures-row {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-      margin-top: 28px;
-      text-align: center;
-    }
-    .sig-title { font-weight: 700; font-size: 12.5px; color: #0F172A; }
-    .sig-sub { font-size: 11px; color: #64748B; font-style: italic; }
-    .sig-space { height: 50px; }
-  </style>
-</head>
-<body>
-  <div class="doc-container">
-    <div class="doc-header">
-      <div class="brand-left">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <img src="${getBrandLogoUrl()}" alt="Logo Mẹ & Bé" style="width:38px;height:38px;object-fit:contain;" onerror="this.style.display='none'" />
-          <div>
-            <h2 style="margin:0;font-size:16px;">${escapeHtml(store.brandName || store.name || "CỬA HÀNG MẸ & BÉ")}</h2>
-            <div class="brand-meta" style="margin-top:2px;font-size:11px;line-height:1.4;">
-              <div>📍 <strong>Địa chỉ:</strong> ${escapeHtml(store.address)}</div>
-              <div>☎ <strong>Hotline:</strong> ${escapeHtml(store.hotline || store.phone)} | ✉ <strong>Email:</strong> ${escapeHtml(store.email)} | 🌐 <strong>Website:</strong> ${escapeHtml(store.website || "www.cuahangmebe.vn")}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="meta-right">
-        <div><strong>Mã phiếu:</strong> ${escapeHtml(code)}</div>
-        <div><strong>Ngày kiểm:</strong> ${escapeHtml(dateStr)}</div>
-        <div><strong>Trạng thái:</strong> ${escapeHtml(record.TrangThai || "Chờ xử lý")}</div>
-      </div>
-    </div>
-
-    <div class="doc-title-row">
-      <div class="doc-title">BIÊN BẢN KIỂM KÊ TỒN KHO</div>
-      <div class="doc-subtitle">(Đối chiếu số lượng tồn hệ thống với số lượng thực tế kiểm kê tại kho)</div>
-    </div>
-
-    <div style="font-size: 12px; margin-bottom: 8px;">
-      <strong>Người kiểm kê:</strong> ${escapeHtml(record.NguoiLap || "Thủ kho")} &nbsp;&nbsp;|&nbsp;&nbsp;
-      <strong>Ghi chú đợt kiểm:</strong> ${escapeHtml(record.GhiChu || "Kiểm kê định kỳ")}
-    </div>
-
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 40px" class="center">STT</th>
-          <th>Tên sản phẩm</th>
-          <th style="width: 60px" class="center">ĐVT</th>
-          <th style="width: 75px" class="center">Tồn thực tế</th>
-          <th style="width: 75px" class="center">Tồn hệ thống</th>
-          <th style="width: 75px" class="center">Chênh lệch</th>
-          <th>Ghi chú lý do</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${lines}
-      </tbody>
-    </table>
-
-    <div class="signatures-row">
-      <div>
-        <div class="sig-title">Người kiểm kê</div>
-        <div class="sig-sub">(Ký, ghi rõ họ tên)</div>
-        <div class="sig-space"></div>
-        <small>${escapeHtml(record.NguoiLap || "Thủ kho")}</small>
-      </div>
-      <div>
-        <div class="sig-title">Thủ kho</div>
-        <div class="sig-sub">(Ký, ghi rõ họ tên)</div>
-        <div class="sig-space"></div>
-      </div>
-      <div>
-        <div class="sig-title">Kế toán kho / Quản lý</div>
-        <div class="sig-sub">(Ký, ghi rõ họ tên)</div>
-        <div class="sig-space"></div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => printWindow.print(), 350);
+    setPreviewStocktake(record);
   }
 
   return (
@@ -552,7 +409,7 @@ export function StocktakePage({ title }) {
                         </div>
                       </td>
                       <td style={{ textAlign: "center", color: "var(--text-soft)" }}>{product.DonViTinh}</td>
-                      <td style={{ textAlign: "right", fontWeight: 600 }}>
+                      <td style={{ textAlign: "right", fontWeight: 600 }} className="tabular-nums">
                         {sys.toLocaleString("vi-VN")} {product.DonViTinh}
                       </td>
                       <td style={{ textAlign: "center" }}>
@@ -908,6 +765,14 @@ export function StocktakePage({ title }) {
           </div>
         )}
       </Modal>
+
+      <DocumentPrintPreviewModal
+        open={previewStocktake !== null}
+        onClose={() => setPreviewStocktake(null)}
+        title={`Biên bản kiểm kê vật tư, sản phẩm, hàng hóa — Mẫu số 05-VT (${previewStocktake?.MaKK || previewStocktake?.id || ""})`}
+        subtitle="Ban hành theo Thông tư số 133/2016/TT-BTC ngày 26/8/2016 của Bộ Tài Chính"
+        htmlContent={previewStocktake ? renderBienBanKiemKeM05VTHtml(previewStocktake, products) : ""}
+      />
     </section>
   );
 }

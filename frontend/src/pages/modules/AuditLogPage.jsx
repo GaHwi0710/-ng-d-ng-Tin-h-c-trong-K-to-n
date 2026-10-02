@@ -268,7 +268,7 @@ export function AuditLogPage({ title = "Nhật ký kiểm toán" }) {
                 const actionMeta = ACTION_MAP[log.action] || { label: log.action, variant: "gray" };
                 return (
                   <tr key={log._id || log.id}>
-                    <td style={{ color: "var(--text-soft)", fontSize: 13 }}>
+                    <td className="tabular-nums" style={{ color: "var(--text-soft)", fontSize: 13 }}>
                       {new Date(log.timestamp).toLocaleString("vi-VN")}
                     </td>
                     <td>
@@ -293,7 +293,7 @@ export function AuditLogPage({ title = "Nhật ký kiểm toán" }) {
                     <td style={{ color: "var(--text)" }}>
                       {log.description || "—"}
                     </td>
-                    <td style={{ color: "var(--text-faint)", fontSize: 12 }}>
+                    <td className="tabular-nums font-mono" style={{ color: "var(--text-faint)", fontSize: 12 }}>
                       {log.ip || "127.0.0.1"}
                     </td>
                   </tr>

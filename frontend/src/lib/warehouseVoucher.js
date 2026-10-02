@@ -1,5 +1,11 @@
 import { amountToWords } from "./amountToWords.js";
 import { getStoreConfig, getBrandLogoUrl } from "./storeConfig.js";
+import {
+  renderPhieuNhapKhoM01VTHtml,
+  printPhieuNhapKhoM01VT,
+  renderPhieuXuatKhoM02VTHtml,
+  printPhieuXuatKhoM02VT,
+} from "./accountingDocsPrint.js";
 
 const money = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 
@@ -76,15 +82,19 @@ export function buildWarehouseVoucherModel({
     email: cfg.email,
     website: cfg.website,
     date,
-    number: record.MaPN || record.MaPX || record.id || "",
+    number: isReceipt ? (record.MaPN || record.id || "") : (record.MaPX || record.id || ""),
     supplierName: supplier?.TenNCC || record.NguoiLienQuan || "",
     supplierTax: supplier?.MST || "0101234567",
     supplierAddress: supplier?.DiaChi || record.DiaChi || "Hà Nội",
     supplierPhone: supplier?.SDT || "0912 345 678",
-    receiverName: record.NguoiNhan || record.NguoiLienQuan || "Khách lẻ",
+    receiverName: record.NguoiNhan || record.NguoiLienQuan || (isReceipt ? "" : "Khách mua lẻ"),
+    receiverDept: record.DiaChi || record.BoPhanNhan || (isReceipt ? "" : "Bộ phận bán hàng"),
     reason,
     warehouse: record.Kho || "Kho chính",
-    location: record.DiaDiem || "Hà Nội",
+    location: record.DiaDiem || cfg.address || "Hà Nội",
+    TkNo: record.TkNo || (isReceipt ? "156" : "632"),
+    TkCo: record.TkCo || (isReceipt ? (Number(record.SoTienDaTra || 0) >= total ? "111" : "331") : "156"),
+    SoChungTuGoc: record.SoChungTuGoc || record.attachedDocs || "",
     lines,
     total,
     discount: Number(record.ChietKhau || record.discount || 0),
@@ -297,170 +307,15 @@ const VOUCHER_CSS = `
 `;
 
 export function buildWarehouseVoucherHtml(model) {
-  const isReceipt = model.isReceipt;
-  const title = isReceipt ? "PHIẾU NHẬP KHO" : "PHIẾU XUẤT KHO";
-  const titleClass = isReceipt ? "title-receipt" : "title-issue";
-  const logoClass = isReceipt ? "brand-logo-receipt" : "brand-logo-issue";
-  const hlClass = isReceipt ? "hl-receipt" : "hl-issue";
-  const finalTotal = model.total - (model.discount || 0);
-
-  const linesHtml = model.lines
-    .map(
-      (line, i) => `
-    <tr>
-      <td class="center">${i + 1}</td>
-      <td><strong>${esc(line.name)}</strong>${line.code ? ` <span style="color:#64748b">(${esc(line.code)})</span>` : ""}</td>
-      <td class="center">${esc(line.unit)}</td>
-      <td class="center">${line.actual}</td>
-      <td class="right">${money.format(line.price)}</td>
-      <td class="right"><strong>${money.format(line.amount)}</strong></td>
-    </tr>
-  `
-    )
-    .join("");
-
-  return `<!doctype html>
-<html lang="vi">
-<head>
-  <meta charset="utf-8"/>
-  <title>${esc(title)} - ${esc(model.number)}</title>
-  ${typeof window !== "undefined" && window.location?.origin ? `<base href="${window.location.origin}/">` : ""}
-  <style>${VOUCHER_CSS}</style>
-</head>
-<body>
-  <div class="doc-container">
-    <!-- Header (Reference 1) -->
-    <header class="doc-header">
-      <div class="brand-left">
-        <img src="${getBrandLogoUrl()}" class="voucher-logo-img" alt="Logo Mẹ & Bé" style="width:46px;height:46px;object-fit:contain;flex-shrink:0;" />
-        <div class="brand-info">
-          <h2>${esc(model.company)}</h2>
-          <div class="slogan">${esc(model.slogan)}</div>
-          <div class="brand-meta">
-            <div>📍 <strong>Địa chỉ:</strong> ${esc(model.address)}</div>
-            <div>☎ <strong>Hotline:</strong> ${esc(model.hotline || model.phone)} | ✉ <strong>Email:</strong> ${esc(model.email)}</div>
-            <div>🌐 <strong>Website:</strong> ${esc(model.website || "www.cuahangmebe.vn")}</div>
-          </div>
-        </div>
-      </div>
-      <div class="meta-right">
-        <div>${isReceipt ? "Số phiếu" : "Số phiếu"}: <strong>${esc(model.number)}</strong></div>
-        <div>Ngày lập: <strong>${esc(model.date)}</strong></div>
-        <div>${isReceipt ? "Nhà cung cấp" : "Người nhận"}: <strong>${esc(isReceipt ? model.supplierName : model.receiverName)}</strong></div>
-      </div>
-    </header>
-
-    <!-- Title -->
-    <div class="doc-title-row">
-      <h1 class="doc-title ${titleClass}">${esc(title)}</h1>
-    </div>
-
-    <!-- Info Block -->
-    <div class="info-box">
-      <div class="info-box-title">${isReceipt ? "Thông tin nhà cung cấp" : "Thông tin xuất kho"}</div>
-      <div class="info-grid">
-        ${
-          isReceipt
-            ? `
-          <div class="info-row"><span class="info-label">Tên NCC:</span><span class="info-val">${esc(model.supplierName || "—")}</span></div>
-          <div class="info-row"><span class="info-label">Mã số thuế:</span><span class="info-val">${esc(model.supplierTax)}</span></div>
-          <div class="info-row"><span class="info-label">Địa chỉ:</span><span class="info-val">${esc(model.supplierAddress)}</span></div>
-          <div class="info-row"><span class="info-label">Số ĐT:</span><span class="info-val">${esc(model.supplierPhone)}</span></div>
-        `
-            : `
-          <div class="info-row"><span class="info-label">Lý do xuất:</span><span class="info-val">${esc(model.reason || "Bán hàng")}</span></div>
-          <div class="info-row"><span class="info-label">Kho xuất:</span><span class="info-val">${esc(model.warehouse)}</span></div>
-          <div class="info-row"><span class="info-label">Người nhận:</span><span class="info-val">${esc(model.receiverName)}</span></div>
-          <div class="info-row"><span class="info-label">Người thực hiện:</span><span class="info-val">${esc(model.preparedBy)}</span></div>
-        `
-        }
-      </div>
-    </div>
-
-    <!-- Product Table -->
-    <table class="doc-table">
-      <thead>
-        <tr>
-          <th class="center" style="width: 40px">STT</th>
-          <th>Tên sản phẩm</th>
-          <th class="center" style="width: 60px">ĐVT</th>
-          <th class="center" style="width: 70px">${isReceipt ? "SL nhập" : "SL xuất"}</th>
-          <th class="right" style="width: 110px">Đơn giá</th>
-          <th class="right" style="width: 120px">Thành tiền</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${linesHtml}
-      </tbody>
-    </table>
-
-    <!-- Summary Box -->
-    <div class="summary-wrap">
-      <div class="summary-table">
-        <div class="summary-row">
-          <span>Tổng tiền hàng:</span>
-          <span>${money.format(model.total)}</span>
-        </div>
-        ${
-          model.discount > 0
-            ? `
-          <div class="summary-row">
-            <span>Chiết khấu / Giảm giá:</span>
-            <span>${money.format(model.discount)}</span>
-          </div>
-        `
-            : ""
-        }
-        <div class="summary-row highlight ${hlClass}">
-          <span>Tổng thanh toán:</span>
-          <span>${money.format(finalTotal)}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Amount in words -->
-    <div class="words-row">
-      <strong>Số tiền bằng chữ:</strong> ${esc(amountToWords(finalTotal))}.
-    </div>
-
-    <!-- Signatures -->
-    <div class="signatures-row">
-      <div>
-        <div class="sig-title">${isReceipt ? "Người giao hàng" : "Người nhận hàng"}</div>
-        <div class="sig-sub">(Ký, ghi rõ họ tên)</div>
-        <div class="sig-space"></div>
-        <div class="sig-name"></div>
-      </div>
-      <div>
-        <div class="sig-title">Thủ kho</div>
-        <div class="sig-sub">(Ký, ghi rõ họ tên)</div>
-        <div class="sig-space"></div>
-        <div class="sig-name"></div>
-      </div>
-      <div>
-        <div class="sig-title">Người lập phiếu</div>
-        <div class="sig-sub">(Ký, ghi rõ họ tên)</div>
-        <div class="sig-space"></div>
-        <div class="sig-name">${esc(model.preparedBy)}</div>
-      </div>
-    </div>
-
-    <div class="footnote">
-      * ${isReceipt ? "Phiếu nhập kho" : "Phiếu xuất kho"} chỉ có giá trị pháp lý khi có đầy đủ chữ ký của các bên liên quan.
-    </div>
-  </div>
-</body>
-</html>`;
+  if (model.isReceipt) {
+    return renderPhieuNhapKhoM01VTHtml(model);
+  }
+  return renderPhieuXuatKhoM02VTHtml(model);
 }
 
 export function printWarehouseVoucher(model) {
-  const html = buildWarehouseVoucherHtml(model);
-  const win = window.open("", "_blank", "width=850,height=900");
-  if (!win) return false;
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 350);
-  return true;
+  if (model.isReceipt) {
+    return printPhieuNhapKhoM01VT(model);
+  }
+  return printPhieuXuatKhoM02VT(model);
 }

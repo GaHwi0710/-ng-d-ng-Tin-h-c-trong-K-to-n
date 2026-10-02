@@ -175,9 +175,9 @@ export function InventoryPage({ title }) {
               <th scope="col">Tên sản phẩm</th>
               <th scope="col">Danh mục</th>
               <th scope="col" style={{ width: 70, textAlign: "center" }}>ĐVT</th>
-              <th scope="col" style={{ textAlign: "right", width: 110 }}>Giá nhập</th>
-              <th scope="col" style={{ textAlign: "right", width: 110 }}>Giá bán</th>
-              <th scope="col" style={{ textAlign: "right", width: 100 }}>Số lượng tồn</th>
+              <th scope="col" style={{ textAlign: "right", width: 110 }} className="right">Giá nhập</th>
+              <th scope="col" style={{ textAlign: "right", width: 110 }} className="right">Giá bán</th>
+              <th scope="col" style={{ textAlign: "right", width: 100 }} className="right">Số lượng tồn</th>
               <th scope="col" style={{ width: 140, textAlign: "center" }}>Tình trạng tồn</th>
               <th scope="col" style={{ width: 140 }}>Cập nhật gần nhất</th>
             </tr>
@@ -198,9 +198,9 @@ export function InventoryPage({ title }) {
                   </td>
                   <td>{p.LoaiHang || "—"}</td>
                   <td style={{ textAlign: "center" }}>{p.DonViTinh}</td>
-                  <td style={{ textAlign: "right", color: "var(--text-soft)" }}>{money.format(p.GiaNhap || 0)}</td>
-                  <td style={{ textAlign: "right", fontWeight: 600 }}>{money.format(p.GiaBan || 0)}</td>
-                  <td style={{ textAlign: "right", fontWeight: 700, fontSize: 14, fontVariantNumeric: "tabular-nums" }}>
+                  <td className="right tabular-nums" style={{ textAlign: "right", color: "var(--text-soft)" }}>{money.format(p.GiaNhap || 0)}</td>
+                  <td className="right tabular-nums" style={{ textAlign: "right", fontWeight: 600 }}>{money.format(p.GiaBan || 0)}</td>
+                  <td className="right tabular-nums" style={{ textAlign: "right", fontWeight: 700, fontSize: 14 }}>
                     {stock.toLocaleString("vi-VN")}
                   </td>
                   <td style={{ textAlign: "center" }}>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   MagnifyingGlassIcon,
   CreditCardIcon,
@@ -7,6 +8,7 @@ import {
   ExclamationCircleIcon,
   InformationCircleIcon,
   BuildingStorefrontIcon,
+  PrinterIcon,
 } from "@heroicons/react/24/outline";
 import { listRecords, postRequest } from "../../lib/api.js";
 import { Modal } from "../../components/Modal.jsx";
@@ -15,6 +17,7 @@ import { StatCard } from "../../components/StatCard.jsx";
 import { Badge } from "../../components/Badge.jsx";
 import { Pagination } from "../../components/Pagination.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
+import { amountToWords } from "../../lib/amountToWords.js";
 
 const money = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -22,7 +25,22 @@ const money = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 0,
 });
 
+export function getReceiptCode(d) {
+  if (!d) return "—";
+  const code = d.MaPhieuNhap || d.MaPNCode;
+  if (code && code !== "—") {
+    if (/^[0-9a-fA-F]{24}$/.test(String(code).trim())) return "Không xác định";
+    return String(code).trim();
+  }
+  if (d.MaPN) {
+    if (/^[0-9a-fA-F]{24}$/.test(String(d.MaPN).trim())) return "Không xác định";
+    return String(d.MaPN).trim();
+  }
+  return "—";
+}
+
 export function DebtsPage({ title, description }) {
+  const navigate = useNavigate();
   const [debts, setDebts] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [query, setQuery] = useState("");
@@ -80,7 +98,7 @@ export function DebtsPage({ title, description }) {
       if (!q) return true;
 
       const debtCode = String(d.MaCN || d.id || "");
-      const receiptCode = String(d.MaPhieuNhap || d.MaPN || "");
+      const receiptCode = getReceiptCode(d);
       const statusText = String(d.TrangThai || "");
 
       const supp = suppliers.find((s) => s.id === d.MaNCC || s.MaNCC === d.MaNCC);
@@ -131,18 +149,35 @@ export function DebtsPage({ title, description }) {
     setPaying(true);
     try {
       const debtId = selectedDebt.id || selectedDebt._id || selectedDebt.MaCN;
-      await postRequest(`debts/${debtId}/pay`, {
+      const receiptRef = getReceiptCode(selectedDebt);
+      const reqId = `PAY-${debtId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const res = await postRequest(`debts/${debtId}/pay`, {
         amount: payment,
         method: payMethod,
-        note: `Thanh toán công nợ NCC theo chứng từ ${selectedDebt.MaPhieuNhap || selectedDebt.MaPN || selectedDebt.MaCN || debtId}`,
+        note: `Thanh toán công nợ NCC theo chứng từ ${receiptRef !== "—" && receiptRef !== "Không xác định" ? receiptRef : (selectedDebt.MaCN || "công nợ")}`,
+        requestId: reqId,
       });
-      toast(`Đã ghi nhận thanh toán ${money.format(payment)} thành công`);
+      const voucherMsg = res?.MaPC ? ` (Mã phiếu chi: ${res.MaPC})` : "";
+      toast(`Đã ghi nhận thanh toán ${money.format(payment)} thành công${voucherMsg}`);
       setPayModalOpen(false);
       loadData();
     } catch (err) {
       toast(err.message || "Lỗi cập nhật công nợ");
     } finally {
       setPaying(false);
+    }
+  }
+
+  async function handlePrintDebts() {
+    try {
+      const { printReport } = await import("../../lib/reportPrint.js");
+      printReport("debts", {
+        debts: supplierDebts,
+        customers: [],
+        suppliers,
+      });
+    } catch {
+      toast("Không thể mở bản in công nợ");
     }
   }
 
@@ -233,6 +268,17 @@ export function DebtsPage({ title, description }) {
             <option value="Còn nợ">Còn nợ</option>
             <option value="Đã thanh toán">Đã thanh toán</option>
           </select>
+
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={handlePrintDebts}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 38 }}
+            title="In sổ theo dõi công nợ nhà cung cấp A4"
+          >
+            <PrinterIcon style={{ width: 16, height: 16 }} />
+            <span>In sổ công nợ A4</span>
+          </button>
         </div>
       </div>
 
@@ -246,12 +292,12 @@ export function DebtsPage({ title, description }) {
               <th style={{ width: 130 }}>Phiếu nhập kho</th>
               <th>Nhà cung cấp</th>
               <th>Ngày phát sinh</th>
-              <th style={{ textAlign: "right" }}>Tổng tiền nợ</th>
-              <th style={{ textAlign: "right" }}>Đã trả</th>
-              <th style={{ textAlign: "right" }}>Còn nợ</th>
+              <th className="right">Tổng tiền nợ</th>
+              <th className="right">Đã trả</th>
+              <th className="right">Còn nợ</th>
               <th style={{ width: 140 }}>Tiến độ</th>
-              <th style={{ width: 110, textAlign: "center" }}>Trạng thái</th>
-              <th style={{ width: 130, textAlign: "center" }}>Thao tác</th>
+              <th className="center" style={{ width: 110 }}>Trạng thái</th>
+              <th className="center" style={{ width: 130 }}>Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -266,7 +312,7 @@ export function DebtsPage({ title, description }) {
               const partyTitle = supp?.TenNCC || d.TenNCC || d.MaNCC || "Nhà cung cấp";
               const partySub = supp?.SDT || "";
 
-              const docCode = d.MaPhieuNhap || d.MaPN || "—";
+              const docCode = getReceiptCode(d);
 
               return (
                 <tr key={d.id} className="debt-row">
@@ -275,9 +321,27 @@ export function DebtsPage({ title, description }) {
                     <span className="prod-code-badge">{d.MaCN || d.id}</span>
                   </td>
                   <td>
-                    {docCode !== "—" ? (
-                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--primary-dark)" }}>
+                    {docCode !== "—" && docCode !== "Không xác định" ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate("/goods-receipts")}
+                        title={`Xem danh sách phiếu nhập kho (Mã: ${docCode})`}
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "var(--primary-dark)",
+                          background: "none",
+                          border: "none",
+                          padding: 0,
+                          cursor: "pointer",
+                          textDecoration: "underline",
+                        }}
+                      >
                         {docCode}
+                      </button>
+                    ) : docCode === "Không xác định" ? (
+                      <span style={{ color: "var(--text-faint)", fontSize: 12, fontStyle: "italic" }}>
+                        Không xác định
                       </span>
                     ) : (
                       <span style={{ color: "var(--text-faint)", fontSize: 12 }}>—</span>
@@ -290,9 +354,9 @@ export function DebtsPage({ title, description }) {
                     </div>
                   </td>
                   <td style={{ color: "var(--text-soft)", fontSize: 13 }}>{d.NgayPhatSinh || (d.createdAt ? String(d.createdAt).slice(0, 10) : "—")}</td>
-                  <td style={{ textAlign: "right", fontWeight: 600 }}>{money.format(total)}</td>
-                  <td style={{ textAlign: "right", color: "var(--success)" }}>{money.format(paid)}</td>
-                  <td style={{ textAlign: "right" }}>
+                  <td className="right tabular-nums" style={{ fontWeight: 600 }}>{money.format(total)}</td>
+                  <td className="right tabular-nums" style={{ color: "var(--success)" }}>{money.format(paid)}</td>
+                  <td className="right tabular-nums">
                     <strong style={{ color: isDone ? "var(--text-soft)" : "var(--danger)" }}>
                       {money.format(rem)}
                     </strong>
@@ -307,12 +371,12 @@ export function DebtsPage({ title, description }) {
                       </span>
                     </div>
                   </td>
-                  <td style={{ textAlign: "center" }}>
+                  <td className="center">
                     <Badge variant={isDone ? "green" : "amber"}>
                       {isDone ? "Đã thanh toán" : "Còn nợ"}
                     </Badge>
                   </td>
-                  <td style={{ textAlign: "center" }}>
+                  <td className="center">
                     <div className="row-actions" style={{ justifyContent: "center" }}>
                       {!isDone && (
                         <button
@@ -368,13 +432,21 @@ export function DebtsPage({ title, description }) {
         onClose={() => setPayModalOpen(false)}
         onSubmit={handleConfirmPay}
         submitLabel={paying ? "Đang xử lý..." : "Xác nhận thanh toán"}
+        submitDisabled={
+          paying ||
+          !selectedDebt ||
+          Number(payAmount) <= 0 ||
+          Number(payAmount) > Number(selectedDebt.SoTienConLai ?? (Number(selectedDebt.SoTien || 0) - Number(selectedDebt.SoTienDaTra || 0)))
+        }
       >
         {selectedDebt && (
           <div>
             <p style={{ margin: "0 0 14px", color: "var(--text-soft)", fontSize: 13.5 }}>
               Ghi nhận thanh toán cho khoản nợ <strong>{selectedDebt.MaCN || selectedDebt.id}</strong> của NCC{" "}
               <strong>{selectedDebt.TenNCC || "Nhà cung cấp"}</strong>
-              {selectedDebt.MaPhieuNhap ? ` (Phiếu nhập: ${selectedDebt.MaPhieuNhap})` : ""}.
+              {getReceiptCode(selectedDebt) !== "—" && getReceiptCode(selectedDebt) !== "Không xác định"
+                ? ` (Phiếu nhập: ${getReceiptCode(selectedDebt)})`
+                : ""}.
             </p>
             <div className="field">
               <label htmlFor="pay-amt">
@@ -384,12 +456,16 @@ export function DebtsPage({ title, description }) {
                 id="pay-amt"
                 type="number"
                 min="1000"
-                max={Number(selectedDebt.SoTienConLai ?? selectedDebt.SoTien)}
+                max={Number(selectedDebt.SoTienConLai ?? (Number(selectedDebt.SoTien || 0) - Number(selectedDebt.SoTienDaTra || 0)))}
                 step="1000"
                 required
+                className="tabular-nums"
                 value={payAmount}
                 onChange={(e) => setPayAmount(e.target.value)}
               />
+              <small style={{ display: "block", marginTop: 4, fontStyle: "italic", color: "var(--text-soft)" }}>
+                Viết bằng chữ: {Number(payAmount) > 0 ? amountToWords(Number(payAmount)) : "—"}
+              </small>
             </div>
 
             <div className="field">
@@ -399,8 +475,8 @@ export function DebtsPage({ title, description }) {
                 value={payMethod}
                 onChange={(e) => setPayMethod(e.target.value)}
               >
-                <option value="Tiền mặt">💵 Tiền mặt (Tự động ghi nhận Phiếu thu/chi)</option>
-                <option value="Chuyển khoản">💳 Chuyển khoản ngân hàng</option>
+                <option value="Tiền mặt">💵 Tiền mặt (Tự động lập Phiếu chi)</option>
+                <option value="Chuyển khoản">💳 Chuyển khoản (Tự động lập Phiếu chi)</option>
               </select>
             </div>
 
@@ -410,7 +486,7 @@ export function DebtsPage({ title, description }) {
                 {money.format(
                   Math.max(
                     0,
-                    Number(selectedDebt.SoTienConLai ?? selectedDebt.SoTien) - Number(payAmount || 0)
+                    Number(selectedDebt.SoTienConLai ?? (Number(selectedDebt.SoTien || 0) - Number(selectedDebt.SoTienDaTra || 0))) - Number(payAmount || 0)
                   )
                 )}
               </strong>

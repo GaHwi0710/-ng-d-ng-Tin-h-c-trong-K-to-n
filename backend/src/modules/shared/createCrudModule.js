@@ -70,19 +70,19 @@ function validateRecord(tableName, body) {
 
   if (tableName === "SanPham") {
     if (body.GiaNhap === undefined || body.GiaNhap === null || String(body.GiaNhap).trim() === "") {
-      return "Giá nhập là bắt buộc";
+      return "Giá nhập là bắt buộc và không được để trống";
     }
     const giaNhap = Number(body.GiaNhap);
-    if (!Number.isFinite(giaNhap) || giaNhap < 0) {
-      return "Giá nhập phải là số hợp lệ và lớn hơn hoặc bằng 0";
+    if (!Number.isFinite(giaNhap) || giaNhap <= 0) {
+      return "Giá nhập phải là số hợp lệ và lớn hơn 0";
     }
 
     if (body.GiaBan === undefined || body.GiaBan === null || String(body.GiaBan).trim() === "") {
-      return "Giá bán là bắt buộc";
+      return "Giá bán là bắt buộc và không được để trống";
     }
     const giaBan = Number(body.GiaBan);
-    if (!Number.isFinite(giaBan) || giaBan < 0) {
-      return "Giá bán phải là số hợp lệ và lớn hơn hoặc bằng 0";
+    if (!Number.isFinite(giaBan) || giaBan <= 0) {
+      return "Giá bán phải là số hợp lệ và lớn hơn 0";
     }
 
     if (!["Đang bán", "Ngừng bán"].includes(body.TrangThai)) return "Trạng thái sản phẩm không hợp lệ";
@@ -99,7 +99,7 @@ function validateRecord(tableName, body) {
   if (body.SDT && !/^0\d{9,10}$/.test(String(body.SDT).trim())) return "Số điện thoại phải gồm 10-11 chữ số và bắt đầu bằng 0";
   if (tableName === "KhuyenMai" && Number(body.PhanTramGiam) > 100) return "Phần trăm giảm không được vượt quá 100";
   if (body.NgayBatDau && body.NgayKetThuc && String(body.NgayBatDau) > String(body.NgayKetThuc)) return "Ngày bắt đầu không được sau ngày kết thúc";
-  for (const field of ["GiaNhap", "GiaBan", "DiemTichLuy", "PhanTramGiam", "SoTien", "SoTienDaTra", "SoTienConLai"]) {
+  for (const field of ["DiemTichLuy", "PhanTramGiam", "SoTien", "SoTienDaTra", "SoTienConLai"]) {
     if (body[field] !== undefined && (!Number.isFinite(Number(body[field])) || Number(body[field]) < 0)) return `${field} phải là số không âm`;
   }
   return null;
@@ -152,6 +152,7 @@ async function serializeRecord(tableName, document, cache = {}) {
       { field: "MaNCC", table: "NhaCungCap", code: "MaNCC", output: "MaNCCCode", name: "TenNCC", nameOutput: "TenNCC" },
       { field: "MaKH", table: "KhachHang", code: "MaKH", output: "MaKHCode", name: "HoTen", nameOutput: "TenKH" },
       { field: "MaHD", table: "HoaDon", code: "MaHD", output: "MaHDCode" },
+      { field: "MaPN", table: "PhieuNhap", code: "MaPN", output: "MaPNCode" },
     ],
     PhieuTraHang: [
       { field: "MaDH", table: "DonHang", code: "MaDH", output: "MaDHCode" },
@@ -175,6 +176,30 @@ async function serializeRecord(tableName, document, cache = {}) {
       if (linked?.[reference.code]) record[reference.output] = linked[reference.code];
       if (linked?.[reference.name]) record[reference.nameOutput] = linked[reference.name];
       continue;
+    }
+    if (tableName === "CongNo") {
+      if (reference.table === "PhieuNhap" && cache.pnMap) {
+        const linked = cache.pnMap.get(String(refVal));
+        if (linked?.[reference.code]) record[reference.output] = linked[reference.code];
+        continue;
+      }
+      if (reference.table === "NhaCungCap" && cache.nccMap) {
+        const linked = cache.nccMap.get(String(refVal));
+        if (linked?.[reference.code]) record[reference.output] = linked[reference.code];
+        if (linked?.[reference.name]) record[reference.nameOutput] = linked[reference.name];
+        continue;
+      }
+      if (reference.table === "KhachHang" && cache.khMap) {
+        const linked = cache.khMap.get(String(refVal));
+        if (linked?.[reference.code]) record[reference.output] = linked[reference.code];
+        if (linked?.[reference.name]) record[reference.nameOutput] = linked[reference.name];
+        continue;
+      }
+      if (reference.table === "HoaDon" && cache.hdMap) {
+        const linked = cache.hdMap.get(String(refVal));
+        if (linked?.[reference.code]) record[reference.output] = linked[reference.code];
+        continue;
+      }
     }
     const projection = { [reference.code]: 1 };
     if (reference.name) projection[reference.name] = 1;
@@ -200,6 +225,17 @@ async function serializeRecord(tableName, document, cache = {}) {
   if (tableName === "CongNo") {
     if (!record.partnerName) {
       record.partnerName = record.TenKH || record.TenNCC || (record.LoaiCongNo === "Nhà cung cấp" ? "Nhà cung cấp" : "Khách hàng");
+    }
+    if (record.MaPN) {
+      if (record.MaPNCode && !/^[0-9a-fA-F]{24}$/.test(String(record.MaPNCode).trim())) {
+        record.MaPhieuNhap = record.MaPNCode;
+      } else {
+        record.MaPNCode = "Không xác định";
+        record.MaPhieuNhap = "Không xác định";
+      }
+    } else {
+      record.MaPNCode = "";
+      record.MaPhieuNhap = "";
     }
   }
   if (tableName === "ThanhToan") {
@@ -289,6 +325,79 @@ async function serializeRecords(tableName, documents) {
       if (c.MaLoai) catMap.set(String(c.MaLoai), c);
     });
     cache.catMap = catMap;
+  } else if (tableName === "CongNo") {
+    const db = getDatabase();
+    const pnIds = documents.map((d) => d.MaPN).filter(Boolean);
+    const nccIds = documents.map((d) => d.MaNCC).filter(Boolean);
+    const khIds = documents.map((d) => d.MaKH).filter(Boolean);
+    const hdIds = documents.map((d) => d.MaHD).filter(Boolean);
+
+    const [pnDocs, nccDocs, khDocs, hdDocs] = await Promise.all([
+      pnIds.length
+        ? db.collection("PhieuNhap").find({
+            $or: [
+              { _id: { $in: pnIds.map(parseId).filter(Boolean) } },
+              { _id: { $in: pnIds.map(String) } },
+              { MaPN: { $in: pnIds.map(String) } },
+            ],
+          }, { projection: { MaPN: 1, TongTien: 1, NgayNhap: 1 } }).toArray().catch(() => [])
+        : [],
+      nccIds.length
+        ? db.collection("NhaCungCap").find({
+            $or: [
+              { _id: { $in: nccIds.map(parseId).filter(Boolean) } },
+              { _id: { $in: nccIds.map(String) } },
+              { MaNCC: { $in: nccIds.map(String) } },
+            ],
+          }, { projection: { MaNCC: 1, TenNCC: 1, SDT: 1, DiaChi: 1 } }).toArray().catch(() => [])
+        : [],
+      khIds.length
+        ? db.collection("KhachHang").find({
+            $or: [
+              { _id: { $in: khIds.map(parseId).filter(Boolean) } },
+              { _id: { $in: khIds.map(String) } },
+              { MaKH: { $in: khIds.map(String) } },
+            ],
+          }, { projection: { MaKH: 1, HoTen: 1, SDT: 1, DiaChi: 1 } }).toArray().catch(() => [])
+        : [],
+      hdIds.length
+        ? db.collection("HoaDon").find({
+            $or: [
+              { _id: { $in: hdIds.map(parseId).filter(Boolean) } },
+              { _id: { $in: hdIds.map(String) } },
+              { MaHD: { $in: hdIds.map(String) } },
+            ],
+          }, { projection: { MaHD: 1, TongTien: 1, NgayLap: 1 } }).toArray().catch(() => [])
+        : [],
+    ]);
+
+    const pnMap = new Map();
+    pnDocs.forEach((p) => {
+      pnMap.set(String(p._id), p);
+      if (p.MaPN) pnMap.set(String(p.MaPN), p);
+    });
+    cache.pnMap = pnMap;
+
+    const nccMap = new Map();
+    nccDocs.forEach((n) => {
+      nccMap.set(String(n._id), n);
+      if (n.MaNCC) nccMap.set(String(n.MaNCC), n);
+    });
+    cache.nccMap = nccMap;
+
+    const khMap = new Map();
+    khDocs.forEach((k) => {
+      khMap.set(String(k._id), k);
+      if (k.MaKH) khMap.set(String(k.MaKH), k);
+    });
+    cache.khMap = khMap;
+
+    const hdMap = new Map();
+    hdDocs.forEach((h) => {
+      hdMap.set(String(h._id), h);
+      if (h.MaHD) hdMap.set(String(h.MaHD), h);
+    });
+    cache.hdMap = hdMap;
   }
   return Promise.all(documents.map((item) => serializeRecord(tableName, item, cache)));
 }
@@ -354,18 +463,18 @@ export function createCrudModule(routeName, tableName) {
           return res.status(400).json({ message: "Vui lòng chọn hạn sử dụng hợp lệ cho sản phẩm trước khi lưu" });
         }
         if (body.GiaNhap === undefined || body.GiaNhap === null || String(body.GiaNhap).trim() === "") {
-          return res.status(400).json({ message: "Giá nhập là bắt buộc" });
+          return res.status(400).json({ message: "Giá nhập là bắt buộc và không được để trống" });
         }
         const gn = Number(body.GiaNhap);
-        if (!Number.isFinite(gn) || gn < 0) {
-          return res.status(400).json({ message: "Giá nhập phải là số hợp lệ và lớn hơn hoặc bằng 0" });
+        if (!Number.isFinite(gn) || gn <= 0) {
+          return res.status(400).json({ message: "Giá nhập phải là số hợp lệ và lớn hơn 0" });
         }
         if (body.GiaBan === undefined || body.GiaBan === null || String(body.GiaBan).trim() === "") {
-          return res.status(400).json({ message: "Giá bán là bắt buộc" });
+          return res.status(400).json({ message: "Giá bán là bắt buộc và không được để trống" });
         }
         const gb = Number(body.GiaBan);
-        if (!Number.isFinite(gb) || gb < 0) {
-          return res.status(400).json({ message: "Giá bán phải là số hợp lệ và lớn hơn hoặc bằng 0" });
+        if (!Number.isFinite(gb) || gb <= 0) {
+          return res.status(400).json({ message: "Giá bán phải là số hợp lệ và lớn hơn 0" });
         }
         body.GiaNhap = gn;
         body.GiaBan = gb;
@@ -573,21 +682,21 @@ export function createCrudModule(routeName, tableName) {
       if (tableName === "SanPham") {
         if (update.GiaNhap !== undefined) {
           if (update.GiaNhap === null || String(update.GiaNhap).trim() === "") {
-            return res.status(400).json({ message: "Giá nhập là bắt buộc" });
+            return res.status(400).json({ message: "Giá nhập là bắt buộc và không được để trống" });
           }
           const gn = Number(update.GiaNhap);
-          if (!Number.isFinite(gn) || gn < 0) {
-            return res.status(400).json({ message: "Giá nhập phải là số hợp lệ và lớn hơn hoặc bằng 0" });
+          if (!Number.isFinite(gn) || gn <= 0) {
+            return res.status(400).json({ message: "Giá nhập phải là số hợp lệ và lớn hơn 0" });
           }
           update.GiaNhap = gn;
         }
         if (update.GiaBan !== undefined) {
           if (update.GiaBan === null || String(update.GiaBan).trim() === "") {
-            return res.status(400).json({ message: "Giá bán là bắt buộc" });
+            return res.status(400).json({ message: "Giá bán là bắt buộc và không được để trống" });
           }
           const gb = Number(update.GiaBan);
-          if (!Number.isFinite(gb) || gb < 0) {
-            return res.status(400).json({ message: "Giá bán phải là số hợp lệ và lớn hơn hoặc bằng 0" });
+          if (!Number.isFinite(gb) || gb <= 0) {
+            return res.status(400).json({ message: "Giá bán phải là số hợp lệ và lớn hơn 0" });
           }
           update.GiaBan = gb;
         }
